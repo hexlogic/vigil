@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+pub mod smtp;
+
 use serde_json::Value;
 use vigil_notify::{Channel, Endpoints, Event, Prepared, SendError, Sender, SenderConfig, prepare};
 use wiremock::matchers::method;
