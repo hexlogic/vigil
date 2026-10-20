@@ -3,7 +3,9 @@
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
 use uuid::Uuid;
-use vigil_core::{ContentHash, FetchSettings, Processor, Schedule, Watch, WatchId, WatchState};
+use vigil_core::{
+    Conditions, ContentHash, FetchSettings, Processor, Schedule, Step, Watch, WatchId, WatchState,
+};
 
 use crate::{Store, StoreError, now_ms};
 
@@ -12,9 +14,9 @@ const MIN_SUFFIX_LEN: usize = 6;
 
 macro_rules! watch_columns {
     () => {
-        "id, name, url, paused, fetch, schedule, jitter_secs, processor, snapshot_retention, \
-         last_checked_at, last_changed_at, last_error, consecutive_errors, last_hash, etag, \
-         last_modified, created_at, updated_at"
+        "id, name, url, paused, fetch, schedule, jitter_secs, processor, pipeline, conditions, \
+         snapshot_retention, last_checked_at, last_changed_at, last_error, consecutive_errors, \
+         last_hash, etag, last_modified, created_at, updated_at"
     };
 }
 
@@ -33,12 +35,17 @@ pub struct NewWatch {
     pub jitter_secs: u32,
     /// How bodies are turned into text.
     pub processor: Processor,
+    /// Steps applied after the processor, in order.
+    pub pipeline: Vec<Step>,
+    /// Which changes are worth a notification.
+    pub conditions: Conditions,
     /// How many snapshots to keep.
     pub snapshot_retention: u32,
 }
 
 impl NewWatch {
-    /// A watch on `url` named after it, with the `text` processor and 100 snapshots kept.
+    /// A watch on `url` named after it, with the `text` processor, no steps, no conditions and
+    /// 100 snapshots kept.
     pub fn new(url: impl Into<String>, schedule: Schedule) -> Self {
         let url = url.into();
         Self {
@@ -48,7 +55,27 @@ impl NewWatch {
             schedule,
             jitter_secs: 0,
             processor: Processor::Text,
+            pipeline: Vec::new(),
+            conditions: Conditions::default(),
             snapshot_retention: 100,
+        }
+    }
+}
+
+impl From<&Watch> for NewWatch {
+    /// The editable settings of an existing watch, to change a few and pass to
+    /// [`Store::update_watch`].
+    fn from(watch: &Watch) -> Self {
+        Self {
+            name: watch.name.clone(),
+            url: watch.url.clone(),
+            fetch: watch.fetch.clone(),
+            schedule: watch.schedule,
+            jitter_secs: watch.jitter_secs,
+            processor: watch.processor,
+            pipeline: watch.pipeline.clone(),
+            conditions: watch.conditions.clone(),
+            snapshot_retention: watch.snapshot_retention,
         }
     }
 }
@@ -60,9 +87,9 @@ impl Store {
         let now = now_ms();
         sqlx::query(
             "INSERT INTO watches \
-             (id, name, url, fetch, schedule, jitter_secs, processor, snapshot_retention, \
-              created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+             (id, name, url, fetch, schedule, jitter_secs, processor, pipeline, conditions, \
+              snapshot_retention, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
         )
         .bind(id.to_string())
         .bind(&new.name)
@@ -71,10 +98,49 @@ impl Store {
         .bind(serde_json::to_string(&new.schedule)?)
         .bind(i64::from(new.jitter_secs))
         .bind(new.processor.as_str())
+        .bind(serde_json::to_string(&new.pipeline)?)
+        .bind(serde_json::to_string(&new.conditions)?)
         .bind(i64::from(new.snapshot_retention))
         .bind(now)
         .execute(&self.pool)
         .await?;
+        self.get_watch(id).await
+    }
+
+    /// Replace a watch's settings and return it as stored.
+    ///
+    /// The pause flag and the results of past checks (state, hash, snapshots, log) are kept.
+    /// The remembered `ETag` and `Last-Modified` are cleared: a server that answers 304 to a
+    /// conditional request would otherwise never send the body again, and an edited pipeline
+    /// would never run. The first check after an edit may therefore report the new output as
+    /// a change.
+    pub async fn update_watch(
+        &self,
+        id: WatchId,
+        settings: &NewWatch,
+    ) -> Result<Watch, StoreError> {
+        let result = sqlx::query(
+            "UPDATE watches SET name = ?2, url = ?3, fetch = ?4, schedule = ?5, \
+             jitter_secs = ?6, processor = ?7, pipeline = ?8, conditions = ?9, \
+             snapshot_retention = ?10, updated_at = ?11, etag = NULL, last_modified = NULL \
+             WHERE id = ?1",
+        )
+        .bind(id.to_string())
+        .bind(&settings.name)
+        .bind(&settings.url)
+        .bind(serde_json::to_string(&settings.fetch)?)
+        .bind(serde_json::to_string(&settings.schedule)?)
+        .bind(i64::from(settings.jitter_secs))
+        .bind(settings.processor.as_str())
+        .bind(serde_json::to_string(&settings.pipeline)?)
+        .bind(serde_json::to_string(&settings.conditions)?)
+        .bind(i64::from(settings.snapshot_retention))
+        .bind(now_ms())
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(StoreError::NotFound(format!("watch {id}")));
+        }
         self.get_watch(id).await
     }
 
@@ -190,6 +256,8 @@ fn watch_from_row(row: &SqliteRow) -> Result<Watch, StoreError> {
         processor: processor
             .parse()
             .map_err(|_| StoreError::Corrupt(format!("unknown processor {processor:?}")))?,
+        pipeline: serde_json::from_str(&row.try_get::<String, _>("pipeline")?)?,
+        conditions: serde_json::from_str(&row.try_get::<String, _>("conditions")?)?,
         snapshot_retention: to_u32(row, "snapshot_retention")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
