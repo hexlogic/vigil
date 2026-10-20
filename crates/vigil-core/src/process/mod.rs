@@ -52,7 +52,17 @@ pub fn process(
 /// Numbers go through the parser, so integers beyond 64 bits are read as floating point and
 /// lose precision.
 pub fn process_json(body: &str) -> Result<String, ProcessError> {
-    json::render_canonical(&serde_json::from_str(body)?)
+    json::render_canonical(&parse_json(body)?)
+}
+
+/// Parse a JSON body.
+pub(crate) fn parse_json(body: &str) -> Result<serde_json::Value, ProcessError> {
+    Ok(serde_json::from_str(body)?)
+}
+
+/// Print a JSON value the way the `json` processor does.
+pub(crate) fn render_json(value: &serde_json::Value) -> Result<String, ProcessError> {
+    json::render_canonical(value)
 }
 
 /// The `feed` processor: RSS, Atom or JSON Feed entries, one block of title, link and date

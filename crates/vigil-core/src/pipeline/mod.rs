@@ -6,6 +6,7 @@
 
 mod error;
 mod html;
+mod json;
 mod step;
 mod text;
 mod xpath;
@@ -16,8 +17,9 @@ pub use step::{SelectMode, Step};
 use crate::decode::decode;
 use crate::model::Processor;
 use crate::normalize::normalize;
-use crate::process::{MAX_OUTPUT_BYTES, process, process_text};
+use crate::process::{MAX_OUTPUT_BYTES, parse_json, process, process_text, render_json};
 use html::HtmlStep;
+use json::JsonStep;
 use step::Stage;
 use text::TextStep;
 
@@ -40,6 +42,7 @@ impl<T> Slot<T> {
 pub struct Pipeline {
     processor: Processor,
     html: Vec<Slot<HtmlStep>>,
+    json: Vec<Slot<JsonStep>>,
     text: Vec<Slot<TextStep>>,
 }
 
@@ -48,9 +51,11 @@ impl Pipeline {
     /// expressions, patterns and capture groups, steps that need another processor, and steps
     /// in the wrong order are reported here, naming the step.
     ///
-    /// Steps must be ordered by what they work on: HTML steps first, then text steps.
+    /// Steps must be ordered by what they work on: HTML steps first, then JSON steps, then
+    /// text steps.
     pub fn new(processor: Processor, steps: &[Step]) -> Result<Self, PipelineError> {
         let mut html = Vec::new();
+        let mut json = Vec::new();
         let mut text = Vec::new();
         let mut stage = Stage::Html;
         for (index, step) in steps.iter().enumerate() {
@@ -63,10 +68,17 @@ impl Pipeline {
                 }));
             }
             stage = step.stage();
-            if step.stage() == Stage::Html && processor != Processor::Text {
+            let needed = match step.stage() {
+                Stage::Html => Some(Processor::Text),
+                Stage::Json => Some(Processor::Json),
+                Stage::Text => None,
+            };
+            if let Some(needed) = needed
+                && processor != needed
+            {
                 return Err(fail(PipelineErrorKind::WrongProcessor {
-                    stage: Stage::Html.label(),
-                    needed: Processor::Text,
+                    stage: step.stage().label(),
+                    needed,
                     found: processor,
                 }));
             }
@@ -80,6 +92,11 @@ impl Pipeline {
                     index,
                     name,
                     step: xpath::xpath(expr, *mode).map_err(fail)?,
+                }),
+                Step::JsonPath { expr } => json.push(Slot {
+                    index,
+                    name,
+                    step: json::jsonpath(expr).map_err(fail)?,
                 }),
                 Step::RegexExtract { pattern, group } => text.push(Slot {
                     index,
@@ -129,6 +146,7 @@ impl Pipeline {
         Ok(Self {
             processor,
             html,
+            json,
             text,
         })
     }
@@ -137,7 +155,9 @@ impl Pipeline {
     ///
     /// The body is decoded (see [`decode`]) and turned into text by the processor. With HTML
     /// steps, the processor is bypassed: the page is parsed as HTML whatever its content type
-    /// says, the steps are applied to the tree, and the result is converted to text. The text
+    /// says, the steps are applied to the tree, and the result is converted to text. With JSON
+    /// steps, the body is parsed, the steps are applied to the value, and it is printed like
+    /// the `json` processor does. The text
     /// is normalised, then run through every text step in order, normalising after each. The
     /// result ends in exactly one newline, or is empty.
     pub fn render(
@@ -146,14 +166,20 @@ impl Pipeline {
         content_type: Option<&str>,
     ) -> Result<String, PipelineError> {
         let decoded = decode(bytes, content_type);
-        let processed = if self.html.is_empty() {
-            process(self.processor, &decoded, content_type)?
-        } else {
+        let processed = if !self.html.is_empty() {
             let mut document = html::parse(&decoded);
             for slot in &self.html {
                 document = slot.step.apply(document).map_err(|kind| slot.fail(kind))?;
             }
             process_text(&html::serialize(&document), Some("text/html"))?
+        } else if !self.json.is_empty() {
+            let mut value = parse_json(&decoded)?;
+            for slot in &self.json {
+                value = slot.step.apply(value).map_err(|kind| slot.fail(kind))?;
+            }
+            render_json(&value)?
+        } else {
+            process(self.processor, &decoded, content_type)?
         };
         let mut text = normalize(&processed);
         if text.len() > MAX_OUTPUT_BYTES {
