@@ -160,7 +160,7 @@ fn every_documented_variable_is_available() {
     let template = "{{ watch_id }}|{{ watch_name }}|{{ watch_url }}|{{ diff_added }}|\
                     {{ diff_removed }}|{{ diff_full | length }}|{{ current_snapshot | length }}|\
                     {{ triggered_text | join(',') }}|{{ checked_at }}|{{ vigil_base_url }}|\
-                    {{ diff_url | length }}|{{ truncated }}";
+                    {{ diff_url | length }}|{{ truncated }}|{{ is_test }}";
     let event = Event::sample();
     let out = prep(PLAIN, &event, Some(template));
     assert_eq!(
@@ -168,7 +168,7 @@ fn every_documented_variable_is_available() {
         format!(
             "0192a3b4-c5d6-7e8f-9012-3456789abcde|Example product page|\
              https://example.com/products/widget|Widget: $12|Widget: $10|{}|{}|Widget: $12|\
-             2026-01-01T00:00:00Z|https://vigil.example.com|{}|False",
+             2026-01-01T00:00:00Z|https://vigil.example.com|{}|False|False",
             event.diff.len(),
             event.snapshot.len(),
             event.diff_url.len()
