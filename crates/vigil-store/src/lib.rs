@@ -1,8 +1,10 @@
 //! SQLite repository, migrations and snapshot storage.
 
 mod checks;
+mod deliveries;
 mod migrate;
 mod snapshots;
+mod targets;
 mod watches;
 
 use std::path::Path;
@@ -13,7 +15,9 @@ use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 
 pub use checks::{CHECK_LOG_KEEP, CheckSuccess, Content, RecordOutcome};
+pub use deliveries::{DELIVERY_LOG_KEEP, DeliveryOutcome, DeliveryRecord};
 pub use snapshots::{SnapshotId, SnapshotMeta};
+pub use targets::{NewTarget, NotificationTarget, TargetId};
 pub use watches::NewWatch;
 
 /// Errors returned by the storage layer.
@@ -40,6 +44,12 @@ pub enum StoreError {
     /// No watch or snapshot matches.
     #[error("not found: {0}")]
     NotFound(String),
+    /// A notification target id suffix matches more than one target.
+    #[error("{0:?} matches more than one notification target; use more characters")]
+    AmbiguousTarget(String),
+    /// The change would clash with something that already exists, such as a taken name.
+    #[error("{0}")]
+    Conflict(String),
     /// A watch id suffix matches more than one watch.
     #[error("{0:?} matches more than one watch; use more characters")]
     AmbiguousId(String),

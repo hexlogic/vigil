@@ -74,7 +74,13 @@ async fn reopen_is_idempotent() -> TestResult {
     let applied: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations")
         .fetch_one(store.pool())
         .await?;
-    assert_eq!(applied, 1);
+    let embedded = sqlx::migrate!("../../migrations").iter().count();
+    assert_eq!(usize::try_from(applied)?, embedded);
+    let backups = std::fs::read_dir(dir.path())?
+        .filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().contains(".backup-"))
+        .count();
+    assert_eq!(backups, 0, "an up-to-date database is not backed up");
     Ok(())
 }
 
