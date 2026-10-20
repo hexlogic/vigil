@@ -171,6 +171,8 @@ pub struct Watch {
     pub conditions: Conditions,
     /// How many snapshots to keep.
     pub snapshot_retention: u32,
+    /// Message template for this watch's notifications; it wins over the target's own.
+    pub notification_template: Option<String>,
     /// Creation time, unix milliseconds.
     pub created_at: i64,
     /// Last modification time, unix milliseconds.
