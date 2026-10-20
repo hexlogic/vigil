@@ -3011,7 +3011,6 @@ dependencies = [
  "fastrand",
  "sqlx",
  "tempfile",
- "thiserror",
  "tokio",
  "tokio-util",
  "tracing",
