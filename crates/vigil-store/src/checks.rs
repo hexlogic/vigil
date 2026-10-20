@@ -39,6 +39,11 @@ pub struct CheckSuccess {
     pub last_modified: Option<String>,
     /// The new text, or `None` when the server answered 304 Not Modified.
     pub content: Option<Content>,
+    /// The `updated_at` of the watch the check was made with, or `None` to skip the check
+    /// below. If the watch was edited while the check ran, the response was fetched and
+    /// processed with the old settings, so its `etag` and `last_modified` are dropped:
+    /// storing them would make the server answer 304 to the next request and hide the edit.
+    pub settings_version: Option<i64>,
 }
 
 /// What recording a check did.
@@ -79,13 +84,24 @@ impl Store {
         // instead of failing with SQLITE_BUSY_SNAPSHOT halfway through.
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        let row = sqlx::query("SELECT last_hash, snapshot_retention FROM watches WHERE id = ?")
-            .bind(&id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| StoreError::NotFound(format!("watch {watch}")))?;
+        let row = sqlx::query(
+            "SELECT last_hash, snapshot_retention, updated_at FROM watches WHERE id = ?",
+        )
+        .bind(&id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| StoreError::NotFound(format!("watch {watch}")))?;
         let last_hash = row.try_get::<Option<Vec<u8>>, _>("last_hash")?;
         let retention = row.try_get::<i64, _>("snapshot_retention")?.max(1);
+        let edited_meanwhile = match check.settings_version {
+            Some(version) => version != row.try_get::<i64, _>("updated_at")?,
+            None => false,
+        };
+        let (etag, last_modified) = if edited_meanwhile {
+            (&None, &None)
+        } else {
+            (&check.etag, &check.last_modified)
+        };
 
         let outcome = match &check.content {
             None => RecordOutcome::Unchanged,
@@ -142,8 +158,8 @@ impl Store {
                 )
                 .bind(check.at)
                 .bind(ContentHash::of(&content.text).as_bytes().as_slice())
-                .bind(&check.etag)
-                .bind(&check.last_modified)
+                .bind(etag)
+                .bind(last_modified)
                 .bind(&id)
                 .execute(&mut *tx)
                 .await?;
@@ -154,8 +170,8 @@ impl Store {
                      consecutive_errors = 0, last_error = NULL WHERE id = ?4",
                 )
                 .bind(check.at)
-                .bind(&check.etag)
-                .bind(&check.last_modified)
+                .bind(etag)
+                .bind(last_modified)
                 .bind(&id)
                 .execute(&mut *tx)
                 .await?;
@@ -167,8 +183,8 @@ impl Store {
                      consecutive_errors = 0, last_error = NULL WHERE id = ?4",
                 )
                 .bind(check.at)
-                .bind(&check.etag)
-                .bind(&check.last_modified)
+                .bind(etag)
+                .bind(last_modified)
                 .bind(&id)
                 .execute(&mut *tx)
                 .await?;

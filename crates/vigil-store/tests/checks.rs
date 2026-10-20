@@ -31,6 +31,7 @@ fn success(at: i64, text: &str) -> CheckSuccess {
             text: text.into(),
             raw_size: text.len() as u64 + 100,
         }),
+        settings_version: None,
     }
 }
 
@@ -340,5 +341,58 @@ async fn retention_of_one_still_reports_the_previous_text() -> TestResult {
         Err(StoreError::NotFound(_))
     ));
     assert_eq!(store.snapshot_content(current).await?, "v2\n");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_result_from_before_an_edit_does_not_bring_back_the_old_validators() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let watch = new_watch(&store, 10).await?;
+
+    // A check starts with the watch as it is now...
+    let checked_with = store.get_watch(watch.id).await?;
+    // ...the user edits the watch while it runs (this clears the validators)...
+    let mut settings = NewWatch::from(&checked_with);
+    settings.name = "edited".into();
+    store.update_watch(watch.id, &settings).await?;
+
+    // ...and then the check finishes with a response that carries validators.
+    let mut stale = success(100, "old pipeline output");
+    stale.etag = Some("\"v1\"".into());
+    stale.last_modified = Some("Mon".into());
+    stale.settings_version = Some(checked_with.updated_at);
+    store.record_success(watch.id, &stale).await?;
+
+    let after = store.get_watch(watch.id).await?;
+    assert_eq!(after.state.etag, None);
+    assert_eq!(after.state.last_modified, None);
+    // The result itself is still recorded.
+    assert_eq!(after.state.last_checked_at, Some(100));
+    assert_eq!(count(&store, "snapshots", &watch).await?, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_result_from_the_current_settings_keeps_its_validators() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let watch = new_watch(&store, 10).await?;
+    let mut fresh = success(100, "text");
+    fresh.etag = Some("\"v1\"".into());
+    fresh.last_modified = Some("Mon".into());
+    fresh.settings_version = Some(watch.updated_at);
+    store.record_success(watch.id, &fresh).await?;
+
+    let after = store.get_watch(watch.id).await?;
+    assert_eq!(after.state.etag.as_deref(), Some("\"v1\""));
+    assert_eq!(after.state.last_modified.as_deref(), Some("Mon"));
+
+    // Without a version nothing is checked.
+    let mut unguarded = success(200, "text 2");
+    unguarded.etag = Some("\"v2\"".into());
+    store.record_success(watch.id, &unguarded).await?;
+    assert_eq!(
+        store.get_watch(watch.id).await?.state.etag.as_deref(),
+        Some("\"v2\"")
+    );
     Ok(())
 }

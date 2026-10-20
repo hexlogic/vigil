@@ -109,11 +109,12 @@ impl Store {
 
     /// Replace a watch's settings and return it as stored.
     ///
-    /// The pause flag and the results of past checks (state, hash, snapshots, log) are kept.
-    /// The remembered `ETag` and `Last-Modified` are cleared: a server that answers 304 to a
-    /// conditional request would otherwise never send the body again, and an edited pipeline
-    /// would never run. The first check after an edit may therefore report the new output as
-    /// a change.
+    /// The pause flag, the hash and the snapshots and log are kept. The remembered `ETag` and
+    /// `Last-Modified` are cleared: a server that answers 304 to a conditional request would
+    /// otherwise never send the body again, and an edited pipeline would never run. The
+    /// failure streak and last error are cleared too, so an edit that fixes a failing watch
+    /// is not made to wait out its backoff. The first check after an edit may report the
+    /// new output as a change.
     pub async fn update_watch(
         &self,
         id: WatchId,
@@ -122,8 +123,9 @@ impl Store {
         let result = sqlx::query(
             "UPDATE watches SET name = ?2, url = ?3, fetch = ?4, schedule = ?5, \
              jitter_secs = ?6, processor = ?7, pipeline = ?8, conditions = ?9, \
-             snapshot_retention = ?10, updated_at = ?11, etag = NULL, last_modified = NULL \
-             WHERE id = ?1",
+             snapshot_retention = ?10, updated_at = MAX(?11, updated_at + 1), etag = NULL, \
+             last_modified = NULL, \
+             consecutive_errors = 0, last_error = NULL WHERE id = ?1",
         )
         .bind(id.to_string())
         .bind(&settings.name)

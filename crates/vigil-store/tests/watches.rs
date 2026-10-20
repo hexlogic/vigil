@@ -264,7 +264,8 @@ async fn update_replaces_the_settings_and_clears_the_validators() -> TestResult 
     // A watch that has been checked and paused, with validators from the last response.
     sqlx::query(
         "UPDATE watches SET paused = 1, etag = '\"abc\"', last_modified = 'Mon', \
-         last_hash = zeroblob(32), last_checked_at = 5, consecutive_errors = 2 WHERE id = ?",
+         last_hash = zeroblob(32), last_checked_at = 5, consecutive_errors = 2, \
+         last_error = 'boom' WHERE id = ?",
     )
     .bind(created.id.to_string())
     .execute(store.pool())
@@ -295,11 +296,13 @@ async fn update_replaces_the_settings_and_clears_the_validators() -> TestResult 
     // Cleared, so the next request is unconditional and the new pipeline gets a body.
     assert_eq!(updated.state.etag, None);
     assert_eq!(updated.state.last_modified, None);
+    // A failing watch is given a fresh start, so a fix does not wait out the backoff.
+    assert_eq!(updated.state.consecutive_errors, 0);
+    assert_eq!(updated.state.last_error, None);
     // Kept.
     assert!(updated.paused);
     assert_eq!(updated.state.last_hash, before.state.last_hash);
     assert_eq!(updated.state.last_checked_at, Some(5));
-    assert_eq!(updated.state.consecutive_errors, 2);
     assert_eq!(store.get_watch(created.id).await?, updated);
     Ok(())
 }
