@@ -74,7 +74,7 @@ HTML is rendered with `html2text` in plain mode at a width of 10,000 columns so 
 
 ## Charset decoding
 
-The charset comes from the `Content-Type` header and defaults to UTF-8. A byte-order mark in the body wins over the header, malformed bytes decode to U+FFFD instead of failing the check, and charsets that encoding_rs maps to its REPLACEMENT encoding (iso-2022-kr, iso-2022-cn, hz-gb-2312) are treated as unknown, because REPLACEMENT turns every page into a single U+FFFD and would hide all changes. `<meta charset>` sniffing is deferred to Phase 2.
+The charset comes from the `Content-Type` header and defaults to UTF-8. A byte-order mark in the body wins over the header, malformed bytes decode to U+FFFD instead of failing the check, and charsets that encoding_rs maps to its REPLACEMENT encoding (iso-2022-kr, iso-2022-cn, hz-gb-2312) are treated as unknown, because REPLACEMENT turns every page into a single U+FFFD and would hide all changes. When the header gives no usable charset, the first 1024 bytes of an HTML or XML body (or of a body with no content type) are searched for a declaration: `<meta charset>`, `<meta http-equiv="content-type">`, and the `encoding` of a leading `<?xml?>` declaration. `<meta>` is only read in HTML, never in other XML, and nothing is read in JSON or plain text. As in browsers, a declared UTF-16 means UTF-8 (the page is readable as ASCII, so it cannot be UTF-16) and `x-user-defined` means windows-1252. Order: BOM, header, declaration, UTF-8. Accepted one-time effect: a page that declares a charset the header leaves out is decoded differently than before, so its hash changes once on the first check after upgrading.
 
 ## Snapshot storage and check recording
 
