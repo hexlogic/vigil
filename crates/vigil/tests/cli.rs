@@ -31,19 +31,49 @@ impl From<Output> for Run {
     }
 }
 
+/// Proxy variables a developer machine or CI runner might have set.
+const PROXY_VARS: [&str; 8] = [
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+    "no_proxy",
+];
+
 /// Run the binary with its data in `dir`, without blocking the async runtime.
 async fn vigil(dir: &Path, args: &[&str]) -> Result<Run, Box<dyn std::error::Error>> {
+    vigil_with_env(dir, args, &[]).await
+}
+
+/// Like [`vigil`], with extra environment variables set.
+async fn vigil_with_env(
+    dir: &Path,
+    args: &[&str],
+    envs: &[(&str, &str)],
+) -> Result<Run, Box<dyn std::error::Error>> {
     let dir = dir.to_path_buf();
     let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
+    let envs: Vec<(String, String)> = envs
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+        .collect();
     let output = tokio::task::spawn_blocking(move || {
-        std::process::Command::new(env!("CARGO_BIN_EXE_vigil"))
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_vigil"));
+        command
             .args(&args)
             .current_dir(&dir)
             .env("VIGIL_DATA_DIR", dir.join("data"))
             .env_remove("VIGIL_CONFIG")
             .env_remove("RUST_LOG")
-            .env_remove("NO_COLOR")
-            .output()
+            .env_remove("NO_COLOR");
+        for var in PROXY_VARS {
+            command.env_remove(var);
+        }
+        command.envs(envs);
+        command.output()
     })
     .await??;
     Ok(output.into())
@@ -196,5 +226,26 @@ async fn bad_input_is_rejected_with_a_message() -> TestResult {
     let short = vigil(dir.path(), &["check", "abc"]).await?;
     assert!(!short.ok);
     assert!(short.stderr.contains("not a watch id"), "{}", short.stderr);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn proxy_environment_variables_are_ignored() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let server = MockServer::start().await;
+    serve_page(&server, V1).await;
+    let id = add_watch(dir.path(), &server.uri()).await?;
+
+    // Nothing listens on port 9, so a fetch routed through this proxy would fail.
+    let dead_proxy = "http://127.0.0.1:9";
+    let envs = [
+        ("HTTP_PROXY", dead_proxy),
+        ("http_proxy", dead_proxy),
+        ("ALL_PROXY", dead_proxy),
+        ("all_proxy", dead_proxy),
+    ];
+    let run = vigil_with_env(dir.path(), &["check", &id], &envs).await?;
+    assert!(run.ok, "check should bypass the proxy: {}", run.stderr);
+    assert!(run.stdout.contains("baseline stored"), "{}", run.stdout);
     Ok(())
 }
