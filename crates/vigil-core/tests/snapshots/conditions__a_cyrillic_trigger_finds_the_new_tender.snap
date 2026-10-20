@@ -1,0 +1,11 @@
+---
+source: crates/vigil-core/tests/conditions.rs
+expression: v
+---
+Verdict {
+    notify: true,
+    reason: Matched,
+    triggered_text: [
+        "      \"title\": \"Постачання електроенергії для комунальних підприємств\",",
+    ],
+}
