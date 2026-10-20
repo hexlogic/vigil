@@ -6,7 +6,7 @@ use vigil_core::{LineDiff, Verdict, Watch};
 use vigil_fetch::FetchOutcome;
 use vigil_store::{SnapshotMeta, StoreError};
 
-use crate::check::{Checker, describe, render, request_for};
+use crate::check::{Checker, describe, render, request_for, validate};
 
 /// What a check of a watch would have stored.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,6 +59,9 @@ impl Checker {
             Ok(conditions) => conditions,
             Err(error) => return Ok(Err(format!("conditions: {}", describe(&error)))),
         };
+        if let Err(message) = validate(watch, self.render_timeout()).await {
+            return Ok(Err(message));
+        }
         let body = match self.fetch(&request_for(watch, false)).await {
             Ok(FetchOutcome::Body(body)) => body,
             Ok(FetchOutcome::NotModified { .. }) => {
