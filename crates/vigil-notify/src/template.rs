@@ -4,7 +4,6 @@
 //! Printing a value escapes it for the channel's markup; the template's own text is left alone.
 
 use std::sync::{Arc, OnceLock};
-use std::time::{Duration, UNIX_EPOCH};
 
 use minijinja::value::{Enumerator, Object, Value};
 use minijinja::{AutoEscape, Environment, Error, State, UndefinedBehavior, escape_formatter};
@@ -45,9 +44,6 @@ pub(crate) struct Vars {
 
 impl Vars {
     pub(crate) fn from_event(event: &Event) -> Self {
-        let millis = u64::try_from(event.checked_at_ms).unwrap_or(0);
-        let checked_at =
-            humantime::format_rfc3339_seconds(UNIX_EPOCH + Duration::from_millis(millis));
         Self {
             watch_id: event.watch_id.clone(),
             watch_name: event.watch_name.clone(),
@@ -57,7 +53,7 @@ impl Vars {
             diff_full: event.diff.clone(),
             current_snapshot: event.snapshot.clone(),
             triggered_text: event.triggered.clone(),
-            checked_at: checked_at.to_string(),
+            checked_at: event.checked_at_rfc3339(),
             vigil_base_url: event.base_url.clone(),
             diff_url: event.diff_url.clone(),
             truncated: false,

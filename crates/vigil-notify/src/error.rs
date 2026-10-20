@@ -47,3 +47,29 @@ impl From<minijinja::Error> for TemplateError {
         Self(error.to_string())
     }
 }
+
+/// Why a notification could not be delivered.
+///
+/// The message never holds the target URL or any credential.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
+pub struct SendError {
+    /// What went wrong.
+    pub message: String,
+    /// Whether trying again later may help: a network problem or a busy or failing server, as
+    /// opposed to a refused request.
+    pub transient: bool,
+    /// How long the server asked to wait before the next attempt.
+    pub retry_after: Option<std::time::Duration>,
+}
+
+impl SendError {
+    /// An error that trying again will not fix.
+    pub(crate) fn permanent(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            transient: false,
+            retry_after: None,
+        }
+    }
+}
