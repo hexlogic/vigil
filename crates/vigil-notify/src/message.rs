@@ -198,9 +198,14 @@ fn fit(
 fn minimal(markup: Markup, limit: Limit, event: &Event) -> Prepared {
     let name = shrink(&event.watch_name, 80, Limit::Chars(80));
     let url = shrink(&event.watch_url, 200, Limit::Chars(200));
+    let headline = if event.is_test {
+        name.clone()
+    } else {
+        format!("{name} changed")
+    };
     let mut body = format!(
         "{}\n{}{}",
-        escape(markup, &format!("{name} changed")),
+        escape(markup, &headline),
         link(markup, &url),
         suffix(markup, &event.diff_url),
     );
@@ -209,7 +214,7 @@ fn minimal(markup: Markup, limit: Limit, event: &Event) -> Prepared {
         body = cut_to(&body, limit.max(), limit).to_owned();
     }
     Prepared {
-        title: format!("{name} changed"),
+        title: headline,
         body,
         truncated: true,
         template_note: None,

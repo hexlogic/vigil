@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::channel::Channel;
 use crate::event::Event;
-use crate::message::Prepared;
+use crate::message::{Prepared, prepare};
 use crate::send::Sender;
 
 /// How a failed delivery is retried.
@@ -40,6 +40,8 @@ pub struct DeliveryReport {
     /// `Ok` once the channel accepted the message; otherwise why the last attempt failed. The
     /// text holds no credentials.
     pub result: Result<(), String>,
+    /// Set when a custom template failed and the built-in one was sent instead.
+    pub note: Option<String>,
 }
 
 /// Deliver `prepared` to `channel`, retrying transient failures as `policy` says.
@@ -62,6 +64,7 @@ pub async fn deliver(
                 return DeliveryReport {
                     attempts,
                     result: Ok(()),
+                    note: prepared.template_note.clone(),
                 };
             }
             Err(error) => error,
@@ -74,6 +77,7 @@ pub async fn deliver(
             return DeliveryReport {
                 attempts,
                 result: Err(error.message),
+                note: prepared.template_note.clone(),
             };
         };
         let delay = error
@@ -92,8 +96,34 @@ pub async fn deliver(
                 return DeliveryReport {
                     attempts,
                     result: Err(format!("{}; gave up retrying: shutting down", error.message)),
+                    note: prepared.template_note.clone(),
                 };
             }
         }
     }
+}
+
+/// Send a test notification to `channel`, with retries, to check that the target works.
+///
+/// `template` is the custom template to try, if the target has one, so that a broken template
+/// shows up here instead of on the first real change; `base_url` is Vigil's own address, if
+/// configured.
+pub async fn send_test(
+    sender: &Sender,
+    channel: &Channel,
+    template: Option<&str>,
+    base_url: Option<&str>,
+    policy: &RetryPolicy,
+) -> DeliveryReport {
+    let event = Event::test(base_url);
+    let prepared = prepare(channel.markup(), channel.limit(), &event, template);
+    deliver(
+        sender,
+        channel,
+        &prepared,
+        &event,
+        policy,
+        &CancellationToken::new(),
+    )
+    .await
 }

@@ -40,6 +40,7 @@ pub(crate) struct Vars {
     pub vigil_base_url: String,
     pub diff_url: String,
     pub truncated: bool,
+    pub is_test: bool,
 }
 
 impl Vars {
@@ -57,6 +58,7 @@ impl Vars {
             vigil_base_url: event.base_url.clone(),
             diff_url: event.diff_url.clone(),
             truncated: false,
+            is_test: event.is_test,
         }
     }
 }
@@ -77,6 +79,7 @@ impl Vars {
             vigil_base_url: self.vigil_base_url.clone(),
             diff_url: self.diff_url.clone(),
             truncated: true,
+            is_test: self.is_test,
         }
     }
 }
@@ -97,6 +100,7 @@ impl Object for Vars {
             "vigil_base_url" => text(&self.vigil_base_url),
             "diff_url" => text(&self.diff_url),
             "truncated" => Some(Value::from(self.truncated)),
+            "is_test" => Some(Value::from(self.is_test)),
             _ => None,
         }
     }
@@ -164,6 +168,15 @@ fn environment() -> &'static Environment<'static> {
     })
 }
 
+/// The title when the template sets none.
+pub(crate) fn default_title(vars: &Vars) -> String {
+    if vars.is_test {
+        vars.watch_name.clone()
+    } else {
+        format!("{} changed", vars.watch_name)
+    }
+}
+
 /// Render `source` for a channel with `markup`.
 pub(crate) fn render(
     markup: Markup,
@@ -178,10 +191,7 @@ pub(crate) fn render(
         .state()
         .lookup("title")
         .filter(|title| !title.is_undefined() && !title.is_none())
-        .map_or_else(
-            || format!("{} changed", vars.watch_name),
-            |title| text_of(&title),
-        );
+        .map_or_else(|| default_title(vars), |title| text_of(&title));
     Ok(Rendered {
         title,
         body: rendered.output().trim().to_owned(),

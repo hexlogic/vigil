@@ -27,6 +27,8 @@ pub struct Event {
     pub base_url: String,
     /// Link to the diff page, or empty if there is no base URL.
     pub diff_url: String,
+    /// Whether this is a test notification rather than a change.
+    pub is_test: bool,
 }
 
 impl Event {
@@ -51,6 +53,32 @@ impl Event {
             base_url: "https://vigil.example.com".into(),
             diff_url: "https://vigil.example.com/watch/0192a3b4-c5d6-7e8f-9012-3456789abcde/diff?from=a&to=b"
                 .into(),
+            is_test: false,
+        }
+    }
+
+    /// The event behind a test notification. It says plainly that it is a test, and links to
+    /// Vigil when its address is known.
+    pub fn test(base_url: Option<&str>) -> Self {
+        let line = "This is a test notification from Vigil. If you can read it, this target works.";
+        let checked_at_ms = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .and_then(|d| i64::try_from(d.as_millis()).ok())
+            .unwrap_or(0);
+        Self {
+            watch_id: "00000000-0000-0000-0000-000000000000".into(),
+            watch_name: "Vigil test notification".into(),
+            watch_url: base_url.unwrap_or_default().into(),
+            added: vec![line.into()],
+            removed: Vec::new(),
+            diff: format!("+{line}\n"),
+            snapshot: format!("{line}\n"),
+            triggered: Vec::new(),
+            checked_at_ms,
+            base_url: base_url.unwrap_or_default().into(),
+            diff_url: String::new(),
+            is_test: true,
         }
     }
 }

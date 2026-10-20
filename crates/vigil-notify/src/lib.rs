@@ -32,7 +32,7 @@ pub use escape::{Markup, code_block, escape, link};
 pub use event::Event;
 pub use message::{Prepared, prepare};
 pub use request::{Endpoints, HttpBody, HttpRequest, http_request};
-pub use retry::{DeliveryReport, RetryPolicy, deliver};
+pub use retry::{DeliveryReport, RetryPolicy, deliver, send_test};
 pub use secret::{Secret, SecretUrl};
 pub use send::{Sender, SenderConfig};
 pub use template::validate_template;
