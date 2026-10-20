@@ -103,3 +103,7 @@ A page that cannot be fetched or processed is not an error of the checker: it is
 ## Command-line behaviour
 
 `vigil watch add` defaults to checking every hour (`--every 1h`) and rejects intervals under one second. `vigil watch remove` is not in PLAN.md but is the only way to undo a mistyped add before the UI exists. Commands accept a full watch id or the last six or more characters of it. `vigil check` exits non-zero when the page could not be checked, so it works in scripts; `vigil diff` with fewer than two snapshots prints "nothing to compare yet" and exits zero. Diffs are colored only when stdout is a terminal and `NO_COLOR` is unset. One-shot commands log at `warn` to stderr so stdout only carries their results; `serve` logs at `info` to stdout. CLI output is plain English in the binary and is not covered by the `locales/*.toml` rule, which is about web templates. `vigil serve` runs the scheduler next to the HTTP server and shares one cancellation token with the server's graceful shutdown.
+
+## Unreadable watch rows
+
+`list_watches` logs and skips a row it cannot interpret instead of failing, because the scheduler and `vigil watch list` both depend on it and a single bad row would otherwise stop all checking. `get_watch` still returns the error for that row.

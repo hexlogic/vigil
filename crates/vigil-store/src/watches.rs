@@ -94,7 +94,11 @@ impl Store {
         }
     }
 
-    /// All watches, oldest first.
+    /// All readable watches, oldest first.
+    ///
+    /// A row that cannot be interpreted (corrupt JSON, a value from another version) is logged
+    /// and skipped, so one bad row cannot stop every other watch from being scheduled or
+    /// listed. [`Store::get_watch`] still reports the error for that row.
     pub async fn list_watches(&self) -> Result<Vec<Watch>, StoreError> {
         let rows = sqlx::query(concat!(
             "SELECT ",
@@ -103,7 +107,17 @@ impl Store {
         ))
         .fetch_all(&self.pool)
         .await?;
-        rows.iter().map(watch_from_row).collect()
+        let mut watches = Vec::with_capacity(rows.len());
+        for row in &rows {
+            match watch_from_row(row) {
+                Ok(watch) => watches.push(watch),
+                Err(error) => {
+                    let id = row.try_get::<String, _>("id").unwrap_or_default();
+                    tracing::warn!(watch = %id, %error, "skipping unreadable watch");
+                }
+            }
+        }
+        Ok(watches)
     }
 
     /// Delete a watch together with its snapshots and check log.
