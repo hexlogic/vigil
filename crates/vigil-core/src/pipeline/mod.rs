@@ -18,7 +18,9 @@ pub use step::{SelectMode, Step};
 use crate::decode::decode;
 use crate::model::Processor;
 use crate::normalize::normalize;
-use crate::process::{MAX_OUTPUT_BYTES, parse_json, process, process_text, render_json};
+use crate::process::{
+    MAX_OUTPUT_BYTES, check_html_depth, parse_json, process, process_text, render_json,
+};
 use html::HtmlStep;
 use json::JsonStep;
 use step::Stage;
@@ -185,6 +187,7 @@ impl Pipeline {
     ) -> Result<String, PipelineError> {
         let decoded = decode(bytes, content_type);
         let processed = if !self.html.is_empty() {
+            check_html_depth(&decoded)?;
             let mut document = html::parse(&decoded);
             for slot in &self.html {
                 document = slot.step.apply(document).map_err(|kind| slot.fail(kind))?;

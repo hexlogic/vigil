@@ -223,3 +223,19 @@ fn html_steps_must_come_before_text_steps() {
         "step 2 (css): html steps must come before text steps"
     );
 }
+
+#[test]
+fn pages_nested_too_deeply_fail_before_any_step_runs() {
+    let body = format!("{}x{}", "<div>".repeat(5_000), "</div>".repeat(5_000));
+    for steps in [
+        r#"[{"type": "css", "selector": "div"}]"#,
+        r#"[{"type": "css", "selector": "div", "mode": "remove"}]"#,
+        r#"[{"type": "xpath", "expr": "//div"}]"#,
+    ] {
+        assert_eq!(
+            error_of(Processor::Text, steps, &body),
+            "the page nests elements deeper than 512 levels",
+            "{steps}"
+        );
+    }
+}
