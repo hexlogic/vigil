@@ -1,6 +1,7 @@
 //! The `feed` processor: RSS, Atom and JSON Feed entries as stable text blocks.
 
 use std::borrow::Cow;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use feed_rs::model::{Entry, Link};
 
@@ -14,7 +15,14 @@ use super::{MAX_OUTPUT_BYTES, ProcessError};
 /// feed leaves out are left out, and entries with none of the three are skipped. Feed-level
 /// metadata (title, build date) is not part of the text, so touching it changes nothing.
 pub(super) fn render_feed(body: &str) -> Result<String, ProcessError> {
-    let feed = feed_rs::parser::parse(declare_utf8(body).as_bytes())?;
+    // The XML parser asserts instead of failing on some malformed input (a second `<?xml?>`
+    // declaration with another encoding, found by fuzzing), so a panic is an unreadable feed.
+    let feed = match catch_unwind(AssertUnwindSafe(|| {
+        feed_rs::parser::parse(declare_utf8(body).as_bytes())
+    })) {
+        Ok(parsed) => parsed?,
+        Err(_) => return Err(ProcessError::FeedUnreadable),
+    };
     let mut entries: Vec<_> = feed.entries.iter().map(Block::of).collect();
     // Newest first. The sort is stable and `None` is the smallest date, so undated entries end
     // up last, in source order.
@@ -83,37 +91,57 @@ fn one_line(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Make the XML declaration say UTF-8.
+/// Make every XML declaration say UTF-8.
 ///
 /// The body has already been decoded to a string, but the parser would still honour an
-/// `encoding="windows-1251"` in the declaration and decode the UTF-8 bytes a second time.
+/// `encoding="windows-1251"` in a declaration and decode the UTF-8 bytes a second time.
+/// All declarations are rewritten, not just the first: a second one that names another
+/// encoding makes the parser panic.
 fn declare_utf8(body: &str) -> Cow<'_, str> {
-    let Some(rest) = body.strip_prefix("<?xml") else {
+    let mut out = String::new();
+    let mut rest = body;
+    let mut changed = false;
+    while let Some(start) = rest.find("<?xml") {
+        let (before, tail) = rest.split_at(start);
+        out.push_str(before);
+        let after_name = &tail["<?xml".len()..];
+        let is_declaration = after_name.starts_with(|c: char| c.is_whitespace() || c == '?');
+        let Some(end) = tail.find("?>").filter(|_| is_declaration) else {
+            // `<?xml-stylesheet ...?>`, or no end: leave it alone and read on.
+            out.push_str("<?xml");
+            rest = after_name;
+            continue;
+        };
+        let (declaration, after) = tail.split_at(end);
+        match with_utf8(declaration) {
+            Some(replaced) => {
+                out.push_str(&replaced);
+                changed = true;
+            }
+            None => out.push_str(declaration),
+        }
+        out.push_str("?>");
+        rest = &after["?>".len()..];
+    }
+    if !changed {
         return Cow::Borrowed(body);
-    };
-    let Some(end) = rest.find("?>") else {
-        return Cow::Borrowed(body);
-    };
-    let declaration = &rest[..end];
-    let Some(at) = declaration.find("encoding") else {
-        return Cow::Borrowed(body);
-    };
-    let after = &declaration[at + "encoding".len()..];
-    let Some(open) = after.find(['"', '\'']) else {
-        return Cow::Borrowed(body);
-    };
-    let Some(quote) = after[open..].chars().next() else {
-        return Cow::Borrowed(body);
-    };
-    let value_start = at + "encoding".len() + open + 1;
-    let Some(len) = declaration[value_start..].find(quote) else {
-        return Cow::Borrowed(body);
-    };
-    Cow::Owned(format!(
-        "<?xml{}utf-8{}{}",
+    }
+    out.push_str(rest);
+    Cow::Owned(out)
+}
+
+/// `declaration` (an XML declaration without its closing `?>`) with its encoding set to
+/// `utf-8`, or `None` if it names none.
+fn with_utf8(declaration: &str) -> Option<String> {
+    let at = declaration.find("encoding")? + "encoding".len();
+    let open = at + declaration[at..].find(['"', '\''])?;
+    let quote = declaration[open..].chars().next()?;
+    let value_start = open + 1;
+    let len = declaration[value_start..].find(quote)?;
+    Some(format!(
+        "{}utf-8{}",
         &declaration[..value_start],
-        &declaration[value_start + len..],
-        &rest[end..]
+        &declaration[value_start + len..]
     ))
 }
 
@@ -132,6 +160,18 @@ mod tests {
             declare_utf8("<?xml encoding='koi8-r' version='1.0'?>x"),
             "<?xml encoding='utf-8' version='1.0'?>x"
         );
+    }
+
+    #[test]
+    fn every_declaration_is_rewritten_and_the_rest_is_kept() {
+        assert_eq!(
+            declare_utf8(
+                "<?xml version=\"1.0\" encoding=\"UTF-16\"?><a/><?xml encoding='cp1251'?><b/>"
+            ),
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?><a/><?xml encoding='utf-8'?><b/>"
+        );
+        let stylesheet = "<?xml-stylesheet href=\"a.xsl\" encoding=\"x\"?><rss/>";
+        assert_eq!(declare_utf8(stylesheet), stylesheet);
     }
 
     #[test]
@@ -155,6 +195,19 @@ mod tests {
                    <item><title>Kept</title></item></channel></rss>";
         assert_eq!(render_feed(rss)?, "Kept\n");
         Ok(())
+    }
+
+    #[test]
+    fn a_second_xml_declaration_does_not_panic_the_parser() {
+        // Found by fuzzing: quick-xml asserts when a later declaration names another encoding.
+        let body = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+                    <?xml version=\"1.0\" encoding=\"windows-1251\"?>\
+                    <rss version=\"2.0\"><channel><title>t</title>\
+                    <item><title>one</title></item></channel></rss>";
+        // Either outcome is fine; what matters is that it comes back.
+        let _ = render_feed(body);
+        let broken = format!("{body}{body}");
+        let _ = render_feed(&broken);
     }
 
     #[test]
