@@ -184,6 +184,7 @@ mod tests {
             pipeline: Vec::new(),
             conditions: Conditions::default(),
             snapshot_retention: 100,
+            notification_template: None,
             created_at: 0,
             updated_at: 0,
             state,

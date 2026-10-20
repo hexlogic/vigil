@@ -15,7 +15,7 @@ const MIN_SUFFIX_LEN: usize = 6;
 macro_rules! watch_columns {
     () => {
         "id, name, url, paused, fetch, schedule, jitter_secs, processor, pipeline, conditions, \
-         snapshot_retention, last_checked_at, last_changed_at, last_error, consecutive_errors, \
+         snapshot_retention, notification_template_override, last_checked_at, last_changed_at, last_error, consecutive_errors, \
          last_hash, etag, last_modified, created_at, updated_at"
     };
 }
@@ -146,6 +146,28 @@ impl Store {
         self.get_watch(id).await
     }
 
+    /// Set or clear a watch's notification template.
+    ///
+    /// Unlike [`Store::update_watch`] this leaves `updated_at`, the remembered validators and
+    /// the failure streak alone: a message template does not change what a check fetches or
+    /// when it runs, so there is nothing to reschedule or re-baseline.
+    pub async fn set_notification_template(
+        &self,
+        id: WatchId,
+        template: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let result =
+            sqlx::query("UPDATE watches SET notification_template_override = ? WHERE id = ?")
+                .bind(template)
+                .bind(id.to_string())
+                .execute(&self.pool)
+                .await?;
+        if result.rows_affected() == 0 {
+            return Err(StoreError::NotFound(format!("watch {id}")));
+        }
+        Ok(())
+    }
+
     /// Load one watch.
     pub async fn get_watch(&self, id: WatchId) -> Result<Watch, StoreError> {
         let row = sqlx::query(concat!(
@@ -261,6 +283,7 @@ fn watch_from_row(row: &SqliteRow) -> Result<Watch, StoreError> {
         pipeline: serde_json::from_str(&row.try_get::<String, _>("pipeline")?)?,
         conditions: serde_json::from_str(&row.try_get::<String, _>("conditions")?)?,
         snapshot_retention: to_u32(row, "snapshot_retention")?,
+        notification_template: row.try_get("notification_template_override")?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
         state: WatchState {

@@ -349,3 +349,38 @@ async fn a_row_with_an_unknown_step_is_skipped_when_listing() -> TestResult {
     ));
     Ok(())
 }
+
+#[tokio::test]
+async fn the_notification_template_is_set_cleared_and_survives_edits() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let watch = store
+        .create_watch(NewWatch::new("https://a.example", Schedule::Interval(60)))
+        .await?;
+    assert_eq!(watch.notification_template, None);
+    store.record_error(watch.id, 1, 1, "boom").await?;
+
+    store
+        .set_notification_template(watch.id, Some("{{ watch_name }} moved"))
+        .await?;
+    let with = store.get_watch(watch.id).await?;
+    assert_eq!(
+        with.notification_template.as_deref(),
+        Some("{{ watch_name }} moved")
+    );
+    // Not a settings edit: the scheduler's edit detection and the failure streak are untouched.
+    assert_eq!(with.updated_at, watch.updated_at);
+    assert_eq!(with.state.consecutive_errors, 1);
+
+    let edited = store.update_watch(watch.id, &NewWatch::from(&with)).await?;
+    assert_eq!(edited.notification_template, with.notification_template);
+
+    store.set_notification_template(watch.id, None).await?;
+    assert_eq!(store.get_watch(watch.id).await?.notification_template, None);
+
+    let ghost = vigil_core::WatchId::from_uuid(uuid::Uuid::now_v7());
+    assert!(matches!(
+        store.set_notification_template(ghost, Some("x")).await,
+        Err(StoreError::NotFound(_))
+    ));
+    Ok(())
+}
