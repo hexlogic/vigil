@@ -200,6 +200,7 @@ impl Checker {
                 etag,
                 last_modified,
                 content: None,
+                settings_version: Some(watch.updated_at),
             }),
             FetchOutcome::Body(body) => {
                 let raw_size = body.body.len() as u64;
@@ -218,6 +219,7 @@ impl Checker {
                     etag: body.etag,
                     last_modified: body.last_modified,
                     content: Some(Content { text, raw_size }),
+                    settings_version: Some(watch.updated_at),
                 })
             }
         }
