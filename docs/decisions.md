@@ -67,6 +67,7 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `humantime` | Parse `--every 5m` and print intervals and RFC 3339 timestamps without pulling in a date library. |
 | `tokio-util` (binary) | Share one `CancellationToken` between the HTTP server and the scheduler. |
 | `wiremock`, `tempfile` (dev, binary) | End-to-end tests that run the real binary against a mock server and a throwaway data directory. |
+| `regex` | Patterns for ignore/trigger/block conditions and the regex steps (PLAN.md section 2). Linear-time matching, so hostile patterns cannot stall a check. |
 
 ## Text processor (Phase 1)
 
@@ -115,3 +116,7 @@ A page that cannot be fetched or processed is not an error of the checker: it is
 ## Request headers
 
 Per-watch headers replace a default of the same name (`User-Agent`, `If-None-Match`, `If-Modified-Since`) instead of being sent beside it. A header that makes the request conditional also makes a 304 acceptable. Errors about an unusable header name the header but never include its value, since values often hold tokens and these messages end up in the check log. Custom headers are still forwarded if a page redirects to another host; restricting that is future work.
+
+## Patterns
+
+A pattern is a plain substring, matched case-insensitively with Unicode simple case folding (so Cyrillic works), or `/regex/flags`. The regex form needs a non-empty body between two slashes and only the flags `i m s x U` after the last slash; anything else is plain text. That makes `//`, `/` and `/foo/g` plain, and `/api/v1/` the regex `api/v1`, which also matches a path with that text in it. Wrap a path in a character class or add a flag (`/\/api\/v1\//i`) to be exact. Empty patterns are rejected because they would match every line. All regexes, including the raw ones in the regex steps, are built with a 1 MiB size limit, and error messages keep only the one-line reason so they fit the check log.

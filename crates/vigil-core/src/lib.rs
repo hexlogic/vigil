@@ -5,6 +5,7 @@ pub mod diff;
 pub mod hash;
 pub mod model;
 pub mod normalize;
+pub mod pattern;
 pub mod process;
 
 pub use diff::{ChangeKind, DiffLine, LineDiff};
