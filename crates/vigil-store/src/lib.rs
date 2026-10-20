@@ -1,10 +1,18 @@
 //! SQLite repository, migrations and snapshot storage.
 
+mod checks;
+mod snapshots;
+mod watches;
+
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
+
+pub use checks::{CHECK_LOG_KEEP, CheckSuccess, Content, RecordOutcome};
+pub use snapshots::{SnapshotId, SnapshotMeta};
+pub use watches::NewWatch;
 
 /// Errors returned by the storage layer.
 #[derive(Debug, thiserror::Error)]
@@ -15,6 +23,24 @@ pub enum StoreError {
     /// Applying the embedded migrations failed.
     #[error("migration error: {0}")]
     Migrate(#[from] sqlx::migrate::MigrateError),
+    /// Stored JSON could not be read or written.
+    #[error("invalid stored json: {0}")]
+    Json(#[from] serde_json::Error),
+    /// Compressing or decompressing snapshot content failed.
+    #[error("snapshot compression error: {0}")]
+    Compression(std::io::Error),
+    /// A row holds a value this version cannot interpret.
+    #[error("corrupt data: {0}")]
+    Corrupt(String),
+    /// No watch or snapshot matches.
+    #[error("not found: {0}")]
+    NotFound(String),
+    /// A watch id suffix matches more than one watch.
+    #[error("{0:?} matches more than one watch; use more characters")]
+    AmbiguousId(String),
+    /// The text is neither a full watch id nor a usable id suffix.
+    #[error("{0:?} is not a watch id: give the full id or at least 6 trailing hex characters")]
+    InvalidId(String),
 }
 
 /// Handle to the Vigil SQLite database. Cheap to clone.
@@ -53,4 +79,13 @@ impl Store {
         sqlx::query("SELECT 1").execute(&self.pool).await?;
         Ok(())
     }
+}
+
+/// Current time as unix milliseconds.
+pub(crate) fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|d| i64::try_from(d.as_millis()).ok())
+        .unwrap_or(0)
 }
