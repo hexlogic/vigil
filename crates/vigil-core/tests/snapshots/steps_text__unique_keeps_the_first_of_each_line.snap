@@ -1,0 +1,9 @@
+---
+source: crates/vigil-core/tests/steps_text.rs
+expression: "status(r#\"[{\"type\": \"unique\"}]\"#)?"
+---
+  disk   usage:   71%
+service api: ok
+	service db:   degraded
+service cache: ok
+service db:   degraded

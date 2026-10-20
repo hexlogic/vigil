@@ -1,0 +1,22 @@
+---
+source: crates/vigil-core/tests/steps_text.rs
+expression: text
+---
+[Home] [World] [Local]
+
+# Top stories
+
+## [Ferry timetable changes from Monday]
+
+The harbor authority confirmed that two evening crossings will be dropped while the east pier is repaired.
+
+By Mira Okafor · 12m ago
+
+## [Grain prices ease for a third week]
+
+Wheat futures slipped again as shipments resumed.
+* Wheat: down 1.2%
+* Barley: down 0.4%
+* Oats: unchanged
+
+© 2026 Harbor Gazette. All rights reserved.

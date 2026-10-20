@@ -1,0 +1,7 @@
+---
+source: crates/vigil-core/tests/steps_text.rs
+expression: text
+---
+disk usage: 71%
+service api: ok
+service db: degraded
