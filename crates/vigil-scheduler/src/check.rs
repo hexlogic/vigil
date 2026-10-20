@@ -1,14 +1,14 @@
 //! One check of one watch: fetch, render through the pipeline, record, judge.
 
-use std::error::Error;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use vigil_core::{CompiledConditions, LineDiff, Pipeline, Verdict, Watch, WatchId};
+use vigil_core::{CompiledConditions, LineDiff, Verdict, Watch, WatchId};
 use vigil_fetch::{FetchOutcome, FetchRequest, Fetcher, host_key};
 use vigil_store::{CheckSuccess, Content, RecordOutcome, SnapshotId, Store, StoreError};
 
 use crate::backoff::{MAX_INTERVAL, default_jitter};
-use crate::render::{SLOTS, run_with_limit};
+use crate::describe::describe;
+use crate::render::{render, validate};
 use crate::scheduler::{Backend, Job, RunOutcome};
 
 /// How long processing one response may take before the check fails.
@@ -278,41 +278,6 @@ pub(crate) fn request_for(watch: &Watch, conditional: bool) -> FetchRequest {
     }
 }
 
-/// Build the watch's pipeline and run it on `body`, on its own thread and under `limit`.
-///
-/// The pipeline is built on that thread too: a jq program or a selector is compiled from
-/// user input, and nothing it contains has to be `Send`.
-pub(crate) async fn render(
-    watch: &Watch,
-    body: Vec<u8>,
-    content_type: Option<String>,
-    limit: Duration,
-) -> Result<String, String> {
-    let (processor, steps) = (watch.processor, watch.pipeline.clone());
-    run_with_limit(&SLOTS, watch.id, limit, move || {
-        let pipeline = Pipeline::new(processor, &steps).map_err(|e| describe(&e))?;
-        pipeline
-            .render(&body, content_type.as_deref())
-            .map_err(|e| describe(&e))
-    })
-    .await
-}
-
-/// Check that the watch's steps build, before anything is fetched: a stored pipeline that no
-/// longer compiles (a hand-edited row, a step from another version) should not cost the
-/// target site a request on every attempt. Also refuses, for the same reason, a watch whose
-/// earlier processing thread is still running.
-pub(crate) async fn validate(watch: &Watch, limit: Duration) -> Result<(), String> {
-    let (processor, steps) = (watch.processor, watch.pipeline.clone());
-    run_with_limit(&SLOTS, watch.id, limit, move || {
-        Pipeline::new(processor, &steps)
-            .map(|_| String::new())
-            .map_err(|e| describe(&e))
-    })
-    .await
-    .map(|_| ())
-}
-
 fn job_from(watch: Watch) -> Job {
     let interval = watch.schedule.interval().clamp(MIN_INTERVAL, MAX_INTERVAL);
     let jitter = if watch.jitter_secs > 0 {
@@ -330,93 +295,10 @@ fn job_from(watch: Watch) -> Job {
     }
 }
 
-/// An error and its causes on one line: `outer: inner: root`.
-///
-/// Many errors already include their cause in their own message (`#[error("...: {0}")]`
-/// with `#[from]`); a cause whose text is already present is not repeated.
-pub(crate) fn describe(error: &dyn Error) -> String {
-    let mut text = error.to_string();
-    let mut source = error.source();
-    while let Some(inner) = source {
-        let inner_text = inner.to_string();
-        if !text.contains(&inner_text) {
-            text.push_str(": ");
-            text.push_str(&inner_text);
-        }
-        source = inner.source();
-    }
-    text
-}
-
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .ok()
         .and_then(|d| i64::try_from(d.as_millis()).ok())
         .unwrap_or(0)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fmt;
-
-    use super::describe;
-
-    #[derive(Debug)]
-    struct Leaf(&'static str);
-    impl fmt::Display for Leaf {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.write_str(self.0)
-        }
-    }
-    impl std::error::Error for Leaf {}
-
-    /// Mentions its cause in its own message, like `#[error("...: {0}")]` with `#[from]`.
-    #[derive(Debug)]
-    struct Embedding(Leaf);
-    impl fmt::Display for Embedding {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "outer failed: {}", self.0)
-        }
-    }
-    impl std::error::Error for Embedding {
-        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-            Some(&self.0)
-        }
-    }
-
-    /// Leaves its cause to the source chain, like `FetchError::Http`.
-    #[derive(Debug)]
-    struct Chained(Leaf);
-    impl fmt::Display for Chained {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.write_str("request failed")
-        }
-    }
-    impl std::error::Error for Chained {
-        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-            Some(&self.0)
-        }
-    }
-
-    #[test]
-    fn a_plain_error_is_just_its_message() {
-        assert_eq!(describe(&Leaf("boom")), "boom");
-    }
-
-    #[test]
-    fn causes_are_appended_when_the_message_leaves_them_out() {
-        assert_eq!(
-            describe(&Chained(Leaf("connection refused"))),
-            "request failed: connection refused"
-        );
-    }
-
-    #[test]
-    fn causes_already_in_the_message_are_not_repeated() {
-        assert_eq!(
-            describe(&Embedding(Leaf("inner boom"))),
-            "outer failed: inner boom"
-        );
-    }
 }

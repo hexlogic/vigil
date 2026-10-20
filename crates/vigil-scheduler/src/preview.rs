@@ -6,7 +6,9 @@ use vigil_core::{LineDiff, Verdict, Watch};
 use vigil_fetch::FetchOutcome;
 use vigil_store::{SnapshotMeta, StoreError};
 
-use crate::check::{Checker, describe, render, request_for, validate};
+use crate::check::{Checker, request_for};
+use crate::describe::describe;
+use crate::render::{render, validate};
 
 /// What a check of a watch would have stored.
 #[derive(Debug, Clone, PartialEq, Eq)]

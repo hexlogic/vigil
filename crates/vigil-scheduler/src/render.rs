@@ -12,7 +12,9 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use tokio::sync::oneshot;
-use vigil_core::WatchId;
+use vigil_core::{Pipeline, Watch, WatchId};
+
+use crate::describe::describe;
 
 /// Stack of the processing thread. Parsing and printing nested documents recurse, so this is
 /// larger than the platform default. It is address space, not memory in use.
@@ -111,6 +113,41 @@ where
         Ok(Err(_)) => Err("processing stopped unexpectedly".to_owned()),
         Err(_) => Err(format!("processing timed out after {}s", limit.as_secs())),
     }
+}
+
+/// Build the watch's pipeline and run it on `body`, on its own thread and under `limit`.
+///
+/// The pipeline is built on that thread too: a jq program or a selector is compiled from
+/// user input, and nothing it contains has to be `Send`.
+pub(crate) async fn render(
+    watch: &Watch,
+    body: Vec<u8>,
+    content_type: Option<String>,
+    limit: Duration,
+) -> Result<String, String> {
+    let (processor, steps) = (watch.processor, watch.pipeline.clone());
+    run_with_limit(&SLOTS, watch.id, limit, move || {
+        let pipeline = Pipeline::new(processor, &steps).map_err(|e| describe(&e))?;
+        pipeline
+            .render(&body, content_type.as_deref())
+            .map_err(|e| describe(&e))
+    })
+    .await
+}
+
+/// Check that the watch's steps build, before anything is fetched: a stored pipeline that no
+/// longer compiles (a hand-edited row, a step from another version) should not cost the
+/// target site a request on every attempt. Also refuses, for the same reason, a watch whose
+/// earlier processing thread is still running.
+pub(crate) async fn validate(watch: &Watch, limit: Duration) -> Result<(), String> {
+    let (processor, steps) = (watch.processor, watch.pipeline.clone());
+    run_with_limit(&SLOTS, watch.id, limit, move || {
+        Pipeline::new(processor, &steps)
+            .map(|_| String::new())
+            .map_err(|e| describe(&e))
+    })
+    .await
+    .map(|_| ())
 }
 
 #[cfg(test)]
