@@ -10,3 +10,18 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+axum = "0.8.9"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+figment = { version = "0.10.19", features = ["toml", "env"] }
+serde = { version = "1.0.229", features = ["derive"] }
+tokio = { version = "1.54.0", features = ["macros", "rt-multi-thread", "signal", "net"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+vigil-store = { version = "0.1.0", path = "../vigil-store" }
+vigil-web = { version = "0.1.0", path = "../vigil-web" }
+
+[dev-dependencies]
+figment = { version = "0.10.19", features = ["test"] }

@@ -38,3 +38,12 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `thiserror` | Typed errors in library crates (CLAUDE.md). |
 | `tempfile` (dev) | Throwaway databases in tests. |
 | `tokio` (dev) | `#[tokio::test]` runtime for async tests. |
+| `tokio` | Async runtime (multi-thread, signals, net) for the server. |
+| `axum` | Web server framework (PLAN.md section 2). |
+| `tower-http` (trace) | Request tracing layer for the HTTP server. |
+| `tracing`, `tracing-subscriber` (env-filter, json) | Structured logging with `RUST_LOG` filtering and optional JSON output. |
+| `clap` (derive, env) | CLI parsing; `--config` also reads `VIGIL_CONFIG`. |
+| `figment` (toml, env) | Layered TOML + `VIGIL_*` env configuration. |
+| `serde` (derive) | Config (de)serialization. |
+| `anyhow` | Error handling in the binary (CLAUDE.md). |
+| `tower` (util, dev), `http-body-util` (dev) | Drive the axum router in-process (`oneshot`) and read response bodies in tests. |
