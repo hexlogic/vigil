@@ -208,6 +208,11 @@ impl Fetcher {
     }
 }
 
+/// Check that `url` is something [`Fetcher::fetch`] would accept: a valid http or https URL.
+pub fn check_url(url: &str) -> Result<(), FetchError> {
+    parse_url(url).map(drop)
+}
+
 /// The `host:port` a URL connects to, lowercased, used to rate-limit per host.
 ///
 /// Falls back to the whole text when it is not a parseable http(s) URL.
@@ -250,7 +255,21 @@ fn map_error(error: reqwest::Error) -> FetchError {
 
 #[cfg(test)]
 mod tests {
-    use super::host_key;
+    use super::{FetchError, check_url, host_key};
+
+    #[test]
+    fn check_url_accepts_http_and_https_only() {
+        assert!(check_url("https://example.com/x").is_ok());
+        assert!(check_url("http://127.0.0.1:8080").is_ok());
+        assert!(matches!(
+            check_url("file:///etc/passwd"),
+            Err(FetchError::UnsupportedScheme(_))
+        ));
+        assert!(matches!(
+            check_url("example.com"),
+            Err(FetchError::InvalidUrl(_))
+        ));
+    }
 
     #[test]
     fn host_key_includes_the_effective_port() {

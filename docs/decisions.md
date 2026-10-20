@@ -64,6 +64,9 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `tokio-util` | `CancellationToken` shared by the scheduler and the HTTP server for graceful shutdown. |
 | `fastrand` | Cheap uniform random numbers for jitter; no need for a cryptographic RNG. |
 | `sqlx` (dev, scheduler) | Tests flip a watch to paused until the API has a pause operation. |
+| `humantime` | Parse `--every 5m` and print intervals and RFC 3339 timestamps without pulling in a date library. |
+| `tokio-util` (binary) | Share one `CancellationToken` between the HTTP server and the scheduler. |
+| `wiremock`, `tempfile` (dev, binary) | End-to-end tests that run the real binary against a mock server and a throwaway data directory. |
 
 ## Text processor (Phase 1)
 
@@ -96,3 +99,7 @@ PLAN.md describes workers pulling from a bounded channel. The scheduler instead 
 ## Check errors
 
 A page that cannot be fetched or processed is not an error of the checker: it is recorded on the watch and in the check log, and `Checker::check` returns it as `CheckResult::Failed`. Only store failures, including a deleted watch, are returned as `Err`. Error messages include the source chain on one line, for example `request failed: error sending request for url (...): client error (Connect): ...`.
+
+## Command-line behaviour
+
+`vigil watch add` defaults to checking every hour (`--every 1h`) and rejects intervals under one second. `vigil watch remove` is not in PLAN.md but is the only way to undo a mistyped add before the UI exists. Commands accept a full watch id or the last six or more characters of it. `vigil check` exits non-zero when the page could not be checked, so it works in scripts; `vigil diff` with fewer than two snapshots prints "nothing to compare yet" and exits zero. Diffs are colored only when stdout is a terminal and `NO_COLOR` is unset. One-shot commands log at `warn` to stderr so stdout only carries their results; `serve` logs at `info` to stdout. CLI output is plain English in the binary and is not covered by the `locales/*.toml` rule, which is about web templates. `vigil serve` runs the scheduler next to the HTTP server and shares one cancellation token with the server's graceful shutdown.
