@@ -1,5 +1,6 @@
 //! One check of one watch: fetch, render through the pipeline, record, judge.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use vigil_core::{CompiledConditions, LineDiff, Verdict, Watch, WatchId};
@@ -8,6 +9,7 @@ use vigil_store::{CheckSuccess, Content, RecordOutcome, SnapshotId, Store, Store
 
 use crate::backoff::{MAX_INTERVAL, default_jitter};
 use crate::describe::describe;
+use crate::notify::{Change, Notifier};
 use crate::render::{render, validate};
 use crate::scheduler::{Backend, Job, RunOutcome};
 
@@ -63,6 +65,7 @@ pub struct Checker {
     store: Store,
     fetcher: Fetcher,
     render_timeout: Duration,
+    notifier: Option<Arc<Notifier>>,
 }
 
 impl Checker {
@@ -72,7 +75,19 @@ impl Checker {
             store,
             fetcher,
             render_timeout: RENDER_TIMEOUT,
+            notifier: None,
         }
+    }
+
+    /// Send notifications for the changes this checker finds.
+    ///
+    /// Delivery runs in the background, after the check has been recorded: it never delays a
+    /// check, holds scheduler slots, or changes a check's result. The caller keeps its own
+    /// handle to wait for deliveries or shut them down.
+    #[must_use]
+    pub fn with_notifier(mut self, notifier: Arc<Notifier>) -> Self {
+        self.notifier = Some(notifier);
+        self
     }
 
     /// Change how long processing one response may take (30 seconds by default).
@@ -105,7 +120,9 @@ impl Checker {
             Ok((mut success, conditions)) => {
                 success.at = at;
                 success.duration_ms = duration_ms;
-                self.record(id, &success, &conditions).await?
+                let result = self.record(id, &success, &conditions).await?;
+                self.notify(&watch, &success, &result).await;
+                result
             }
             Err(message) => {
                 let consecutive_errors = self
@@ -140,6 +157,35 @@ impl Checker {
             duration,
             result,
         })
+    }
+
+    /// Hand a change that the watch's conditions want a notification for to the notifier.
+    async fn notify(&self, watch: &Watch, success: &CheckSuccess, result: &CheckResult) {
+        let (
+            Some(notifier),
+            CheckResult::Changed {
+                previous,
+                current,
+                diff,
+                verdict,
+            },
+        ) = (&self.notifier, result)
+        else {
+            return;
+        };
+        if !verdict.notify {
+            return;
+        }
+        let text = success.content.as_ref().map_or("", |c| c.text.as_str());
+        let change = Change {
+            previous: *previous,
+            current: *current,
+            at: success.at,
+            text,
+            diff,
+            verdict,
+        };
+        notifier.dispatch(watch, change).await;
     }
 
     async fn record(

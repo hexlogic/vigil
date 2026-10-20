@@ -3340,6 +3340,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "libc",
  "pin-project-lite",
  "tokio",
@@ -3746,6 +3747,7 @@ name = "vigil-scheduler"
 version = "0.1.0"
 dependencies = [
  "fastrand",
+ "serde_json",
  "sqlx",
  "tempfile",
  "tokio",
@@ -3753,6 +3755,7 @@ dependencies = [
  "tracing",
  "vigil-core",
  "vigil-fetch",
+ "vigil-notify",
  "vigil-store",
  "wiremock",
 ]
