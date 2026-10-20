@@ -32,6 +32,9 @@ pub enum ProcessError {
     /// The body is not an RSS, Atom or JSON feed.
     #[error("the response is not a valid feed: {0}")]
     Feed(#[from] feed_rs::parser::ParseFeedError),
+    /// The XML parser failed on the feed in a way it cannot report.
+    #[error("the feed could not be read: the XML parser gave up on it")]
+    FeedUnreadable,
     /// The page nests elements deeper than [`MAX_HTML_DEPTH`] levels.
     #[error("the page nests elements deeper than {MAX_HTML_DEPTH} levels")]
     HtmlTooDeep,
