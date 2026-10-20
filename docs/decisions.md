@@ -24,7 +24,7 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 
 ## Migrations run on open
 
-`Store::open` runs the embedded migrations. The pre-migration backup of the SQLite file required by PLAN.md section 12 is deferred until a second migration exists (nothing to protect yet).
+`Store::open` runs the embedded migrations. When an existing database (one that has applied at least one migration) has pending ones, `VACUUM INTO <db>.backup-v<latest applied>-<unix ms>` writes a consistent copy first (a plain file copy of a WAL database can miss the `-wal` file). A fresh or up-to-date database is not backed up, a failed backup aborts the open, and old backups are never deleted. A backup holds everything the database holds, including notification target secrets.
 
 ## Configuration layering
 
