@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use tokio_util::sync::CancellationToken;
-use vigil_core::{Schedule, Watch};
+use vigil_core::{Conditions, Schedule, SelectMode, Step, VerdictReason, Watch};
 use vigil_fetch::{FetchConfig, Fetcher};
 use vigil_scheduler::{Backend, CheckResult, Checker, Scheduler, Settings};
 use vigil_store::{NewWatch, Store, StoreError};
@@ -98,6 +98,7 @@ async fn page_v1_then_v2_yields_two_snapshots_and_a_correct_diff() -> TestResult
         previous,
         current,
         diff,
+        verdict,
     } = third.result
     else {
         return Err(format!("expected a change, got {:?}", third.result).into());
@@ -119,6 +120,9 @@ async fn page_v1_then_v2_yields_two_snapshots_and_a_correct_diff() -> TestResult
         new_text.contains("Widget: $12") && !new_text.contains("$10"),
         "{new_text}"
     );
+
+    // Without conditions every change is worth a notification.
+    assert!(verdict.notify, "{verdict:?}");
 
     // The diff names exactly the changed line.
     assert_eq!(diff.removed().collect::<Vec<_>>(), ["Widget: $10"]);
@@ -452,5 +456,252 @@ async fn intervals_outside_the_supported_range_are_clamped() -> TestResult {
         interval_of(forever.id),
         Some(vigil_scheduler::backoff::MAX_INTERVAL)
     );
+    Ok(())
+}
+
+/// A page with a price and a banner that changes on every visit.
+fn shop(banner: &str, price: &str) -> String {
+    format!(
+        "<html><body><div class=banner>{banner}</div>\
+         <p>Widget</p><span id=price>{price}</span></body></html>"
+    )
+}
+
+async fn add_with(s: &Setup, configure: impl FnOnce(&mut NewWatch)) -> Result<Watch, StoreError> {
+    let mut new = NewWatch::new(s.server.uri(), Schedule::Interval(3600));
+    configure(&mut new);
+    s.store.create_watch(new).await
+}
+
+fn css(selector: &str) -> Step {
+    Step::Css {
+        selector: selector.into(),
+        mode: SelectMode::Include,
+        required: false,
+    }
+}
+
+#[tokio::test]
+async fn a_css_pipeline_ignores_changes_outside_the_selection() -> TestResult {
+    let s = setup().await?;
+    let watch = add_with(&s, |new| new.pipeline = vec![css("#price")]).await?;
+
+    serve_page(&s.server, &shop("Welcome", "$10")).await;
+    assert_eq!(
+        s.checker.check(watch.id).await?.result,
+        CheckResult::Baseline
+    );
+
+    s.server.reset().await;
+    serve_page(&s.server, &shop("Autumn sale!", "$10")).await;
+    assert_eq!(
+        s.checker.check(watch.id).await?.result,
+        CheckResult::Unchanged
+    );
+
+    s.server.reset().await;
+    serve_page(&s.server, &shop("Autumn sale!", "$12")).await;
+    let CheckResult::Changed { diff, .. } = s.checker.check(watch.id).await?.result else {
+        return Err("expected a change".into());
+    };
+    assert_eq!(diff.removed().collect::<Vec<_>>(), ["$10"]);
+    assert_eq!(diff.added().collect::<Vec<_>>(), ["$12"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn something_that_appears_later_is_a_change_not_a_baseline() -> TestResult {
+    let s = setup().await?;
+    let watch = add_with(&s, |new| new.pipeline = vec![css(".sale")]).await?;
+
+    // Nothing selected is a normal, empty result, so the watch is not in error and keeps its
+    // normal schedule while it waits.
+    serve_page(&s.server, "<p>Regular prices</p>").await;
+    assert_eq!(
+        s.checker.check(watch.id).await?.result,
+        CheckResult::Baseline
+    );
+    assert_eq!(
+        s.checker.check(watch.id).await?.result,
+        CheckResult::Unchanged
+    );
+    assert_eq!(
+        s.store.get_watch(watch.id).await?.state.consecutive_errors,
+        0
+    );
+
+    s.server.reset().await;
+    serve_page(
+        &s.server,
+        "<p>Regular prices</p><p class=sale>Half price today</p>",
+    )
+    .await;
+    let CheckResult::Changed { diff, verdict, .. } = s.checker.check(watch.id).await?.result else {
+        return Err("expected a change".into());
+    };
+    assert_eq!(diff.added().collect::<Vec<_>>(), ["Half price today"]);
+    assert!(verdict.notify);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_required_selection_that_finds_nothing_fails_the_check() -> TestResult {
+    let s = setup().await?;
+    let required = Step::Css {
+        selector: ".sale".into(),
+        mode: SelectMode::Include,
+        required: true,
+    };
+    let watch = add_with(&s, |new| new.pipeline = vec![required]).await?;
+    serve_page(&s.server, "<p>Regular prices</p>").await;
+    let CheckResult::Failed {
+        message,
+        consecutive_errors,
+    } = s.checker.check(watch.id).await?.result
+    else {
+        return Err("expected a failure".into());
+    };
+    assert_eq!(message, "step 1 (css): matched nothing");
+    assert_eq!(consecutive_errors, 1);
+    assert!(s.store.list_snapshots(watch.id, 10).await?.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_invalid_pipeline_fails_the_check_naming_the_step() -> TestResult {
+    let s = setup().await?;
+    let broken = Step::RegexReplace {
+        pattern: "(".into(),
+        replacement: "".into(),
+    };
+    let watch = add_with(&s, |new| new.pipeline = vec![css("p"), broken]).await?;
+    serve_page(&s.server, PAGE_V1).await;
+    let CheckResult::Failed { message, .. } = s.checker.check(watch.id).await?.result else {
+        return Err("expected a failure".into());
+    };
+    assert!(
+        message.starts_with("step 2 (regex_replace): invalid regex \"(\": "),
+        "{message}"
+    );
+    assert!(s.store.list_snapshots(watch.id, 10).await?.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn invalid_conditions_fail_the_check_before_anything_is_fetched() -> TestResult {
+    let s = setup().await?;
+    let watch = add_with(&s, |new| {
+        new.conditions = Conditions {
+            trigger_text: vec!["/(/".into()],
+            ..Conditions::default()
+        };
+    })
+    .await?;
+    serve_page(&s.server, PAGE_V1).await;
+    let CheckResult::Failed { message, .. } = s.checker.check(watch.id).await?.result else {
+        return Err("expected a failure".into());
+    };
+    assert!(
+        message.starts_with("conditions: trigger_text[0]: invalid regex"),
+        "{message}"
+    );
+    assert!(
+        s.server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .is_empty()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn trigger_text_decides_whether_a_change_notifies() -> TestResult {
+    let s = setup().await?;
+    let watch = add_with(&s, |new| {
+        new.conditions.trigger_text = vec!["gadget: $15".into()];
+    })
+    .await?;
+    serve_page(&s.server, PAGE_V1).await;
+    s.checker.check(watch.id).await?;
+
+    // The widget price changes: stored, but not what the watch is waiting for.
+    s.server.reset().await;
+    serve_page(&s.server, PAGE_V2).await;
+    let CheckResult::Changed { verdict, .. } = s.checker.check(watch.id).await?.result else {
+        return Err("expected a change".into());
+    };
+    assert!(!verdict.notify);
+    assert_eq!(verdict.reason, VerdictReason::NoTriggerMatched);
+
+    s.server.reset().await;
+    serve_page(&s.server, &PAGE_V2.replace("Gadget: $20", "Gadget: $15")).await;
+    let CheckResult::Changed { verdict, .. } = s.checker.check(watch.id).await?.result else {
+        return Err("expected a change".into());
+    };
+    assert!(verdict.notify);
+    assert_eq!(verdict.triggered_text, ["Gadget: $15"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_blocked_change_is_still_stored_and_logged() -> TestResult {
+    let s = setup().await?;
+    let watch = add_with(&s, |new| new.conditions.block_text = vec!["$12".into()]).await?;
+    serve_page(&s.server, PAGE_V1).await;
+    s.checker.check(watch.id).await?;
+    s.server.reset().await;
+    serve_page(&s.server, PAGE_V2).await;
+    let CheckResult::Changed { verdict, .. } = s.checker.check(watch.id).await?.result else {
+        return Err("expected a change".into());
+    };
+    assert!(!verdict.notify);
+    assert_eq!(verdict.reason, VerdictReason::Blocked("$12".into()));
+    assert_eq!(s.store.list_snapshots(watch.id, 10).await?.len(), 2);
+    assert_eq!(outcomes(&s.store, &watch).await?, ["changed", "changed"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_edited_pipeline_runs_even_when_the_server_answers_304() -> TestResult {
+    let s = setup().await?;
+    // The server answers 304 to a request that carries the validator, 200 to one without.
+    Mock::given(method("GET"))
+        .and(header("if-none-match", "\"v1\""))
+        .respond_with(ResponseTemplate::new(304).insert_header("etag", "\"v1\""))
+        .with_priority(1)
+        .mount(&s.server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("etag", "\"v1\"")
+                .set_body_raw(shop("Welcome", "$10"), "text/html"),
+        )
+        .with_priority(2)
+        .mount(&s.server)
+        .await;
+
+    let watch = add_with(&s, |_| {}).await?;
+    assert_eq!(
+        s.checker.check(watch.id).await?.result,
+        CheckResult::Baseline
+    );
+    assert_eq!(
+        s.checker.check(watch.id).await?.result,
+        CheckResult::Unchanged
+    );
+
+    let mut settings = NewWatch::from(&s.store.get_watch(watch.id).await?);
+    settings.pipeline = vec![css("#price")];
+    s.store.update_watch(watch.id, &settings).await?;
+
+    let CheckResult::Changed { diff, .. } = s.checker.check(watch.id).await?.result else {
+        return Err("the new pipeline did not run".into());
+    };
+    // The page text shrank to the price: the banner and the product name are gone.
+    let removed: Vec<_> = diff.removed().filter(|line| !line.is_empty()).collect();
+    assert_eq!(removed, ["Welcome", "Widget"]);
+    assert_eq!(diff.added_count(), 0);
     Ok(())
 }

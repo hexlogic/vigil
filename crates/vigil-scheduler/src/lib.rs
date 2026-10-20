@@ -3,6 +3,7 @@
 pub mod backoff;
 mod check;
 pub mod limits;
+mod render;
 mod scheduler;
 
 pub use check::{CheckReport, CheckResult, Checker};
