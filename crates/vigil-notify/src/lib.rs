@@ -19,6 +19,7 @@ mod request;
 mod retry;
 mod secret;
 mod send;
+mod smtp;
 mod template;
 mod truncate;
 

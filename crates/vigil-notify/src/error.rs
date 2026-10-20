@@ -72,4 +72,13 @@ impl SendError {
             retry_after: None,
         }
     }
+
+    /// An error that may go away.
+    pub(crate) fn transient(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            transient: true,
+            retry_after: None,
+        }
+    }
 }

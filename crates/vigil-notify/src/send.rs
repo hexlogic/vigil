@@ -10,6 +10,7 @@ use crate::error::SendError;
 use crate::event::Event;
 use crate::message::Prepared;
 use crate::request::{Endpoints, HttpBody, HttpRequest, http_request};
+use crate::smtp::send_email;
 
 /// Longest piece of a service's error reply put in an error message, in characters.
 const MAX_REPLY_CHARS: usize = 200;
@@ -40,6 +41,7 @@ impl Default for SenderConfig {
 pub struct Sender {
     client: reqwest::Client,
     endpoints: Endpoints,
+    timeout: Duration,
 }
 
 impl Sender {
@@ -58,6 +60,7 @@ impl Sender {
         Ok(Self {
             client,
             endpoints: config.endpoints,
+            timeout: config.timeout,
         })
     }
 
@@ -68,9 +71,12 @@ impl Sender {
         prepared: &Prepared,
         event: &Event,
     ) -> Result<(), SendError> {
+        if let Channel::Email(email) = channel {
+            return send_email(email, prepared, self.timeout).await;
+        }
         match http_request(channel, prepared, event, &self.endpoints)? {
             Some(request) => self.post(&request).await,
-            None => Err(SendError::permanent("email delivery is not available yet")),
+            None => Err(SendError::permanent("this channel has nothing to send")),
         }
     }
 
