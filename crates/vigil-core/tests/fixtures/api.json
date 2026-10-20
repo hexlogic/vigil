@@ -1,0 +1,10 @@
+{
+  "status": "ok",
+  "meta": {"per_page": 3, "page": 1, "total": 3, "generated": "2026-10-01T08:30:00Z"},
+  "items": [
+    {"price": {"currency": "EUR", "amount": 19.9}, "name": "Desk lamp", "id": 101, "in_stock": true, "tags": ["home", "light"]},
+    {"tags": [], "id": 102, "name": "Notebook A5", "in_stock": false, "price": {"amount": 3.5, "currency": "EUR"}, "note": null},
+    {"id": 103, "name": "Кавова чашка", "price": {"currency": "UAH", "amount": 250}, "in_stock": true, "tags": ["кухня"]}
+  ],
+  "links": {"self": "/v1/items?page=1", "next": null}
+}
