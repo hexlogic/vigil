@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use reqwest::header::{
     CONTENT_TYPE, ETAG, HeaderMap, HeaderName, HeaderValue, IF_MODIFIED_SINCE, IF_NONE_MATCH,
-    LAST_MODIFIED,
+    LAST_MODIFIED, USER_AGENT,
 };
 use reqwest::redirect::Policy;
 use reqwest::{StatusCode, Url};
@@ -21,7 +21,7 @@ pub enum FetchError {
     /// Only `http` and `https` are fetched, never `file://` or anything else.
     #[error("unsupported url scheme {0:?}: only http and https are fetched")]
     UnsupportedScheme(String),
-    /// A configured request header is not valid HTTP.
+    /// A configured request header is not valid HTTP. Holds the header's name, not its value.
     #[error("invalid request header {0:?}")]
     InvalidHeader(String),
     /// The request exceeded its timeout.
@@ -71,7 +71,8 @@ pub struct FetchRequest {
     pub timeout: Option<Duration>,
     /// Overrides [`FetchConfig::user_agent`].
     pub user_agent: Option<String>,
-    /// Extra headers, applied last.
+    /// Extra headers. A header named like one of the defaults (`User-Agent`, `If-None-Match`,
+    /// `If-Modified-Since`) replaces it.
     pub headers: Vec<(String, String)>,
     /// Sent as `If-None-Match`.
     pub etag: Option<String>,
@@ -146,30 +147,37 @@ impl Fetcher {
     /// validators. A 304 is accepted only in that case.
     pub async fn fetch(&self, request: &FetchRequest) -> Result<FetchOutcome, FetchError> {
         let url = parse_url(&request.url)?;
-        let conditional = request.etag.is_some() || request.last_modified.is_some();
 
-        let mut builder = self
-            .client
-            .get(url)
-            .timeout(request.timeout.unwrap_or(self.config.timeout))
-            .header(
-                reqwest::header::USER_AGENT,
-                request
-                    .user_agent
-                    .as_deref()
-                    .unwrap_or(&self.config.user_agent),
-            );
+        // Defaults first, then configured headers, which replace a default of the same name
+        // instead of being sent next to it.
+        let mut headers = HeaderMap::new();
+        let user_agent = request
+            .user_agent
+            .as_deref()
+            .unwrap_or(&self.config.user_agent);
+        headers.insert(USER_AGENT, header_value("User-Agent", user_agent)?);
         if let Some(etag) = &request.etag {
-            builder = builder.header(IF_NONE_MATCH, header_value(etag)?);
+            headers.insert(IF_NONE_MATCH, header_value("If-None-Match", etag)?);
         }
         if let Some(modified) = &request.last_modified {
-            builder = builder.header(IF_MODIFIED_SINCE, header_value(modified)?);
+            headers.insert(
+                IF_MODIFIED_SINCE,
+                header_value("If-Modified-Since", modified)?,
+            );
         }
         for (name, value) in &request.headers {
             let header_name = HeaderName::from_bytes(name.as_bytes())
                 .map_err(|_| FetchError::InvalidHeader(name.clone()))?;
-            builder = builder.header(header_name, header_value(value)?);
+            headers.insert(header_name, header_value(name, value)?);
         }
+        let conditional =
+            headers.contains_key(IF_NONE_MATCH) || headers.contains_key(IF_MODIFIED_SINCE);
+
+        let builder = self
+            .client
+            .get(url)
+            .timeout(request.timeout.unwrap_or(self.config.timeout))
+            .headers(headers);
 
         let mut response = builder.send().await.map_err(map_error)?;
         let status = response.status();
@@ -240,8 +248,10 @@ fn parse_url(text: &str) -> Result<Url, FetchError> {
     }
 }
 
-fn header_value(text: &str) -> Result<HeaderValue, FetchError> {
-    HeaderValue::from_str(text).map_err(|_| FetchError::InvalidHeader(text.to_owned()))
+/// Parse a header value. On failure only the header's name is reported, never the value,
+/// because values often carry secrets such as tokens.
+fn header_value(name: &str, value: &str) -> Result<HeaderValue, FetchError> {
+    HeaderValue::from_str(value).map_err(|_| FetchError::InvalidHeader(name.to_owned()))
 }
 
 fn header_text(headers: &HeaderMap, name: &HeaderName) -> Option<String> {
