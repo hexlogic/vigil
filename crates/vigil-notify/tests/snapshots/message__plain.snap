@@ -1,0 +1,17 @@
+---
+source: crates/vigil-notify/tests/message.rs
+expression: "format!(\"title: {}\\n---\\n{}\", out.title, out.body)"
+---
+title: Example product page changed
+---
+https://example.com/products/widget
+
+Added:
+Widget: $12
+
+Removed:
+Widget: $10
+
+Matched: Widget: $12
+
+Diff: https://vigil.example.com/watch/0192a3b4-c5d6-7e8f-9012-3456789abcde/diff?from=a&to=b

@@ -5,14 +5,28 @@
 //! strictly and explaining what is wrong without repeating the URL, which usually holds
 //! credentials. Every credential is a [`Secret`] whose `Debug` and `Display` print `***`, and
 //! [`Channel::redacted`] is the form that may be shown or logged.
+//!
+//! A change becomes a message in two steps: [`Event`] holds the facts, and [`prepare`] renders
+//! them with a template, escaped for the channel's [`Markup`] and cut to its [`Limit`].
 
+mod builtin;
 mod channel;
 mod error;
+mod escape;
+mod event;
+mod message;
 mod secret;
+mod template;
+mod truncate;
 
 pub use channel::{
     Channel, Discord, Email, Gotify, HttpAuth, Ntfy, SCHEMES, Slack, SmtpTls, Telegram, Webhook,
     WebhookFormat,
 };
-pub use error::ParseError;
+pub use error::{ParseError, TemplateError};
+pub use escape::{Markup, code_block, escape, link};
+pub use event::Event;
+pub use message::{Prepared, prepare};
 pub use secret::{Secret, SecretUrl};
+pub use template::validate_template;
+pub use truncate::Limit;
