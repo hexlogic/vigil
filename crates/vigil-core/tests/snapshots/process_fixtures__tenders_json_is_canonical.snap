@@ -1,0 +1,70 @@
+---
+source: crates/vigil-core/tests/process_fixtures.rs
+expression: "json_fixture(include_str!(\"fixtures/tenders.json\"))?"
+---
+{
+  "data": [
+    {
+      "dateModified": "2026-10-12T09:14:03+03:00",
+      "id": "UA-2026-10-12-000123-a",
+      "procuringEntity": {
+        "name": "КП «Міські дороги»",
+        "region": "Львівська область"
+      },
+      "status": "active.tendering",
+      "tenderPeriod": {
+        "endDate": "2026-10-22T18:00:00+03:00",
+        "startDate": "2026-10-12T09:00:00+03:00"
+      },
+      "title": "Закупівля паливно-мастильних матеріалів",
+      "value": {
+        "amount": 1250000.0,
+        "currency": "UAH",
+        "valueAddedTaxIncluded": true
+      }
+    },
+    {
+      "dateModified": "2026-10-11T16:40:51+03:00",
+      "id": "UA-2026-10-11-000456-b",
+      "procuringEntity": {
+        "name": "Управління будівництва",
+        "region": "Київ"
+      },
+      "status": "active.tendering",
+      "tenderPeriod": {
+        "endDate": "2026-10-25T12:00:00+03:00",
+        "startDate": "2026-10-11T12:00:00+03:00"
+      },
+      "title": "Послуги з поточного ремонту дорожнього покриття",
+      "value": {
+        "amount": 8400000.5,
+        "currency": "UAH",
+        "valueAddedTaxIncluded": true
+      }
+    },
+    {
+      "dateModified": "2026-10-10T10:02:11+03:00",
+      "id": "UA-2026-10-09-000789-c",
+      "procuringEntity": {
+        "name": "Відділ освіти",
+        "region": "Харківська область"
+      },
+      "status": "complete",
+      "tenderPeriod": {
+        "endDate": "2026-10-09T18:00:00+03:00",
+        "startDate": "2026-10-01T09:00:00+03:00"
+      },
+      "title": "Канцелярське приладдя для шкіл",
+      "value": {
+        "amount": 96000,
+        "currency": "UAH",
+        "valueAddedTaxIncluded": false
+      }
+    }
+  ],
+  "next_page": {
+    "offset": "1760256000.123",
+    "path": "/api/2.5/tenders?offset=1760256000.123",
+    "uri": "https://procurement.example/api/2.5/tenders?offset=1760256000.123"
+  }
+}

@@ -43,6 +43,14 @@ async fn serve_page(server: &MockServer, body: &str) {
         .await;
 }
 
+async fn serve_json(server: &MockServer, body: &str) {
+    server.reset().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/json"))
+        .mount(server)
+        .await;
+}
+
 async fn add_watch(setup: &Setup, interval: u64) -> Result<Watch, StoreError> {
     let schedule = Schedule::Interval(interval);
     setup
@@ -269,12 +277,64 @@ async fn unfinished_processors_fail_the_check_clearly() -> TestResult {
     let s = setup().await?;
     serve_page(&s.server, "{}").await;
     let mut new = NewWatch::new(s.server.uri(), Schedule::Interval(3600));
+    new.processor = vigil_core::Processor::Feed;
+    let watch = s.store.create_watch(new).await?;
+    let CheckResult::Failed { message, .. } = s.checker.check(watch.id).await?.result else {
+        return Err("expected a failure".into());
+    };
+    assert_eq!(message, "the feed processor is not supported yet");
+    Ok(())
+}
+
+#[tokio::test]
+async fn json_watches_store_canonical_json_and_ignore_key_order() -> TestResult {
+    let s = setup().await?;
+    let mut new = NewWatch::new(s.server.uri(), Schedule::Interval(3600));
+    new.processor = vigil_core::Processor::Json;
+    let watch = s.store.create_watch(new).await?;
+
+    serve_json(&s.server, r#"{"price": 10, "name": "Widget"}"#).await;
+    assert_eq!(
+        s.checker.check(watch.id).await?.result,
+        CheckResult::Baseline
+    );
+    let snapshots = s.store.list_snapshots(watch.id, 10).await?;
+    assert_eq!(
+        s.store.snapshot_content(snapshots[0].id).await?,
+        "{\n  \"name\": \"Widget\",\n  \"price\": 10\n}\n"
+    );
+
+    // The same data in another key order and layout is not a change.
+    serve_json(&s.server, "{\"name\":\"Widget\",\n\"price\":10}").await;
+    assert_eq!(
+        s.checker.check(watch.id).await?.result,
+        CheckResult::Unchanged
+    );
+
+    // A changed value is, and the diff names only that line.
+    serve_json(&s.server, r#"{"name": "Widget", "price": 12}"#).await;
+    let CheckResult::Changed { diff, .. } = s.checker.check(watch.id).await?.result else {
+        return Err("expected a change".into());
+    };
+    assert_eq!(diff.removed().collect::<Vec<_>>(), ["  \"price\": 10"]);
+    assert_eq!(diff.added().collect::<Vec<_>>(), ["  \"price\": 12"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_json_watch_on_an_html_page_fails_the_check_clearly() -> TestResult {
+    let s = setup().await?;
+    serve_page(&s.server, PAGE_V1).await;
+    let mut new = NewWatch::new(s.server.uri(), Schedule::Interval(3600));
     new.processor = vigil_core::Processor::Json;
     let watch = s.store.create_watch(new).await?;
     let CheckResult::Failed { message, .. } = s.checker.check(watch.id).await?.result else {
         return Err("expected a failure".into());
     };
-    assert_eq!(message, "the json processor is not supported yet");
+    assert!(
+        message.starts_with("the response is not valid JSON: "),
+        "{message}"
+    );
     Ok(())
 }
 

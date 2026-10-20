@@ -68,6 +68,7 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `tokio-util` (binary) | Share one `CancellationToken` between the HTTP server and the scheduler. |
 | `wiremock`, `tempfile` (dev, binary) | End-to-end tests that run the real binary against a mock server and a throwaway data directory. |
 | `regex` | Patterns for ignore/trigger/block conditions and the regex steps (PLAN.md section 2). Linear-time matching, so hostile patterns cannot stall a check. |
+| `serde_json` (core) | Parse JSON bodies for the `json` processor and the JSON steps, and (de)serialize pipeline steps in the store. Already a dependency of the store. |
 
 ## Text processor (Phase 1)
 
@@ -120,3 +121,7 @@ Per-watch headers replace a default of the same name (`User-Agent`, `If-None-Mat
 ## Patterns
 
 A pattern is a plain substring, matched case-insensitively with Unicode simple case folding (so Cyrillic works), or `/regex/flags`. The regex form needs a non-empty body between two slashes and only the flags `i m s x U` after the last slash; anything else is plain text. That makes `//`, `/` and `/foo/g` plain, and `/api/v1/` the regex `api/v1`, which also matches a path with that text in it. Wrap a path in a character class or add a flag (`/\/api\/v1\//i`) to be exact. Empty patterns are rejected because they would match every line. All regexes, including the raw ones in the regex steps, are built with a 1 MiB size limit, and error messages keep only the one-line reason so they fit the check log.
+
+## JSON processor
+
+The `json` processor parses the body (any content type) and prints it with two-space indentation, object keys sorted at every level, arrays in their original order and one trailing newline, so key order and formatting never register as changes. Keys are sorted by our own printer rather than by the map type, because `serde_json` keeps insertion order as soon as any crate in the build enables `preserve_order`. Numbers go through `serde_json`: integers that fit 64 bits stay exact, larger ones become floating point and lose precision, and `1.0` stays `1.0`. Nesting is limited to 128 levels (the parser's own limit, applied to values built by later steps too) and any step's output to 16 MiB, so a small input cannot make a check use unbounded memory. A body that is not JSON fails the check with the parser's message.

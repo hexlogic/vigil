@@ -1,0 +1,55 @@
+---
+source: crates/vigil-core/tests/process_fixtures.rs
+expression: "json_fixture(include_str!(\"fixtures/api.json\"))?"
+---
+{
+  "items": [
+    {
+      "id": 101,
+      "in_stock": true,
+      "name": "Desk lamp",
+      "price": {
+        "amount": 19.9,
+        "currency": "EUR"
+      },
+      "tags": [
+        "home",
+        "light"
+      ]
+    },
+    {
+      "id": 102,
+      "in_stock": false,
+      "name": "Notebook A5",
+      "note": null,
+      "price": {
+        "amount": 3.5,
+        "currency": "EUR"
+      },
+      "tags": []
+    },
+    {
+      "id": 103,
+      "in_stock": true,
+      "name": "Кавова чашка",
+      "price": {
+        "amount": 250,
+        "currency": "UAH"
+      },
+      "tags": [
+        "кухня"
+      ]
+    }
+  ],
+  "links": {
+    "next": null,
+    "self": "/v1/items?page=1"
+  },
+  "meta": {
+    "generated": "2026-10-01T08:30:00Z",
+    "page": 1,
+    "per_page": 3,
+    "total": 3
+  },
+  "status": "ok"
+}
