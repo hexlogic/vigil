@@ -1,4 +1,4 @@
-//! `vigil watch add|list|remove`.
+//! `vigil watch add|edit|show|list|remove`.
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -6,7 +6,9 @@ use anyhow::Context;
 use vigil_core::{Schedule, Watch};
 use vigil_store::NewWatch;
 
+use super::settings::apply;
 use super::{open_store, resolve};
+use crate::cli::ContentArgs;
 use crate::config::Config;
 use crate::format::{ago, render_table};
 
@@ -16,13 +18,15 @@ pub async fn add(
     url: &str,
     every: Duration,
     name: Option<String>,
+    content: &ContentArgs,
 ) -> anyhow::Result<()> {
     vigil_fetch::check_url(url).with_context(|| format!("cannot watch {url}"))?;
-    let store = open_store(config).await?;
     let mut new = NewWatch::new(url, Schedule::Interval(every.as_secs()));
     if let Some(name) = name {
         new.name = name;
     }
+    apply(&mut new, content)?;
+    let store = open_store(config).await?;
     let watch = store.create_watch(new).await?;
     println!(
         "added {} {} (every {})",
@@ -31,6 +35,60 @@ pub async fn add(
         humantime::format_duration(Duration::from_secs(every.as_secs()))
     );
     Ok(())
+}
+
+/// Change a watch. Only what is given changes; the next check compares its new output with
+/// the old snapshot, so it may report a change.
+pub async fn edit(
+    config: &Config,
+    id: &str,
+    every: Option<Duration>,
+    name: Option<String>,
+    content: &ContentArgs,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        every.is_some() || name.is_some() || !content.is_empty(),
+        "nothing to change: pass --every, --name, --processor, --pipeline or --conditions"
+    );
+    let store = open_store(config).await?;
+    let id = resolve(&store, id).await?;
+    let watch = store.get_watch(id).await?;
+    let mut settings = NewWatch::from(&watch);
+    if let Some(every) = every {
+        settings.schedule = Schedule::Interval(every.as_secs());
+    }
+    if let Some(name) = name {
+        settings.name = name;
+    }
+    apply(&mut settings, content)?;
+    let watch = store.update_watch(id, &settings).await?;
+    println!("updated {} {}", watch.id, watch.url);
+    Ok(())
+}
+
+/// Print a watch's settings as JSON, in the shape the steps and conditions are stored in.
+pub async fn show(config: &Config, id: &str) -> anyhow::Result<()> {
+    let store = open_store(config).await?;
+    let id = resolve(&store, id).await?;
+    let watch = store.get_watch(id).await?;
+    println!("{}", serde_json::to_string_pretty(&settings_json(&watch))?);
+    Ok(())
+}
+
+fn settings_json(watch: &Watch) -> serde_json::Value {
+    serde_json::json!({
+        "id": watch.id,
+        "name": watch.name,
+        "url": watch.url,
+        "paused": watch.paused,
+        "schedule": watch.schedule,
+        "jitter_secs": watch.jitter_secs,
+        "fetch": watch.fetch,
+        "processor": watch.processor,
+        "pipeline": watch.pipeline,
+        "conditions": watch.conditions,
+        "snapshot_retention": watch.snapshot_retention,
+    })
 }
 
 /// Print all watches as a table.
@@ -130,6 +188,19 @@ mod tests {
             updated_at: 0,
             state,
         }
+    }
+
+    #[test]
+    fn show_prints_the_stored_shapes() -> Result<(), serde_json::Error> {
+        let mut w = watch("w", WatchState::default(), false);
+        w.pipeline = vec![vigil_core::Step::Trim {}];
+        let shown = settings_json(&w);
+        assert_eq!(shown["schedule"], serde_json::json!({"interval": 300}));
+        assert_eq!(shown["processor"], "text");
+        assert_eq!(shown["pipeline"], serde_json::json!([{"type": "trim"}]));
+        assert_eq!(shown["conditions"]["notify_on"]["added"], true);
+        assert_eq!(shown["id"], "00000000-0000-0000-0000-000000000001");
+        Ok(())
     }
 
     #[test]

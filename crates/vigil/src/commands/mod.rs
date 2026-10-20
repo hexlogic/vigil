@@ -2,6 +2,7 @@
 
 pub mod check;
 pub mod diff;
+pub mod settings;
 pub mod watch;
 
 use anyhow::Context;

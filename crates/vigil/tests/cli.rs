@@ -249,3 +249,228 @@ async fn proxy_environment_variables_are_ignored() -> TestResult {
     assert!(run.stdout.contains("baseline stored"), "{}", run.stdout);
     Ok(())
 }
+
+/// A page with a price and a banner that changes on every visit.
+fn shop(banner: &str, price: &str) -> String {
+    format!(
+        "<html><body><div class=banner>{banner}</div><p>Widget</p>\
+         <span id=price>{price}</span></body></html>"
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_add_takes_a_pipeline_and_conditions_and_shows_them_back() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let server = MockServer::start().await;
+    serve_page(&server, &shop("Welcome", "$10")).await;
+
+    let rules = dir.path().join("rules.json");
+    std::fs::write(
+        &rules,
+        r#"{"trigger_text": ["$12"], "notify_on": {"removed": false}}"#,
+    )?;
+    let rules_arg = format!("@{}", rules.display());
+    let run = vigil(
+        dir.path(),
+        &[
+            "watch",
+            "add",
+            &server.uri(),
+            "--pipeline",
+            r##"[{"type": "css", "selector": "#price"}, {"type": "trim"}]"##,
+            "--conditions",
+            &rules_arg,
+        ],
+    )
+    .await?;
+    assert!(run.ok, "{}", run.stderr);
+    let id = run
+        .stdout
+        .split_whitespace()
+        .nth(1)
+        .ok_or("no id")?
+        .to_owned();
+
+    let shown = vigil(dir.path(), &["watch", "show", &id]).await?;
+    assert!(shown.ok, "{}", shown.stderr);
+    let json: serde_json::Value = serde_json::from_str(&shown.stdout)?;
+    assert_eq!(json["id"], id.as_str());
+    assert_eq!(json["processor"], "text");
+    assert_eq!(
+        json["pipeline"],
+        serde_json::json!([
+            {"type": "css", "selector": "#price", "mode": "include"},
+            {"type": "trim"}
+        ])
+    );
+    assert_eq!(
+        json["conditions"]["trigger_text"],
+        serde_json::json!(["$12"])
+    );
+    assert_eq!(json["conditions"]["notify_on"]["removed"], false);
+
+    // The pipeline is in effect: only the price is compared.
+    assert!(vigil(dir.path(), &["check", &id]).await?.ok);
+    server.reset().await;
+    serve_page(&server, &shop("Autumn sale!", "$10")).await;
+    let run = vigil(dir.path(), &["check", &id]).await?;
+    assert!(run.stdout.contains("unchanged"), "{}", run.stdout);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_invalid_pipeline_or_condition_is_refused_before_anything_is_saved() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let url = "https://example.com";
+    let cases: [(&[&str], &str); 5] = [
+        (&["--pipeline", "not json"], "invalid --pipeline"),
+        (
+            &["--pipeline", r#"[{"type": "nope"}]"#],
+            "unknown variant `nope`",
+        ),
+        (
+            &["--pipeline", r#"[{"type": "css", "selector": "div["}]"#],
+            "step 1 (css): invalid selector",
+        ),
+        (
+            &["--conditions", r#"{"block_text": ["/(/"]}"#],
+            "block_text[0]",
+        ),
+        (
+            &[
+                "--processor",
+                "json",
+                "--pipeline",
+                r#"[{"type": "css", "selector": "p"}]"#,
+            ],
+            "html steps need the text processor",
+        ),
+    ];
+    for (options, expected) in cases {
+        let mut args = vec!["watch", "add", url];
+        args.extend_from_slice(options);
+        let run = vigil(dir.path(), &args).await?;
+        assert!(!run.ok, "{options:?} was accepted");
+        assert!(run.stderr.contains(expected), "{options:?}: {}", run.stderr);
+    }
+    let list = vigil(dir.path(), &["watch", "list"]).await?;
+    assert!(list.stdout.contains("no watches yet"), "{}", list.stdout);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_edit_changes_the_pipeline_and_keeps_the_rest() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let server = MockServer::start().await;
+    serve_page(&server, &shop("Welcome", "$10")).await;
+    let id = add_watch(dir.path(), &server.uri()).await?;
+    assert!(vigil(dir.path(), &["check", &id]).await?.ok);
+
+    let run = vigil(
+        dir.path(),
+        &[
+            "watch",
+            "edit",
+            &id,
+            "--pipeline",
+            r##"[{"type": "css", "selector": "#price"}]"##,
+        ],
+    )
+    .await?;
+    assert!(run.ok, "{}", run.stderr);
+    assert!(
+        run.stdout.starts_with(&format!("updated {id}")),
+        "{}",
+        run.stdout
+    );
+
+    let shown = vigil(dir.path(), &["watch", "show", &id]).await?;
+    let json: serde_json::Value = serde_json::from_str(&shown.stdout)?;
+    assert_eq!(json["pipeline"][0]["selector"], "#price");
+    assert_eq!(json["schedule"], serde_json::json!({"interval": 300}));
+
+    // The next check compares the new output with the old snapshot, so it reports a change
+    // even though the page is the same.
+    let run = vigil(dir.path(), &["check", &id]).await?;
+    assert!(run.stdout.contains("changed"), "{}", run.stdout);
+
+    let run = vigil(
+        dir.path(),
+        &["watch", "edit", &id, "--every", "2h", "--name", "Shop"],
+    )
+    .await?;
+    assert!(run.ok, "{}", run.stderr);
+    let list = vigil(dir.path(), &["watch", "list"]).await?;
+    assert!(
+        list.stdout.contains("2h") && list.stdout.contains("Shop"),
+        "{}",
+        list.stdout
+    );
+    let shown = vigil(dir.path(), &["watch", "show", &id]).await?;
+    let json: serde_json::Value = serde_json::from_str(&shown.stdout)?;
+    assert_eq!(json["pipeline"][0]["selector"], "#price");
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn watch_edit_refuses_nothing_to_change_and_invalid_results() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let server = MockServer::start().await;
+    serve_page(&server, V1).await;
+    let id = add_watch(dir.path(), &server.uri()).await?;
+    assert!(
+        vigil(
+            dir.path(),
+            &[
+                "watch",
+                "edit",
+                &id,
+                "--pipeline",
+                r#"[{"type": "css", "selector": "p"}]"#
+            ]
+        )
+        .await?
+        .ok
+    );
+
+    let run = vigil(dir.path(), &["watch", "edit", &id]).await?;
+    assert!(!run.ok);
+    assert!(run.stderr.contains("nothing to change"), "{}", run.stderr);
+
+    // Changing the processor alone would leave steps that do not fit it.
+    let run = vigil(dir.path(), &["watch", "edit", &id, "--processor", "json"]).await?;
+    assert!(!run.ok);
+    assert!(
+        run.stderr.contains("html steps need the text processor"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr.contains("--pipeline ('[]' removes them)"),
+        "{}",
+        run.stderr
+    );
+    // Nothing was changed by the refused edit.
+    let shown = vigil(dir.path(), &["watch", "show", &id]).await?;
+    let json: serde_json::Value = serde_json::from_str(&shown.stdout)?;
+    assert_eq!(json["processor"], "text");
+
+    let run = vigil(
+        dir.path(),
+        &[
+            "watch",
+            "edit",
+            &id,
+            "--processor",
+            "json",
+            "--pipeline",
+            "[]",
+        ],
+    )
+    .await?;
+    assert!(run.ok, "{}", run.stderr);
+
+    let run = vigil(dir.path(), &["watch", "edit", "zzzzzz", "--name", "x"]).await?;
+    assert!(!run.ok);
+    Ok(())
+}

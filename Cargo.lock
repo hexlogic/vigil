@@ -3595,6 +3595,7 @@ dependencies = [
  "figment",
  "humantime",
  "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tokio-util",
