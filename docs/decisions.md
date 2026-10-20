@@ -60,6 +60,10 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `reqwest` (rustls, http2, gzip, brotli; default features off) | HTTP client (PLAN.md section 2). Default features are off so native-tls/OpenSSL never enters the tree. |
 | `wiremock` (dev) | Mock HTTP server for fetcher and end-to-end tests (PLAN.md section 2). |
 | `flate2` (dev) | Build gzip bodies to test transparent decompression and the decompressed size cap. |
+| `tokio` (rt, sync, time, macros) in the scheduler | Timers, semaphores, `JoinSet` and `select!` for the scheduler loop. |
+| `tokio-util` | `CancellationToken` shared by the scheduler and the HTTP server for graceful shutdown. |
+| `fastrand` | Cheap uniform random numbers for jitter; no need for a cryptographic RNG. |
+| `sqlx` (dev, scheduler) | Tests flip a watch to paused until the API has a pause operation. |
 
 ## Text processor (Phase 1)
 
@@ -84,3 +88,11 @@ Phase 1 adds about a dozen queries. They stay runtime-checked `sqlx::query(...)`
 ## Fetcher behaviour
 
 TLS is rustls through reqwest's `rustls` feature, which uses the aws-lc-rs crypto provider and the platform certificate verifier; `cargo tree` shows no OpenSSL or native-tls. Revisit armv7 musl builds in Phase 6. Redirects stop after 10 hops, cookies and system proxies are off (proxy support comes later), and only `http`/`https` URLs are accepted, so `file://` is never fetched. The size cap applies to the decompressed body, checked chunk by chunk, so a small gzip bomb cannot slip past a `Content-Length` check. `If-None-Match`/`If-Modified-Since` are sent only when the watch has stored validators, and a 304 is accepted only in that case; an unsolicited 304 is reported as an error. Bodies are returned as `Vec<u8>` rather than `bytes::Bytes` to avoid a direct dependency.
+
+## Scheduler design
+
+PLAN.md describes workers pulling from a bounded channel. The scheduler instead spawns one task per due check into a `JoinSet`. Each task first takes its host slot and then a global slot, so a check queued behind a busy host never holds a global slot, which a fixed worker pool would not avoid without head-of-line blocking. One task owns a min-heap of `(due, watch)`; heap items that no longer match their entry are skipped when popped. The scheduler talks to its watches and checks through the `Backend` trait, which lets tests drive it with a fake and a paused clock, and the real `Checker` implements it. The watch list is reloaded every 30 seconds, so adds, removals and pauses take effect without a signal. Delays are `interval * 2^errors` capped at 6 hours and never below the interval, plus random jitter, either the watch's `jitter_secs` or a tenth of the interval up to 60 seconds. Intervals under one second are raised to one second. On shutdown the scheduler stops starting checks and waits up to 30 seconds for running ones.
+
+## Check errors
+
+A page that cannot be fetched or processed is not an error of the checker: it is recorded on the watch and in the check log, and `Checker::check` returns it as `CheckResult::Failed`. Only store failures, including a deleted watch, are returned as `Err`. Error messages include the source chain on one line, for example `request failed: error sending request for url (...): client error (Connect): ...`.

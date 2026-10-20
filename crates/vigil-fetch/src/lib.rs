@@ -36,8 +36,8 @@ pub enum FetchError {
     /// The server answered with a status other than 2xx or a requested 304.
     #[error("server answered http {0}")]
     Status(u16),
-    /// Connecting, TLS, redirects or reading the body failed.
-    #[error("request failed: {0}")]
+    /// Connecting, TLS, redirects or reading the body failed. The cause is in the source chain.
+    #[error("request failed")]
     Http(#[source] reqwest::Error),
 }
 
@@ -208,6 +208,22 @@ impl Fetcher {
     }
 }
 
+/// The `host:port` a URL connects to, lowercased, used to rate-limit per host.
+///
+/// Falls back to the whole text when it is not a parseable http(s) URL.
+pub fn host_key(url: &str) -> String {
+    Url::parse(url)
+        .ok()
+        .and_then(|u| {
+            let host = u.host_str()?.to_ascii_lowercase();
+            Some(match u.port_or_known_default() {
+                Some(port) => format!("{host}:{port}"),
+                None => host,
+            })
+        })
+        .unwrap_or_else(|| url.to_owned())
+}
+
 fn parse_url(text: &str) -> Result<Url, FetchError> {
     let url = Url::parse(text).map_err(|_| FetchError::InvalidUrl(text.to_owned()))?;
     match url.scheme() {
@@ -229,5 +245,22 @@ fn map_error(error: reqwest::Error) -> FetchError {
         FetchError::Timeout
     } else {
         FetchError::Http(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::host_key;
+
+    #[test]
+    fn host_key_includes_the_effective_port() {
+        assert_eq!(host_key("https://Example.com/a?b=1"), "example.com:443");
+        assert_eq!(host_key("http://example.com/"), "example.com:80");
+        assert_eq!(host_key("http://example.com:8080/x"), "example.com:8080");
+    }
+
+    #[test]
+    fn host_key_falls_back_to_the_input() {
+        assert_eq!(host_key("not a url"), "not a url");
     }
 }

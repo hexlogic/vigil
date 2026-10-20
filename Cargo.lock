@@ -2994,6 +2994,19 @@ version = "0.1.0"
 [[package]]
 name = "vigil-scheduler"
 version = "0.1.0"
+dependencies = [
+ "fastrand",
+ "sqlx",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "vigil-core",
+ "vigil-fetch",
+ "vigil-store",
+ "wiremock",
+]
 
 [[package]]
 name = "vigil-store"

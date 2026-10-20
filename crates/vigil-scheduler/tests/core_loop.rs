@@ -1,0 +1,303 @@
+//! The Phase 1 acceptance test: a real checker, store and fetcher against a mock web server.
+
+use std::time::Duration;
+
+use tokio_util::sync::CancellationToken;
+use vigil_core::{Schedule, Watch};
+use vigil_fetch::{FetchConfig, Fetcher};
+use vigil_scheduler::{Backend, CheckResult, Checker, Scheduler, Settings};
+use vigil_store::{NewWatch, Store, StoreError};
+use wiremock::matchers::{header, method};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+const PAGE_V1: &str =
+    "<html><body><h1>Price list</h1><p>Widget: $10</p><p>Gadget: $20</p></body></html>";
+const PAGE_V2: &str =
+    "<html><body><h1>Price list</h1><p>Widget: $12</p><p>Gadget: $20</p></body></html>";
+
+struct Setup {
+    _dir: tempfile::TempDir,
+    store: Store,
+    checker: Checker,
+    server: MockServer,
+}
+
+async fn setup() -> Result<Setup, Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let store = Store::open(&dir.path().join("vigil.db")).await?;
+    let checker = Checker::new(store.clone(), Fetcher::new(FetchConfig::default())?);
+    Ok(Setup {
+        _dir: dir,
+        store,
+        checker,
+        server: MockServer::start().await,
+    })
+}
+
+async fn serve_page(server: &MockServer, body: &str) {
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "text/html; charset=utf-8"))
+        .mount(server)
+        .await;
+}
+
+async fn add_watch(setup: &Setup, interval: u64) -> Result<Watch, StoreError> {
+    let schedule = Schedule::Interval(interval);
+    setup
+        .store
+        .create_watch(NewWatch::new(setup.server.uri(), schedule))
+        .await
+}
+
+async fn outcomes(store: &Store, watch: &Watch) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar("SELECT outcome FROM check_log WHERE watch_id = ? ORDER BY id")
+        .bind(watch.id.to_string())
+        .fetch_all(store.pool())
+        .await
+}
+
+#[tokio::test]
+async fn page_v1_then_v2_yields_two_snapshots_and_a_correct_diff() -> TestResult {
+    let s = setup().await?;
+    let watch = add_watch(&s, 3600).await?;
+
+    // Page v1: the first check stores the baseline.
+    serve_page(&s.server, PAGE_V1).await;
+    let first = s.checker.check(watch.id).await?;
+    assert_eq!(first.result, CheckResult::Baseline);
+    assert_eq!(s.store.list_snapshots(watch.id, 10).await?.len(), 1);
+
+    // The same page again is not a change and stores nothing.
+    let again = s.checker.check(watch.id).await?;
+    assert_eq!(again.result, CheckResult::Unchanged);
+    assert_eq!(s.store.list_snapshots(watch.id, 10).await?.len(), 1);
+
+    // Page v2: one price changed.
+    s.server.reset().await;
+    serve_page(&s.server, PAGE_V2).await;
+    let third = s.checker.check(watch.id).await?;
+    let CheckResult::Changed {
+        previous,
+        current,
+        diff,
+    } = third.result
+    else {
+        return Err(format!("expected a change, got {:?}", third.result).into());
+    };
+
+    // Exactly two snapshots, newest first, holding the two page versions.
+    let snapshots = s.store.list_snapshots(watch.id, 10).await?;
+    assert_eq!(
+        snapshots.iter().map(|snap| snap.id).collect::<Vec<_>>(),
+        [current, previous]
+    );
+    let old_text = s.store.snapshot_content(previous).await?;
+    let new_text = s.store.snapshot_content(current).await?;
+    assert!(
+        old_text.contains("Widget: $10") && !old_text.contains("$12"),
+        "{old_text}"
+    );
+    assert!(
+        new_text.contains("Widget: $12") && !new_text.contains("$10"),
+        "{new_text}"
+    );
+
+    // The diff names exactly the changed line.
+    assert_eq!(diff.removed().collect::<Vec<_>>(), ["Widget: $10"]);
+    assert_eq!(diff.added().collect::<Vec<_>>(), ["Widget: $12"]);
+    let unified = diff.unified(1);
+    assert!(
+        unified.contains("-Widget: $10\n+Widget: $12\n"),
+        "{unified}"
+    );
+
+    // And the watch state and log agree.
+    assert_eq!(
+        outcomes(&s.store, &watch).await?,
+        ["changed", "unchanged", "changed"]
+    );
+    let state = s.store.get_watch(watch.id).await?.state;
+    assert_eq!(state.consecutive_errors, 0);
+    assert!(state.last_changed_at.is_some());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_304_counts_as_unchanged_without_a_new_snapshot() -> TestResult {
+    let s = setup().await?;
+    let watch = add_watch(&s, 3600).await?;
+    Mock::given(method("GET"))
+        .and(header("if-none-match", "\"v1\""))
+        .respond_with(ResponseTemplate::new(304).insert_header("etag", "\"v1\""))
+        .with_priority(1)
+        .mount(&s.server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("etag", "\"v1\"")
+                .set_body_raw(PAGE_V1, "text/html"),
+        )
+        .with_priority(5)
+        .mount(&s.server)
+        .await;
+
+    assert_eq!(
+        s.checker.check(watch.id).await?.result,
+        CheckResult::Baseline
+    );
+    assert_eq!(
+        s.checker.check(watch.id).await?.result,
+        CheckResult::Unchanged
+    );
+
+    let requests = s.server.received_requests().await.unwrap_or_default();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[0].headers.get("if-none-match").is_none());
+    assert!(requests[1].headers.get("if-none-match").is_some());
+    assert_eq!(s.store.list_snapshots(watch.id, 10).await?.len(), 1);
+    assert_eq!(
+        s.store.get_watch(watch.id).await?.state.etag.as_deref(),
+        Some("\"v1\"")
+    );
+    assert_eq!(outcomes(&s.store, &watch).await?, ["changed", "unchanged"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn failures_are_recorded_and_cleared_by_recovery() -> TestResult {
+    let s = setup().await?;
+    let watch = add_watch(&s, 3600).await?;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&s.server)
+        .await;
+
+    let report = s.checker.check(watch.id).await?;
+    let CheckResult::Failed {
+        message,
+        consecutive_errors,
+    } = report.result
+    else {
+        return Err(format!("expected a failure, got {:?}", report.result).into());
+    };
+    assert_eq!(consecutive_errors, 1);
+    assert_eq!(message, "server answered http 500");
+    let state = s.store.get_watch(watch.id).await?.state;
+    assert_eq!(
+        state.last_error.as_deref(),
+        Some("server answered http 500")
+    );
+    assert!(s.store.list_snapshots(watch.id, 10).await?.is_empty());
+
+    s.server.reset().await;
+    serve_page(&s.server, PAGE_V1).await;
+    assert_eq!(
+        s.checker.check(watch.id).await?.result,
+        CheckResult::Baseline
+    );
+    let state = s.store.get_watch(watch.id).await?.state;
+    assert_eq!((state.consecutive_errors, state.last_error), (0, None));
+    assert_eq!(outcomes(&s.store, &watch).await?, ["error", "changed"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_unreachable_host_is_a_recorded_failure_with_its_cause() -> TestResult {
+    let s = setup().await?;
+    let watch = s
+        .store
+        .create_watch(NewWatch::new(
+            "http://127.0.0.1:1/",
+            Schedule::Interval(3600),
+        ))
+        .await?;
+    let report = s.checker.check(watch.id).await?;
+    let CheckResult::Failed { message, .. } = report.result else {
+        return Err(format!("expected a failure, got {:?}", report.result).into());
+    };
+    assert!(message.starts_with("request failed: "), "{message}");
+    assert!(message.contains("127.0.0.1"), "{message}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn checking_a_missing_watch_is_a_store_error() -> TestResult {
+    let s = setup().await?;
+    let watch = add_watch(&s, 3600).await?;
+    s.store.delete_watch(watch.id).await?;
+    assert!(matches!(
+        s.checker.check(watch.id).await,
+        Err(StoreError::NotFound(_))
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn unfinished_processors_fail_the_check_clearly() -> TestResult {
+    let s = setup().await?;
+    serve_page(&s.server, "{}").await;
+    let mut new = NewWatch::new(s.server.uri(), Schedule::Interval(3600));
+    new.processor = vigil_core::Processor::Json;
+    let watch = s.store.create_watch(new).await?;
+    let CheckResult::Failed { message, .. } = s.checker.check(watch.id).await?.result else {
+        return Err("expected a failure".into());
+    };
+    assert_eq!(message, "the json processor is not supported yet");
+    Ok(())
+}
+
+#[tokio::test]
+async fn only_unpaused_watches_are_scheduled() -> TestResult {
+    let s = setup().await?;
+    let active = add_watch(&s, 60).await?;
+    let paused = add_watch(&s, 60).await?;
+    sqlx::query("UPDATE watches SET paused = 1 WHERE id = ?")
+        .bind(paused.id.to_string())
+        .execute(s.store.pool())
+        .await?;
+
+    let jobs = s.checker.load().await?;
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].id, active.id);
+    assert_eq!(jobs[0].interval, Duration::from_secs(60));
+    assert_eq!(jobs[0].host, vigil_fetch::host_key(&s.server.uri()));
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_scheduler_checks_watches_on_its_own() -> TestResult {
+    let s = setup().await?;
+    let watch = add_watch(&s, 1).await?;
+    serve_page(&s.server, PAGE_V1).await;
+
+    let settings = Settings {
+        resync: Duration::from_millis(200),
+        shutdown_grace: Duration::from_secs(5),
+        ..Settings::default()
+    };
+    let scheduler = Scheduler::new(s.checker.clone(), settings);
+    let cancel = CancellationToken::new();
+    let token = cancel.clone();
+    let task = tokio::spawn(async move { scheduler.run(token).await });
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        if outcomes(&s.store, &watch).await?.len() >= 2 {
+            break;
+        }
+        if tokio::time::Instant::now() > deadline {
+            return Err("the scheduler did not run two checks in time".into());
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    cancel.cancel();
+    task.await?;
+
+    let logged = outcomes(&s.store, &watch).await?;
+    assert_eq!(&logged[..2], ["changed", "unchanged"]);
+    assert_eq!(s.store.list_snapshots(watch.id, 10).await?.len(), 1);
+    Ok(())
+}
