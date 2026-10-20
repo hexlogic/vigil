@@ -1,6 +1,7 @@
 //! SQLite repository, migrations and snapshot storage.
 
 mod checks;
+mod migrate;
 mod snapshots;
 mod watches;
 
@@ -8,6 +9,7 @@ use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use sqlx::SqlitePool;
+use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 
 pub use checks::{CHECK_LOG_KEEP, CheckSuccess, Content, RecordOutcome};
@@ -23,6 +25,9 @@ pub enum StoreError {
     /// Applying the embedded migrations failed.
     #[error("migration error: {0}")]
     Migrate(#[from] sqlx::migrate::MigrateError),
+    /// The copy of the database made before migrating could not be written.
+    #[error("could not back up the database before migrating: {0}")]
+    Backup(String),
     /// Stored JSON could not be read or written.
     #[error("invalid stored json: {0}")]
     Json(#[from] serde_json::Error),
@@ -43,6 +48,9 @@ pub enum StoreError {
     InvalidId(String),
 }
 
+/// The migrations embedded in the binary.
+static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
+
 /// Handle to the Vigil SQLite database. Cheap to clone.
 #[derive(Debug, Clone)]
 pub struct Store {
@@ -52,7 +60,9 @@ pub struct Store {
 impl Store {
     /// Open (creating if needed) the database at `path` and apply pending migrations.
     ///
-    /// The connection uses WAL journaling and enforces foreign keys.
+    /// The connection uses WAL journaling and enforces foreign keys. When an existing database
+    /// has migrations to apply, a copy named `<file>.backup-v<version>-<unix ms>` is written
+    /// first; if that fails, so does `open`.
     pub async fn open(path: &Path) -> Result<Self, StoreError> {
         let options = SqliteConnectOptions::new()
             .filename(path)
@@ -65,7 +75,10 @@ impl Store {
             .max_connections(4)
             .connect_with(options)
             .await?;
-        sqlx::migrate!("../../migrations").run(&pool).await?;
+        if let Some(backup) = migrate::backup_if_pending(&pool, path, &MIGRATOR).await? {
+            tracing::info!(backup = %backup.display(), "backed up the database before migrating");
+        }
+        MIGRATOR.run(&pool).await?;
         Ok(Self { pool })
     }
 
