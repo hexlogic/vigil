@@ -40,7 +40,8 @@ jobs:
 
   # Runs the pipeline fuzz target for a minute. `cargo +nightly` overrides the toolchain
   # pinned in rust-toolchain.toml; the fuzz crate is its own workspace, so nothing above
-  # builds it.
+  # builds it. The target is explicit because the prebuilt cargo-fuzz is a musl binary and
+  # would otherwise build for musl, where the sanitizer does not work.
   fuzz:
     name: fuzz the pipeline (60s)
     runs-on: ubuntu-latest
@@ -57,7 +58,8 @@ jobs:
         working-directory: crates/vigil-core
         run: |
           mkdir -p fuzz/corpus/pipeline_html
-          cargo +nightly fuzz run pipeline_html fuzz/corpus/pipeline_html tests/fixtures -- \
+          cargo +nightly fuzz run --target x86_64-unknown-linux-gnu pipeline_html \
+            fuzz/corpus/pipeline_html tests/fixtures -- \
             -max_total_time=60 -max_len=16384 -rss_limit_mb=2048
       - name: Keep the crashing input
         if: failure()
