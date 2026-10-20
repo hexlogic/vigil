@@ -26,7 +26,7 @@ Log verbosity is controlled by `RUST_LOG`. The default is `info` (stdout) for `v
 | Command | What it does |
 |---|---|
 | `vigil serve` | Start the HTTP server and the scheduler. `GET /healthz` returns `200 ok` when the database is reachable. Ctrl-C or SIGTERM stops starting checks and waits up to 30 seconds for running ones. |
-| `vigil watch add <url> [--every 1h] [--name <name>]` | Watch a page. The interval takes values like `30s`, `5m`, `1h 30m`, `1d` and must be at least one second. |
+| `vigil watch add <url> [--every 1h] [--name <name>]` | Watch a page. The interval takes values like `30s`, `5m`, `1h 30m`, `1d` and must be between one second and 365 days. |
 | `vigil watch list` | Show all watches with their id, interval, last check, last change and status (`pending`, `ok`, `paused` or `error xN`). |
 | `vigil watch remove <id>` | Delete a watch with its snapshots and history. |
 | `vigil check <id>` | Check a watch now. Prints `baseline stored`, `unchanged` or `changed, +N -M lines`; exits non-zero if the page could not be checked. |

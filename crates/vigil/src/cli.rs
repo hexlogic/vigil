@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
+use vigil_scheduler::backoff::MAX_INTERVAL;
 
 /// Self-hosted website change detection.
 #[derive(Debug, Parser)]
@@ -77,6 +78,9 @@ fn parse_interval(text: &str) -> Result<Duration, String> {
     if interval < Duration::from_secs(1) {
         return Err("the interval must be at least 1s".into());
     }
+    if interval > MAX_INTERVAL {
+        return Err("the interval must be at most 365 days".into());
+    }
     Ok(interval)
 }
 
@@ -136,6 +140,13 @@ mod tests {
     fn intervals_accept_compound_durations() {
         assert_eq!(parse_interval("1h 30m"), Ok(Duration::from_secs(5400)));
         assert_eq!(parse_interval("90s"), Ok(Duration::from_secs(90)));
+    }
+
+    #[test]
+    fn the_longest_interval_is_a_year() {
+        assert_eq!(parse_interval("365d"), Ok(MAX_INTERVAL));
+        assert!(parse_interval("366d").is_err());
+        assert!(parse_interval("500000000000y").is_err());
     }
 
     #[test]

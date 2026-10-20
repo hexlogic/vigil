@@ -11,7 +11,7 @@ use tokio::time::{Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use vigil_core::WatchId;
 
-use crate::backoff::{next_delay, random_jitter};
+use crate::backoff::{MAX_INTERVAL, next_delay, random_jitter};
 use crate::limits::Limits;
 
 /// Shortest wait between two checks of one watch, whatever its interval says.
@@ -288,9 +288,10 @@ impl State {
                 entry.job.consecutive_errors = entry.job.consecutive_errors.saturating_add(1);
             }
         }
-        let delay = next_delay(entry.job.interval, entry.job.consecutive_errors).max(MIN_DELAY)
-            + random_jitter(entry.job.jitter);
-        entry.due = now + delay;
+        let delay = next_delay(entry.job.interval, entry.job.consecutive_errors)
+            .max(MIN_DELAY)
+            .saturating_add(random_jitter(entry.job.jitter));
+        entry.due = later(now, delay);
         self.heap.push(Reverse((entry.due, id)));
     }
 }
@@ -301,8 +302,18 @@ fn initial_due(job: &Job, now: Instant, now_ms: i64) -> Instant {
     let wait = job.last_checked_at.map_or(Duration::ZERO, |last| {
         let delay = next_delay(job.interval, job.consecutive_errors);
         let delay_ms = i64::try_from(delay.as_millis()).unwrap_or(i64::MAX);
-        let remaining = last.saturating_add(delay_ms).saturating_sub(now_ms);
+        // Never wait longer than one delay: a last check that lies in the future (the clock was
+        // set back since) must not park the watch until then.
+        let remaining = last
+            .saturating_add(delay_ms)
+            .saturating_sub(now_ms)
+            .min(delay_ms);
         Duration::from_millis(u64::try_from(remaining).unwrap_or(0))
     });
-    now + wait + random_jitter(job.jitter)
+    later(now, wait.saturating_add(random_jitter(job.jitter)))
+}
+
+/// `now + delay`, with the delay bounded by [`MAX_INTERVAL`] so it cannot overflow an `Instant`.
+fn later(now: Instant, delay: Duration) -> Instant {
+    now + delay.min(MAX_INTERVAL)
 }

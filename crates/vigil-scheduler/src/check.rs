@@ -10,10 +10,11 @@ use vigil_core::{LineDiff, Watch, WatchId};
 use vigil_fetch::{FetchOutcome, FetchRequest, Fetcher, host_key};
 use vigil_store::{CheckSuccess, Content, RecordOutcome, SnapshotId, Store, StoreError};
 
-use crate::backoff::default_jitter;
+use crate::backoff::{MAX_INTERVAL, default_jitter};
 use crate::scheduler::{Backend, Job, RunOutcome};
 
-/// Shortest interval the scheduler accepts, so a zero interval cannot spin.
+/// Shortest interval the scheduler accepts, so a zero interval cannot spin. The longest is
+/// [`MAX_INTERVAL`].
 const MIN_INTERVAL: Duration = Duration::from_secs(1);
 
 /// What one check found.
@@ -224,7 +225,7 @@ impl Backend for Checker {
 }
 
 fn job_from(watch: Watch) -> Job {
-    let interval = watch.schedule.interval().max(MIN_INTERVAL);
+    let interval = watch.schedule.interval().clamp(MIN_INTERVAL, MAX_INTERVAL);
     let jitter = if watch.jitter_secs > 0 {
         Duration::from_secs(u64::from(watch.jitter_secs))
     } else {

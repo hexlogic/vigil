@@ -330,3 +330,19 @@ async fn the_scheduler_checks_watches_on_its_own() -> TestResult {
     assert_eq!(s.store.list_snapshots(watch.id, 10).await?.len(), 1);
     Ok(())
 }
+
+#[tokio::test]
+async fn intervals_outside_the_supported_range_are_clamped() -> TestResult {
+    let s = setup().await?;
+    let instant = add_watch(&s, 0).await?;
+    let forever = add_watch(&s, u64::MAX).await?;
+
+    let jobs = s.checker.load().await?;
+    let interval_of = |id| jobs.iter().find(|job| job.id == id).map(|job| job.interval);
+    assert_eq!(interval_of(instant.id), Some(Duration::from_secs(1)));
+    assert_eq!(
+        interval_of(forever.id),
+        Some(vigil_scheduler::backoff::MAX_INTERVAL)
+    );
+    Ok(())
+}
