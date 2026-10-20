@@ -77,6 +77,9 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `serde_json_path` | JSONPath (RFC 9535) for the `jsonpath` step (PLAN.md section 2), including filters and the standard functions. Pure Rust; pulls `nom` and `inventory` (function registration). |
 | `jaq-core`, `jaq-std`, `jaq-json` | Pure-Rust jq for the `jq` step (PLAN.md section 2). `jaq-std` brings `jiff`, `base64`, `regex-bites` and a few small crates for dates, formats and regexes. |
 | `serde_json` (core) | Parse JSON bodies for the `json` processor and the JSON steps, and (de)serialize pipeline steps in the store. Already a dependency of the store. |
+| `lettre` (builder; default features off) | Validates email addresses (`Mailbox`) in `mailto://` URLs; the SMTP transport is added with the email channel. Default features are off because they pull `native-tls`, which means OpenSSL (CLAUDE.md). |
+| `url` (notify) | Parses the `host[:port]/path?query` notification schemes. Already in the tree through `reqwest` and `feed-rs`. |
+| `percent-encoding` (notify) | Decodes user names, passwords, topics and chat ids in notification URLs. Already in the tree.
 
 ## Text processor (Phase 1)
 
@@ -211,3 +214,9 @@ Notification results go in a new `delivery_log` table (migration 0002), not in `
 ## Notification targets
 
 Target names are unique (a unique index in migration 0002; nothing wrote the table before, so existing databases cannot violate it). Commands resolve a target by exact name first, then by full id or a suffix of at least 6 hex characters, as for watches. Disabled targets stay linked but are skipped when notifying. The URL is stored as typed, in plaintext, like the rest of the database: it holds credentials, so it is never logged or printed unredacted.
+
+## Notification URLs
+
+A target is a URL: `ntfy://`, `ntfys://`, `tgram://`, `discord://`, `slack://`, `mailto://`, `mailtos://`, `json://`, `jsons://`, `form://`, `forms://`, `gotify://`, `gotifys://` (`forms://` and `gotifys://` are the HTTPS twins of `form://` and `gotify://`, added for symmetry). Schemes without an `s` use plain HTTP, as people expect from URLs of this kind; the CLI warns when one sends a credential to a host other than this machine. `tgram://`, `discord://` and `slack://` are split by hand because a Telegram bot token (`123456:ABC`) would read as a host and a port to a URL parser. Options are strict: an unknown or repeated option is an error, and the error never names it (a mistyped URL can put a credential where an option name goes). No error quotes the URL. The ntfy topic is a secret (on a public server it is the only protection), so it is redacted like a token. Webhook URLs (`json://`, `form://`) keep their query string verbatim, since it is where webhook tokens usually go; they are held as a `SecretUrl` so a derived `Debug` cannot print them.
+
+`mailto://` requires an upgrade with STARTTLS (default port 587). `?tls=none` sends plaintext (default port 25), meant for a relay on the same machine or network, and is refused with a password unless the host is `localhost` or a loopback address. `mailtos://` uses TLS from the first byte (default port 465) and rejects `tls=`. The sender is `from=`, or the user name when that is an email address; recipients are `to=` (comma separated or repeated), defaulting to the sender.
