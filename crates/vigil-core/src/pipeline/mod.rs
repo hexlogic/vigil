@@ -8,6 +8,7 @@ mod error;
 mod html;
 mod step;
 mod text;
+mod xpath;
 
 pub use error::{PipelineError, PipelineErrorKind};
 pub use step::{SelectMode, Step};
@@ -74,6 +75,11 @@ impl Pipeline {
                     index,
                     name,
                     step: html::css(selector, *mode).map_err(fail)?,
+                }),
+                Step::XPath { expr, mode } => html.push(Slot {
+                    index,
+                    name,
+                    step: xpath::xpath(expr, *mode).map_err(fail)?,
                 }),
                 Step::RegexExtract { pattern, group } => text.push(Slot {
                     index,

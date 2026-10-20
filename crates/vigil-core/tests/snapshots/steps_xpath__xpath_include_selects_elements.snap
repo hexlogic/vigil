@@ -1,0 +1,7 @@
+---
+source: crates/vigil-core/tests/steps_xpath.rs
+expression: "include(\"//div[@id='product-4821']//tr[th='Price']\", PRODUCT)?"
+---
+─────┬──────
+Price│€89.90
+─────┴──────

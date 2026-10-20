@@ -22,6 +22,8 @@ scraper = "0.27.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 similar = "3.2.0"
+sxd-document = "0.3.2"
+sxd-xpath = "0.4.2"
 thiserror = "2.0.21"
 uuid = { version = "1.28.0", features = ["serde"] }
 
