@@ -247,3 +247,33 @@ fn problems_are_explained_in_words() {
         );
     }
 }
+
+#[test]
+fn expressions_that_are_too_long_or_too_nested_are_refused() {
+    for expr in [
+        format!("{}1", "-".repeat(1025)),
+        format!("{}1{}", "(".repeat(100), ")".repeat(100)),
+        format!("a{}", "[b".repeat(10_000) + &"]".repeat(10_000)),
+    ] {
+        let message = error_of(&expr, "include", "<p>x</p>");
+        assert!(
+            message.starts_with("step 1 (xpath): invalid xpath \"")
+                && (message.ends_with("is longer than 1024 bytes")
+                    || message.ends_with("brackets are nested deeper than 32 levels")),
+            "{message}"
+        );
+        assert!(
+            message.len() < 200,
+            "the message repeats the whole expression"
+        );
+    }
+    assert_eq!(
+        include(
+            &format!("{}1{}", "(".repeat(20), ")".repeat(20)),
+            "<p>x</p>"
+        )
+        .ok()
+        .as_deref(),
+        Some("1\n")
+    );
+}

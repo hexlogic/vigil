@@ -70,4 +70,4 @@ Conditions decide whether a change would notify. They never decide whether it is
 
 ## Limits
 
-Output of any step is capped at 16 MiB. HTML nested more than 512 elements deep (not counting elements the parser closes itself, such as unclosed `<li>`) fails the check, because parsing it takes too long; the `xpath` step's limit is 256. A jq program may be at most 16 KiB with brackets nested at most 64 deep. A check that takes more than 30 seconds fails.
+Output of any step is capped at 16 MiB. HTML nested more than 512 elements deep (not counting elements the parser closes itself, such as unclosed `<li>`) fails the check, because parsing it takes too long; the `xpath` step's limit is 256. CSS selectors and XPath expressions may be at most 1 KiB, jq programs at most 2 KiB, and brackets in all of them nested at most 32 deep, because the parsers recurse. A jq program that recurses without limit can still crash the server; test new programs with `vigil preview` first. A check that takes more than 30 seconds fails.

@@ -147,17 +147,24 @@ fn jq_runtime_errors_are_reported() {
 
 #[test]
 fn jq_programs_that_are_too_long_or_too_nested_are_refused() {
-    let long = format!("{}1", " ".repeat(17 * 1024));
-    assert_eq!(
-        error_of(&long, "{}"),
-        "step 1 (jq): invalid jq program: the program is longer than 16384 bytes"
-    );
+    // Long chains of operators recurse in the parser and overflow the stack, so the length
+    // is limited as well as the brackets.
+    for long in [
+        format!("{}1", " ".repeat(2049)),
+        format!("{}1", "-".repeat(16_000)),
+        format!("{}.", ".|".repeat(8_100)),
+    ] {
+        assert_eq!(
+            error_of(&long, "{}"),
+            "step 1 (jq): invalid jq program: the program is longer than 2048 bytes"
+        );
+    }
     let nested = format!("{}1{}", "(".repeat(100), ")".repeat(100));
     assert_eq!(
         error_of(&nested, "{}"),
-        "step 1 (jq): invalid jq program: brackets are nested deeper than 64 levels"
+        "step 1 (jq): invalid jq program: brackets are nested deeper than 32 levels"
     );
-    let fine = format!("{}1{}", "(".repeat(60), ")".repeat(60));
+    let fine = format!("{}1{}", "(".repeat(30), ")".repeat(30));
     assert!(jq(&fine, "{}").is_ok());
 }
 

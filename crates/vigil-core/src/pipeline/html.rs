@@ -6,6 +6,7 @@ use ego_tree::NodeId;
 use scraper::{ElementRef, Html, Node, Selector};
 
 use super::error::PipelineErrorKind;
+use super::limits::{MAX_SELECTOR_BYTES, too_big};
 use super::step::SelectMode;
 use super::xpath::XPathStep;
 use crate::process::MAX_OUTPUT_BYTES;
@@ -35,6 +36,12 @@ pub(super) fn css(
     mode: SelectMode,
     required: bool,
 ) -> Result<HtmlStep, PipelineErrorKind> {
+    if let Some(reason) = too_big("selector", selector, MAX_SELECTOR_BYTES) {
+        return Err(PipelineErrorKind::Selector {
+            selector: selector.chars().take(40).collect::<String>() + "…",
+            reason,
+        });
+    }
     let parsed = Selector::parse(selector).map_err(|error| PipelineErrorKind::Selector {
         selector: selector.to_owned(),
         reason: error

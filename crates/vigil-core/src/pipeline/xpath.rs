@@ -15,6 +15,7 @@ use sxd_xpath::{Context, Factory, Value, XPath};
 
 use super::error::PipelineErrorKind;
 use super::html::{HtmlStep, Selected};
+use super::limits::{MAX_XPATH_BYTES, too_big};
 use super::step::SelectMode;
 
 /// Deepest element nesting that is copied. The evaluator walks the copy recursively, so a
@@ -40,6 +41,12 @@ pub(super) fn xpath(
         reason,
     };
     let empty = || invalid("the expression is empty or incomplete".to_owned());
+    if let Some(reason) = too_big("expression", expr, MAX_XPATH_BYTES) {
+        return Err(PipelineErrorKind::XPath {
+            expr: expr.chars().take(40).collect::<String>() + "…",
+            reason,
+        });
+    }
     if expr.trim().is_empty() {
         return Err(empty());
     }
