@@ -584,6 +584,14 @@ async fn an_invalid_pipeline_fails_the_check_naming_the_step() -> TestResult {
         "{message}"
     );
     assert!(s.store.list_snapshots(watch.id, 10).await?.is_empty());
+    // A pipeline that cannot build does not cost the site a request.
+    assert!(
+        s.server
+            .received_requests()
+            .await
+            .unwrap_or_default()
+            .is_empty()
+    );
     Ok(())
 }
 

@@ -8,7 +8,7 @@ use vigil_fetch::{FetchOutcome, FetchRequest, Fetcher, host_key};
 use vigil_store::{CheckSuccess, Content, RecordOutcome, SnapshotId, Store, StoreError};
 
 use crate::backoff::{MAX_INTERVAL, default_jitter};
-use crate::render::run_with_limit;
+use crate::render::{SLOTS, run_with_limit};
 use crate::scheduler::{Backend, Job, RunOutcome};
 
 /// How long processing one response may take before the check fails.
@@ -187,6 +187,7 @@ impl Checker {
     /// Fetch and process the page. `at` and `duration_ms` of the result are placeholders that
     /// the caller fills in once the work is done.
     async fn fetch_and_process(&self, watch: &Watch) -> Result<CheckSuccess, String> {
+        validate(watch, self.render_timeout).await?;
         let request = request_for(watch, true);
         match self.fetch(&request).await? {
             FetchOutcome::NotModified {
@@ -288,13 +289,28 @@ pub(crate) async fn render(
     limit: Duration,
 ) -> Result<String, String> {
     let (processor, steps) = (watch.processor, watch.pipeline.clone());
-    run_with_limit(limit, move || {
+    run_with_limit(&SLOTS, watch.id, limit, move || {
         let pipeline = Pipeline::new(processor, &steps).map_err(|e| describe(&e))?;
         pipeline
             .render(&body, content_type.as_deref())
             .map_err(|e| describe(&e))
     })
     .await
+}
+
+/// Check that the watch's steps build, before anything is fetched: a stored pipeline that no
+/// longer compiles (a hand-edited row, a step from another version) should not cost the
+/// target site a request on every attempt. Also refuses, for the same reason, a watch whose
+/// earlier processing thread is still running.
+pub(crate) async fn validate(watch: &Watch, limit: Duration) -> Result<(), String> {
+    let (processor, steps) = (watch.processor, watch.pipeline.clone());
+    run_with_limit(&SLOTS, watch.id, limit, move || {
+        Pipeline::new(processor, &steps)
+            .map(|_| String::new())
+            .map_err(|e| describe(&e))
+    })
+    .await
+    .map(|_| ())
 }
 
 fn job_from(watch: Watch) -> Job {
