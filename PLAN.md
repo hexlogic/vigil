@@ -1,7 +1,7 @@
 # Vigil: implementation plan for Claude Code
 
 > Working name: **Vigil** (rename freely; search crates.io, GitHub and Docker Hub for collisions before the first public release).
-> Goal: a lightweight, open-source, self-hosted website change detection service written in Rust. Single static binary, low memory, runs well on a Raspberry Pi or a $4 VPS. Covers the core 80% of what people use changedetection.io for.
+> Goal: a lightweight, open-source, self-hosted website change detection service written in Rust. Single static binary, low memory, runs well on a Raspberry Pi or a $4 VPS. Covers the core 80% of what people need from a change monitor.
 
 ---
 
@@ -12,7 +12,7 @@
 - Commit at least once per phase with a conventional commit message (`feat:`, `fix:`, `chore:`, `docs:`, `test:`).
 - After each phase, stop and print a short summary: what was built, what is stubbed, open questions. Wait for review before the next phase.
 - When a decision is not covered here, pick the simplest option that keeps the single-binary goal, write it down in `docs/decisions.md` (one short paragraph per decision), and continue.
-- **Clean-room rule:** this is an independent implementation. Studying changedetection.io's behaviour, docs and public API is fine. Do not copy its source code, templates, CSS or text.
+- **Clean-room rule:** this is an independent implementation. Do not copy source code, templates, CSS or text from other projects.
 
 Kickoff prompt:
 
@@ -30,7 +30,7 @@ Stop when Phase 0 acceptance criteria pass.
 2. Extract only the part you care about (CSS selector, XPath, JSONPath, jq, regex) and ignore noise.
 3. Keep a history of snapshots and show readable diffs.
 4. Notify through common channels (ntfy, Telegram, Discord, Slack, email, generic webhook) with templated messages.
-5. Web UI, REST API, and a migration path from changedetection.io.
+5. Web UI, REST API, and import from other tools' exports.
 6. One binary, embedded UI assets, SQLite, no external services required.
 7. Idle RAM target: **< 30 MB** with 100 watches in plain HTTP mode.
 
@@ -97,7 +97,7 @@ vigil/
 │   ├── decisions.md
 │   ├── api.md
 │   ├── configuration.md
-│   └── migrating-from-changedetection.md
+│   └── migrating.md
 ├── deploy/
 │   ├── Dockerfile
 │   ├── docker-compose.yml
@@ -184,7 +184,7 @@ Add a "preview" function: run a watch's pipeline on a fresh fetch (or last raw r
 
 ## 7. Notifications
 
-Apprise-style URLs so users migrating from changedetection.io can reuse what they have. Implement natively in Rust (no Apprise dependency):
+Apprise-style URLs so users can reuse notification URLs they already have. Implement natively in Rust (no Apprise dependency):
 
 | Scheme | Example |
 |---|---|
@@ -209,12 +209,12 @@ Apprise-style URLs so users migrating from changedetection.io can reuse what the
 ## 8. Web UI and API
 
 ### REST API (`/api/v1`, token auth via `x-api-key` header)
-Aim for compatibility with changedetection.io's public API where the semantics match, so existing scripts mostly keep working. Verify their current API docs before Phase 5 and record any intentional differences in `docs/api.md`.
+Keep the API conventional (resource-style paths, token auth) and record design choices in `docs/api.md`.
 
 - `GET/POST /watch`, `GET/PUT/DELETE /watch/{id}`, `POST /watch/{id}/check`
 - `GET /watch/{id}/history`, `GET /watch/{id}/history/{snapshot_id}`, `GET /watch/{id}/diff?from=&to=`
 - `GET/POST/DELETE /tags`, `GET/POST/DELETE /notifications`
-- `POST /import` (list of URLs or changedetection.io export)
+- `POST /import` (list of URLs or another tool's export)
 - `GET /healthz`, `GET /metrics` (optional)
 - OpenAPI spec generated with `utoipa`, served at `/api/docs`.
 
@@ -259,15 +259,15 @@ Pages: watch list (status, last change, tags, quick pause/check), add/edit watch
 
 ### Phase 5: API and migration
 - REST API + OpenAPI, API tokens.
-- Importer for a changedetection.io backup/datastore (inspect their current backup format first, map watches, filters, tags and notification URLs; unsupported options are reported, not silently dropped). Document in `docs/migrating-from-changedetection.md`.
+- Importer for backups/datastores of other tools (inspect each current format first, map watches, filters, tags and notification URLs; unsupported options are reported, not silently dropped). Document in `docs/migrating.md`.
 - Plain URL list import and OPML import.
-- **Done when:** importing a sample changedetection.io backup with 20 varied watches produces equivalent watches and a report of anything skipped.
+- **Done when:** importing a sample backup with 20 varied watches produces equivalent watches and a report of anything skipped.
 
 ### Phase 6: Packaging and release
 - Static musl builds for `x86_64`, `aarch64`, `armv7` (via `cargo-zigbuild` or `cross`).
 - Docker image `FROM scratch` (with CA certs) or distroless, multi-arch, target < 20 MB. Volume `/data`.
 - `docker-compose.yml`, systemd unit, release workflow (`cargo-dist` or GitHub Actions) with checksums and changelog (`git-cliff`).
-- Benchmarks in README: RAM and CPU with 100 and 1000 watches on a Raspberry Pi 4 and a small VPS, compared fairly with changedetection.io in HTTP mode (same URLs, same intervals). Publish the method, not just numbers.
+- Benchmarks in README: RAM and CPU with 100 and 1000 watches on a Raspberry Pi 4 and a small VPS. Publish the method, not just numbers.
 - **Done when:** `docker run -p 5800:5800 -v vigil:/data ghcr.io/<owner>/vigil` works on amd64 and arm64.
 
 ### Phase 7: Browser fetcher (post-1.0, optional feature flag `browser`)
@@ -289,7 +289,7 @@ Pages: watch list (status, last change, tags, quick pause/check), add/edit watch
 - Prefer small, focused modules (< 400 lines). Public items get doc comments.
 - No new dependency without a one-line reason in docs/decisions.md. Prefer pure-Rust crates; no OpenSSL, no libxml2.
 - Never edit an applied SQL migration; add a new one.
-- Clean-room: do not copy code, templates or text from changedetection.io.
+- Clean-room: do not copy code, templates or text from other projects.
 - Keep UI strings in locales/*.toml, never hardcode them in templates.
 - Conventional commits. One logical change per commit.
 ```

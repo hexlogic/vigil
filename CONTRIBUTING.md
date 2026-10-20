@@ -20,7 +20,7 @@ All three must pass; CI runs the same commands on Linux and macOS.
 - No `unwrap()`/`expect()` outside tests and startup code.
 - New dependencies need a one-line reason in `docs/decisions.md`; prefer pure-Rust crates.
 - Never edit an applied SQL migration; add a new one.
-- **Clean-room:** do not copy code, templates or text from changedetection.io.
+- **Clean-room:** do not copy code, templates or text from other projects.
 
 By contributing you agree that your work is licensed under `MIT OR Apache-2.0`.
 Please follow our [Code of Conduct](CODE_OF_CONDUCT.md).

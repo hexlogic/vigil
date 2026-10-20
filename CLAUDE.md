@@ -8,6 +8,6 @@
 - Prefer small, focused modules (< 400 lines). Public items get doc comments.
 - No new dependency without a one-line reason in docs/decisions.md. Prefer pure-Rust crates; no OpenSSL, no libxml2.
 - Never edit an applied SQL migration; add a new one.
-- Clean-room: do not copy code, templates or text from changedetection.io.
+- Clean-room: do not copy code, templates or text from other projects.
 - Keep UI strings in locales/*.toml, never hardcode them in templates.
 - Conventional commits. One logical change per commit.
