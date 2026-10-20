@@ -1,0 +1,7 @@
+---
+source: crates/vigil-core/tests/steps_xpath.rs
+expression: "include(\"//ul/li/text()\", NEWS)?"
+---
+Wheat: down 1.2%
+Barley: down 0.4%
+Oats: unchanged

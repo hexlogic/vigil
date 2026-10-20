@@ -20,6 +20,18 @@ pub enum Step {
         #[serde(default)]
         mode: SelectMode,
     },
+    /// Select parts of an HTML page with an XPath 1.0 expression, before the page is turned
+    /// into text. Works like `css`, and an `include` expression may also select text nodes,
+    /// attribute values (`//a/@href`) or compute a value (`count(//li)`), which is kept as
+    /// text; `remove` can only delete elements and text nodes.
+    #[serde(rename = "xpath")]
+    XPath {
+        /// An XPath 1.0 expression.
+        expr: String,
+        /// Keep only the selected nodes, or remove them.
+        #[serde(default)]
+        mode: SelectMode,
+    },
     /// Keep only what a regex matches, one match per line. With `group` set, keep that
     /// capture group of each match instead of the whole match. Finding nothing is an error.
     RegexExtract {
@@ -88,7 +100,7 @@ impl Stage {
 impl Step {
     pub(super) fn stage(&self) -> Stage {
         match self {
-            Self::Css { .. } => Stage::Html,
+            Self::Css { .. } | Self::XPath { .. } => Stage::Html,
             _ => Stage::Text,
         }
     }
@@ -97,6 +109,7 @@ impl Step {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Css { .. } => "css",
+            Self::XPath { .. } => "xpath",
             Self::RegexExtract { .. } => "regex_extract",
             Self::RegexReplace { .. } => "regex_replace",
             Self::IgnoreLines { .. } => "ignore_lines",
@@ -133,6 +146,13 @@ mod tests {
                     mode: SelectMode::Include,
                 },
                 json!({"type": "css", "selector": "main", "mode": "include"}),
+            ),
+            (
+                Step::XPath {
+                    expr: "//a/@href".into(),
+                    mode: SelectMode::Include,
+                },
+                json!({"type": "xpath", "expr": "//a/@href", "mode": "include"}),
             ),
             (
                 Step::RegexExtract {

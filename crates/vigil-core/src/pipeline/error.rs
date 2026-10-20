@@ -33,6 +33,17 @@ pub enum PipelineErrorKind {
         /// One-line description of the problem.
         reason: String,
     },
+    /// An XPath expression is invalid or could not be evaluated.
+    #[error("invalid xpath {expr:?}: {reason}")]
+    XPath {
+        /// The expression as given.
+        expr: String,
+        /// One-line description of the problem.
+        reason: String,
+    },
+    /// A `remove` step selected something that cannot be deleted.
+    #[error("remove can only delete elements and text, not attribute values or computed results")]
+    NotRemovable,
     /// The step needs a different processor than the watch uses.
     #[error("{stage} steps need the {needed} processor, but the watch uses {found}")]
     WrongProcessor {
