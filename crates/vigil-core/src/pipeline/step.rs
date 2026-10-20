@@ -40,6 +40,15 @@ pub enum Step {
         /// A JSONPath query such as `$.items[*].price`.
         expr: String,
     },
+    /// Transform the JSON with a jq program (the jaq implementation). The outputs are
+    /// collected into an array, so a program that yields one value and one that yields
+    /// several give the same shape; no output gives `[]`. Only works with the `json`
+    /// processor. `env`, `now`, `input`, `halt` and other filters that read the world or
+    /// stop the program are not available, so the same input always gives the same output.
+    Jq {
+        /// A jq program such as `.items | map(.price)`.
+        program: String,
+    },
     /// Keep only what a regex matches, one match per line. With `group` set, keep that
     /// capture group of each match instead of the whole match. Finding nothing is an error.
     RegexExtract {
@@ -111,7 +120,7 @@ impl Step {
     pub(super) fn stage(&self) -> Stage {
         match self {
             Self::Css { .. } | Self::XPath { .. } => Stage::Html,
-            Self::JsonPath { .. } => Stage::Json,
+            Self::JsonPath { .. } | Self::Jq { .. } => Stage::Json,
             _ => Stage::Text,
         }
     }
@@ -122,6 +131,7 @@ impl Step {
             Self::Css { .. } => "css",
             Self::XPath { .. } => "xpath",
             Self::JsonPath { .. } => "jsonpath",
+            Self::Jq { .. } => "jq",
             Self::RegexExtract { .. } => "regex_extract",
             Self::RegexReplace { .. } => "regex_replace",
             Self::IgnoreLines { .. } => "ignore_lines",
@@ -171,6 +181,12 @@ mod tests {
                     expr: "$.items[*].price".into(),
                 },
                 json!({"type": "jsonpath", "expr": "$.items[*].price"}),
+            ),
+            (
+                Step::Jq {
+                    program: ".items | map(.price)".into(),
+                },
+                json!({"type": "jq", "program": ".items | map(.price)"}),
             ),
             (
                 Step::RegexExtract {

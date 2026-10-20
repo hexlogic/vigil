@@ -6,6 +6,7 @@
 
 mod error;
 mod html;
+mod jq;
 mod json;
 mod step;
 mod text;
@@ -97,6 +98,11 @@ impl Pipeline {
                     index,
                     name,
                     step: json::jsonpath(expr).map_err(fail)?,
+                }),
+                Step::Jq { program } => json.push(Slot {
+                    index,
+                    name,
+                    step: json::jq(program).map_err(fail)?,
                 }),
                 Step::RegexExtract { pattern, group } => text.push(Slot {
                     index,

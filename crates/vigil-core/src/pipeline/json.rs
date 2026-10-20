@@ -5,12 +5,18 @@ use serde_json::Value;
 use serde_json_path as jsonpath;
 
 use super::error::PipelineErrorKind;
+use super::jq::{self, JqStep};
 use crate::process::MAX_OUTPUT_BYTES;
 
 /// A compiled JSON step.
 #[derive(Debug)]
 pub(super) enum JsonStep {
     Path(JsonPath),
+    Jq(JqStep),
+}
+
+pub(super) fn jq(program: &str) -> Result<JsonStep, PipelineErrorKind> {
+    jq::jq(program).map(JsonStep::Jq)
 }
 
 pub(super) fn jsonpath(expr: &str) -> Result<JsonStep, PipelineErrorKind> {
@@ -29,6 +35,7 @@ pub(super) fn jsonpath(expr: &str) -> Result<JsonStep, PipelineErrorKind> {
 impl JsonStep {
     pub(super) fn apply(&self, value: Value) -> Result<Value, PipelineErrorKind> {
         match self {
+            Self::Jq(step) => step.apply(value),
             Self::Path(path) => {
                 let found = path.query(&value).all();
                 if found.is_empty() {
