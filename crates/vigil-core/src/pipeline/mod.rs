@@ -8,6 +8,7 @@ mod error;
 mod html;
 mod jq;
 mod json;
+mod limits;
 mod step;
 mod text;
 mod xpath;

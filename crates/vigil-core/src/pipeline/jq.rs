@@ -14,13 +14,9 @@ use jaq_json::Val;
 use serde_json::Value;
 
 use super::error::PipelineErrorKind;
+use super::limits::{MAX_JQ_BYTES, too_big};
 use crate::process::MAX_OUTPUT_BYTES;
 
-/// Longest program accepted, in bytes.
-const MAX_PROGRAM_BYTES: usize = 16 * 1024;
-/// Deepest nesting of brackets accepted. The parser and compiler recurse, so unbounded
-/// nesting would overflow the stack, which cannot be recovered from.
-const MAX_NESTING: usize = 64;
 /// Most values a program may output.
 pub(super) const MAX_OUTPUTS: usize = 10_000;
 
@@ -53,7 +49,9 @@ pub(super) struct JqStep {
 }
 
 pub(super) fn jq(program: &str) -> Result<JqStep, PipelineErrorKind> {
-    check_shape(program)?;
+    if let Some(reason) = too_big("program", program, MAX_JQ_BYTES) {
+        return Err(PipelineErrorKind::JqProgram(reason));
+    }
     compile_program(program)
         .map(|_| JqStep {
             program: program.to_owned(),
@@ -81,32 +79,6 @@ impl JqStep {
         }
         Ok(Value::Array(outputs))
     }
-}
-
-/// Refuse programs that are too long or nested too deeply to parse safely.
-fn check_shape(program: &str) -> Result<(), PipelineErrorKind> {
-    if program.len() > MAX_PROGRAM_BYTES {
-        return Err(PipelineErrorKind::JqProgram(format!(
-            "the program is longer than {MAX_PROGRAM_BYTES} bytes"
-        )));
-    }
-    let (mut depth, mut deepest) = (0usize, 0usize);
-    for ch in program.chars() {
-        match ch {
-            '(' | '[' | '{' => {
-                depth += 1;
-                deepest = deepest.max(depth);
-            }
-            ')' | ']' | '}' => depth = depth.saturating_sub(1),
-            _ => {}
-        }
-    }
-    if deepest > MAX_NESTING {
-        return Err(PipelineErrorKind::JqProgram(format!(
-            "brackets are nested deeper than {MAX_NESTING} levels"
-        )));
-    }
-    Ok(())
 }
 
 /// Parse and compile `program`, returning a message on failure.

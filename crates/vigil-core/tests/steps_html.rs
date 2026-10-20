@@ -294,3 +294,29 @@ fn css_matches_come_in_document_order() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn selectors_that_are_too_long_or_too_nested_are_refused() {
+    // Parsing them recurses, and a stack overflow cannot be caught.
+    for selector in [
+        format!("{}p", "div > ".repeat(200)),
+        format!("{}p{}", ":not(".repeat(100), ")".repeat(100)),
+        format!("{}p{}", ":not(".repeat(10_000), ")".repeat(10_000)),
+    ] {
+        let steps = serde_json::json!([{"type": "css", "selector": selector}]).to_string();
+        let message = error_of(Processor::Text, &steps, "<p>x</p>");
+        assert!(
+            message.starts_with("step 1 (css): invalid selector \"")
+                && (message.ends_with("is longer than 1024 bytes")
+                    || message.ends_with("brackets are nested deeper than 32 levels")),
+            "{message}"
+        );
+        assert!(
+            message.len() < 200,
+            "the message repeats the whole selector"
+        );
+    }
+    let fine = format!("{}p{}", ":not(".repeat(10), ")".repeat(10));
+    let steps = serde_json::json!([{"type": "css", "selector": fine}]).to_string();
+    assert_eq!(error_of(Processor::Text, &steps, "<p>x</p>"), "");
+}
