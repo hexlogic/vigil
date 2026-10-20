@@ -28,9 +28,19 @@ async fn main() -> anyhow::Result<ExitCode> {
         Command::Serve => serve::run(config).await.map(|()| ExitCode::SUCCESS),
         Command::Watch { command } => {
             match command {
-                WatchCommand::Add { url, every, name } => {
-                    commands::watch::add(&config, &url, every, name).await?;
-                }
+                WatchCommand::Add {
+                    url,
+                    every,
+                    name,
+                    content,
+                } => commands::watch::add(&config, &url, every, name, &content).await?,
+                WatchCommand::Edit {
+                    id,
+                    every,
+                    name,
+                    content,
+                } => commands::watch::edit(&config, &id, every, name, &content).await?,
+                WatchCommand::Show { id } => commands::watch::show(&config, &id).await?,
                 WatchCommand::List => commands::watch::list(&config).await?,
                 WatchCommand::Remove { id } => commands::watch::remove(&config, &id).await?,
             }

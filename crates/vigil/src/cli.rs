@@ -3,7 +3,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
+use vigil_core::Processor;
 use vigil_scheduler::backoff::MAX_INTERVAL;
 
 /// Self-hosted website change detection.
@@ -49,6 +50,30 @@ impl Command {
     }
 }
 
+/// What a watch compares and when it notifies. Each option replaces the watch's current
+/// setting as a whole.
+#[derive(Debug, Clone, Default, Args)]
+pub struct ContentArgs {
+    /// How the response becomes text: text (the default), json or feed.
+    #[arg(long, value_name = "NAME")]
+    pub processor: Option<Processor>,
+    /// Steps applied after the processor, as a JSON array or @FILE holding one.
+    /// Example: '[{"type": "css", "selector": "#price"}]'
+    #[arg(long, value_name = "JSON|@FILE")]
+    pub pipeline: Option<String>,
+    /// Which changes notify, as a JSON object or @FILE holding one.
+    /// Example: '{"trigger_text": ["in stock"]}'
+    #[arg(long, value_name = "JSON|@FILE")]
+    pub conditions: Option<String>,
+}
+
+impl ContentArgs {
+    /// True when none of the options was given.
+    pub fn is_empty(&self) -> bool {
+        self.processor.is_none() && self.pipeline.is_none() && self.conditions.is_none()
+    }
+}
+
 /// `vigil watch` subcommands.
 #[derive(Debug, Subcommand)]
 pub enum WatchCommand {
@@ -62,6 +87,28 @@ pub enum WatchCommand {
         /// Display name (default: the URL).
         #[arg(long)]
         name: Option<String>,
+        /// What to compare and when to notify.
+        #[command(flatten)]
+        content: ContentArgs,
+    },
+    /// Change a watch. Only the options given are changed.
+    Edit {
+        /// Watch id, or the last 6 or more characters of it.
+        id: String,
+        /// New time between checks, e.g. 30s, 5m, 1h, 1d.
+        #[arg(long, value_parser = parse_interval, value_name = "DURATION")]
+        every: Option<Duration>,
+        /// New display name.
+        #[arg(long)]
+        name: Option<String>,
+        /// What to compare and when to notify.
+        #[command(flatten)]
+        content: ContentArgs,
+    },
+    /// Print a watch's settings as JSON.
+    Show {
+        /// Watch id, or the last 6 or more characters of it.
+        id: String,
     },
     /// List all watches.
     List,
@@ -111,7 +158,9 @@ mod tests {
             "Ex",
         ])?;
         let Command::Watch {
-            command: WatchCommand::Add { url, every, name },
+            command: WatchCommand::Add {
+                url, every, name, ..
+            },
         } = cli.command
         else {
             panic!("expected watch add");
@@ -168,6 +217,83 @@ mod tests {
         assert!(matches!(
             remove,
             Command::Watch { command: WatchCommand::Remove { id } } if id == "abc123"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn watch_add_takes_content_options() -> Result<(), clap::Error> {
+        let cli = parse(&[
+            "watch",
+            "add",
+            "https://example.com",
+            "--processor",
+            "json",
+            "--pipeline",
+            "[]",
+            "--conditions",
+            "@rules.json",
+        ])?;
+        let Command::Watch {
+            command: WatchCommand::Add { content, .. },
+        } = cli.command
+        else {
+            panic!("expected watch add");
+        };
+        assert_eq!(content.processor, Some(Processor::Json));
+        assert_eq!(content.pipeline.as_deref(), Some("[]"));
+        assert_eq!(content.conditions.as_deref(), Some("@rules.json"));
+        assert!(!content.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn watch_add_without_content_options_has_none() -> Result<(), clap::Error> {
+        let cli = parse(&["watch", "add", "https://example.com"])?;
+        let Command::Watch {
+            command: WatchCommand::Add { content, .. },
+        } = cli.command
+        else {
+            panic!("expected watch add");
+        };
+        assert!(content.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn unknown_processors_are_rejected() {
+        assert!(parse(&["watch", "add", "https://example.com", "--processor", "xml"]).is_err());
+    }
+
+    #[test]
+    fn watch_edit_changes_only_what_it_is_given() -> Result<(), clap::Error> {
+        let cli = parse(&["watch", "edit", "abc123", "--every", "10m", "--name", "N"])?;
+        let Command::Watch {
+            command:
+                WatchCommand::Edit {
+                    id,
+                    every,
+                    name,
+                    content,
+                },
+        } = cli.command
+        else {
+            panic!("expected watch edit");
+        };
+        assert_eq!(id, "abc123");
+        assert_eq!(every, Some(Duration::from_secs(600)));
+        assert_eq!(name.as_deref(), Some("N"));
+        assert!(content.is_empty());
+        assert!(parse(&["watch", "edit", "abc123", "--every", "0s"]).is_err());
+        assert!(parse(&["watch", "edit"]).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn watch_show_takes_an_id() -> Result<(), clap::Error> {
+        assert!(matches!(
+            parse(&["watch", "show", "abc123"])?.command,
+            Command::Watch { command: WatchCommand::Show { id } } if id == "abc123"
         ));
         Ok(())
     }
