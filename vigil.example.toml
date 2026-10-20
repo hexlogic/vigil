@@ -1,0 +1,5 @@
+# Copy to vigil.toml. Every key is optional; VIGIL_* environment variables override this file.
+
+listen = "0.0.0.0:5800"
+data_dir = "data"
+log_format = "text" # "text" or "json"

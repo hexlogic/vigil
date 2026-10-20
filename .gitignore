@@ -1,0 +1,7 @@
+/target
+/data
+*.db
+*.db-shm
+*.db-wal
+/vigil.toml
+.DS_Store
