@@ -128,9 +128,12 @@ pub struct Fetcher {
 }
 
 impl Fetcher {
-    /// Build a fetcher. Follows at most 10 redirects; cookies are not kept between requests.
+    /// Build a fetcher. Follows at most 10 redirects; cookies are not kept between requests, and
+    /// proxy environment variables (`HTTP_PROXY` and friends) are ignored until proxy support
+    /// is configurable per watch.
     pub fn new(config: FetchConfig) -> Result<Self, FetchError> {
         let client = reqwest::Client::builder()
+            .no_proxy()
             .redirect(Policy::limited(MAX_REDIRECTS))
             .build()
             .map_err(FetchError::Http)?;
