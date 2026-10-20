@@ -3030,6 +3030,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tracing",
  "uuid",
  "vigil-core",
  "zstd",

@@ -166,3 +166,34 @@ async fn suffix_shared_by_two_watches_is_ambiguous() -> TestResult {
     assert_eq!(id.to_string(), "00000000-0000-7000-8000-100000abcdef");
     Ok(())
 }
+
+#[tokio::test]
+async fn an_unreadable_watch_is_skipped_when_listing() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let good = store
+        .create_watch(NewWatch::new("https://a.example", Schedule::Interval(60)))
+        .await?;
+    sqlx::query(
+        "INSERT INTO watches (id, name, url, schedule, created_at, updated_at) \
+         VALUES ('00000000-0000-7000-8000-00000000bad0', 'bad', 'https://b.example', \
+                 'not json', 0, 0)",
+    )
+    .execute(store.pool())
+    .await?;
+
+    let ids: Vec<_> = store
+        .list_watches()
+        .await?
+        .into_iter()
+        .map(|w| w.id)
+        .collect();
+    assert_eq!(ids, [good.id]);
+
+    // Asking for the broken watch directly still explains what is wrong.
+    let bad = "00000000-0000-7000-8000-00000000bad0".parse()?;
+    assert!(matches!(
+        store.get_watch(bad).await,
+        Err(StoreError::Json(_))
+    ));
+    Ok(())
+}
