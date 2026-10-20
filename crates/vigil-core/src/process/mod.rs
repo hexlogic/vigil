@@ -1,5 +1,6 @@
 //! Turning a decoded body into the text that gets hashed and diffed.
 
+mod depth;
 mod feed;
 mod json;
 
@@ -8,6 +9,12 @@ use crate::model::Processor;
 /// Largest text a processor or step may produce, so a small input cannot expand without
 /// bound (a regex replacement, a jq program, a deeply repeated structure).
 pub(crate) const MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
+
+/// Deepest element nesting a page may have, not counting elements the parser closes by
+/// itself. Real pages stay far below this; parsing and rendering take more than linear time
+/// in the depth, so a page of a few hundred thousand nested elements (about a megabyte)
+/// would keep a core busy for minutes.
+pub(crate) const MAX_HTML_DEPTH: usize = 512;
 
 /// Columns used when rendering HTML. Wide enough that lines are never re-wrapped, so a
 /// layout tweak elsewhere on the page cannot reflow unrelated text.
@@ -25,6 +32,9 @@ pub enum ProcessError {
     /// The body is not an RSS, Atom or JSON feed.
     #[error("the response is not a valid feed: {0}")]
     Feed(#[from] feed_rs::parser::ParseFeedError),
+    /// The page nests elements deeper than [`MAX_HTML_DEPTH`] levels.
+    #[error("the page nests elements deeper than {MAX_HTML_DEPTH} levels")]
+    HtmlTooDeep,
     /// The JSON nests deeper than [`json::MAX_DEPTH`] levels.
     #[error("the JSON nests deeper than {} levels", json::MAX_DEPTH)]
     TooDeep,
@@ -76,10 +86,20 @@ pub fn process_text(body: &str, content_type: Option<&str>) -> Result<String, Pr
     if !looks_like_html(body, content_type) {
         return Ok(body.to_owned());
     }
+    check_html_depth(body)?;
     let text = html2text::config::plain_no_decorate()
         .no_link_wrapping()
         .string_from_read(body.as_bytes(), RENDER_WIDTH)?;
     Ok(text)
+}
+
+/// Refuse a page nested deeper than [`MAX_HTML_DEPTH`]. This runs before the page is parsed,
+/// because parsing is the slow part; it reads the markup in linear time and stops early.
+pub(crate) fn check_html_depth(body: &str) -> Result<(), ProcessError> {
+    if depth::nests_deeper_than(body, MAX_HTML_DEPTH) {
+        return Err(ProcessError::HtmlTooDeep);
+    }
+    Ok(())
 }
 
 /// Trust the `Content-Type` when there is one; otherwise sniff the start of the body.

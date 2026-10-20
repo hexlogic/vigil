@@ -89,3 +89,43 @@ fn feed_metadata_changes_do_not_change_the_text() -> Result<(), ProcessError> {
     );
     Ok(())
 }
+
+fn nested(depth: usize) -> String {
+    format!("{}x{}", "<div>".repeat(depth), "</div>".repeat(depth))
+}
+
+#[test]
+fn deeply_nested_pages_are_refused_instead_of_taking_minutes() -> Result<(), ProcessError> {
+    let started = std::time::Instant::now();
+    for depth in [600, 5_000, 300_000] {
+        let error = process_text(&nested(depth), Some("text/html")).err();
+        assert_eq!(
+            error.map(|e| e.to_string()).as_deref(),
+            Some("the page nests elements deeper than 512 levels"),
+            "depth {depth}"
+        );
+    }
+    // Real pages are far shallower.
+    assert_eq!(process_text(&nested(400), Some("text/html"))?, "x\n");
+    assert!(started.elapsed() < std::time::Duration::from_secs(30));
+    Ok(())
+}
+
+#[test]
+fn nesting_is_measured_on_the_parsed_tree_not_by_counting_tags() -> Result<(), ProcessError> {
+    // Unclosed list items and paragraphs do not nest: the parser closes each before the next.
+    let flat = format!(
+        "<ul>{}</ul>{}",
+        "<li>item".repeat(5_000),
+        "<p>para".repeat(5_000)
+    );
+    assert!(process_text(&flat, Some("text/html"))?.contains("item"));
+    Ok(())
+}
+
+#[test]
+fn text_that_is_not_html_is_not_measured() -> Result<(), ProcessError> {
+    let body = nested(5_000);
+    assert_eq!(process_text(&body, Some("text/plain"))?, body);
+    Ok(())
+}
