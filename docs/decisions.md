@@ -34,3 +34,7 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 
 | Crate | Reason |
 |---|---|
+| `sqlx` (sqlite, runtime-tokio, migrate, macros) | Async SQLite with embedded migrations; bundled libsqlite3, no system dependency. |
+| `thiserror` | Typed errors in library crates (CLAUDE.md). |
+| `tempfile` (dev) | Throwaway databases in tests. |
+| `tokio` (dev) | `#[tokio::test]` runtime for async tests. |
