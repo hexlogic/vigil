@@ -1,0 +1,7 @@
+  disk   usage:   71%
+service api: ok
+service api: ok
+	service db:   degraded
+service cache: ok
+  disk   usage:   71%
+service db:   degraded

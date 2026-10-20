@@ -97,6 +97,14 @@ pub(crate) fn build_regex(body: &str, flags: &str) -> Result<Regex, regex::Error
         .build()
 }
 
+/// Compile raw regex syntax (no `/.../` wrapper, no substring handling) with the shared limits.
+pub(crate) fn raw_regex(pattern: &str) -> Result<Regex, PatternError> {
+    build_regex(pattern, "").map_err(|error| PatternError::Regex {
+        pattern: pattern.to_owned(),
+        reason: reason(&error),
+    })
+}
+
 /// The last line of a regex error, which is the explanation without the multi-line diagram.
 pub(crate) fn reason(error: &regex::Error) -> String {
     let text = error.to_string();

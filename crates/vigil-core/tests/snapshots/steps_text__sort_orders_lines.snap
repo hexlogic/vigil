@@ -1,0 +1,11 @@
+---
+source: crates/vigil-core/tests/steps_text.rs
+expression: "status(r#\"[{\"type\": \"sort\"}]\"#)?"
+---
+	service db:   degraded
+  disk   usage:   71%
+  disk   usage:   71%
+service api: ok
+service api: ok
+service cache: ok
+service db:   degraded

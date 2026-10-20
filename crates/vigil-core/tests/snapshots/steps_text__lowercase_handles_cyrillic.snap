@@ -1,0 +1,70 @@
+---
+source: crates/vigil-core/tests/steps_text.rs
+expression: text
+---
+{
+  "data": [
+    {
+      "datemodified": "2026-10-12t09:14:03+03:00",
+      "id": "ua-2026-10-12-000123-a",
+      "procuringentity": {
+        "name": "кп «міські дороги»",
+        "region": "львівська область"
+      },
+      "status": "active.tendering",
+      "tenderperiod": {
+        "enddate": "2026-10-22t18:00:00+03:00",
+        "startdate": "2026-10-12t09:00:00+03:00"
+      },
+      "title": "закупівля паливно-мастильних матеріалів",
+      "value": {
+        "amount": 1250000.0,
+        "currency": "uah",
+        "valueaddedtaxincluded": true
+      }
+    },
+    {
+      "datemodified": "2026-10-11t16:40:51+03:00",
+      "id": "ua-2026-10-11-000456-b",
+      "procuringentity": {
+        "name": "управління будівництва",
+        "region": "київ"
+      },
+      "status": "active.tendering",
+      "tenderperiod": {
+        "enddate": "2026-10-25t12:00:00+03:00",
+        "startdate": "2026-10-11t12:00:00+03:00"
+      },
+      "title": "послуги з поточного ремонту дорожнього покриття",
+      "value": {
+        "amount": 8400000.5,
+        "currency": "uah",
+        "valueaddedtaxincluded": true
+      }
+    },
+    {
+      "datemodified": "2026-10-10t10:02:11+03:00",
+      "id": "ua-2026-10-09-000789-c",
+      "procuringentity": {
+        "name": "відділ освіти",
+        "region": "харківська область"
+      },
+      "status": "complete",
+      "tenderperiod": {
+        "enddate": "2026-10-09t18:00:00+03:00",
+        "startdate": "2026-10-01t09:00:00+03:00"
+      },
+      "title": "канцелярське приладдя для шкіл",
+      "value": {
+        "amount": 96000,
+        "currency": "uah",
+        "valueaddedtaxincluded": false
+      }
+    }
+  ],
+  "next_page": {
+    "offset": "1760256000.123",
+    "path": "/api/2.5/tenders?offset=1760256000.123",
+    "uri": "https://procurement.example/api/2.5/tenders?offset=1760256000.123"
+  }
+}

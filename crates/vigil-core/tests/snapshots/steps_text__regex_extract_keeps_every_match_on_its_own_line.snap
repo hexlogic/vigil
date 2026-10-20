@@ -1,0 +1,8 @@
+---
+source: crates/vigil-core/tests/steps_text.rs
+expression: prices
+---
+€89.90
+€109.00
+€14.50
+€39.00
