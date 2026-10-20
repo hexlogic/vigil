@@ -107,3 +107,7 @@ A page that cannot be fetched or processed is not an error of the checker: it is
 ## Unreadable watch rows
 
 `list_watches` logs and skips a row it cannot interpret instead of failing, because the scheduler and `vigil watch list` both depend on it and a single bad row would otherwise stop all checking. `get_watch` still returns the error for that row.
+
+## Scheduler failure stops the server
+
+`vigil serve` watches the scheduler task. If it ends before a shutdown was requested (for example after a panic), `serve` exits with an error instead of carrying on answering `/healthz` while nothing is checked, so systemd or Docker can restart it.
