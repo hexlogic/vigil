@@ -2,6 +2,7 @@
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use figment::Figment;
 use figment::providers::{Env, Format, Serialized, Toml};
@@ -20,6 +21,45 @@ pub enum LogFormat {
     Json,
 }
 
+/// Settings for fetching pages (`[fetch]`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FetchSection {
+    /// Request timeout in seconds, for watches that do not set their own.
+    pub timeout_secs: u64,
+    /// Largest accepted response body in bytes.
+    pub max_body_bytes: u64,
+    /// `User-Agent` header; `vigil/<version>` when unset.
+    pub user_agent: Option<String>,
+}
+
+impl Default for FetchSection {
+    fn default() -> Self {
+        Self {
+            timeout_secs: 30,
+            max_body_bytes: 10 * 1024 * 1024,
+            user_agent: None,
+        }
+    }
+}
+
+/// Settings for the check scheduler (`[scheduler]`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SchedulerSection {
+    /// Checks running at once.
+    pub concurrency: usize,
+    /// Checks running at once against one host.
+    pub per_host: usize,
+}
+
+impl Default for SchedulerSection {
+    fn default() -> Self {
+        Self {
+            concurrency: 8,
+            per_host: 2,
+        }
+    }
+}
+
 /// Runtime configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
@@ -29,6 +69,10 @@ pub struct Config {
     pub data_dir: PathBuf,
     /// Log output format.
     pub log_format: LogFormat,
+    /// Page fetching.
+    pub fetch: FetchSection,
+    /// Check scheduling.
+    pub scheduler: SchedulerSection,
 }
 
 impl Default for Config {
@@ -37,11 +81,37 @@ impl Default for Config {
             listen: SocketAddr::from(([0, 0, 0, 0], 5800)),
             data_dir: PathBuf::from("data"),
             log_format: LogFormat::Text,
+            fetch: FetchSection::default(),
+            scheduler: SchedulerSection::default(),
         }
     }
 }
 
 impl Config {
+    /// Location of the SQLite database inside the data directory.
+    pub fn db_path(&self) -> PathBuf {
+        self.data_dir.join("vigil.db")
+    }
+
+    /// The fetcher settings these options describe.
+    pub fn fetch_config(&self) -> vigil_fetch::FetchConfig {
+        let defaults = vigil_fetch::FetchConfig::default();
+        vigil_fetch::FetchConfig {
+            timeout: Duration::from_secs(self.fetch.timeout_secs),
+            max_body_bytes: self.fetch.max_body_bytes,
+            user_agent: self.fetch.user_agent.clone().unwrap_or(defaults.user_agent),
+        }
+    }
+
+    /// The scheduler settings these options describe.
+    pub fn scheduler_settings(&self) -> vigil_scheduler::Settings {
+        vigil_scheduler::Settings {
+            concurrency: self.scheduler.concurrency,
+            per_host: self.scheduler.per_host,
+            ..vigil_scheduler::Settings::default()
+        }
+    }
+
     /// Layer defaults, the TOML file (if any) and `VIGIL_*` environment variables.
     ///
     /// With `path == None`, `./vigil.toml` is used when it exists. `VIGIL_CONFIG` is
@@ -126,6 +196,61 @@ mod tests {
             assert_eq!(load(None)?, Config::default());
             Ok(())
         });
+    }
+
+    #[test]
+    fn nested_sections_come_from_toml_and_env() {
+        Jail::expect_with(|jail| {
+            jail.create_file(
+                "vigil.toml",
+                r#"
+                [fetch]
+                timeout_secs = 5
+                user_agent = "probe/1"
+
+                [scheduler]
+                concurrency = 3
+                "#,
+            )?;
+            jail.set_env("VIGIL_FETCH__MAX_BODY_BYTES", "2048");
+            jail.set_env("VIGIL_SCHEDULER__PER_HOST", "1");
+            let config = load(None)?;
+            assert_eq!(config.fetch.timeout_secs, 5);
+            assert_eq!(config.fetch.max_body_bytes, 2048);
+            assert_eq!(config.fetch.user_agent.as_deref(), Some("probe/1"));
+            assert_eq!(config.scheduler.concurrency, 3);
+            assert_eq!(config.scheduler.per_host, 1);
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn partial_sections_keep_the_other_defaults() {
+        Jail::expect_with(|jail| {
+            jail.set_env("VIGIL_FETCH__TIMEOUT_SECS", "9");
+            let config = load(None)?;
+            assert_eq!(config.fetch.timeout_secs, 9);
+            assert_eq!(
+                config.fetch.max_body_bytes,
+                FetchSection::default().max_body_bytes
+            );
+            assert_eq!(config.scheduler, SchedulerSection::default());
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn derived_settings_follow_the_options() {
+        let mut config = Config::default();
+        config.fetch.timeout_secs = 7;
+        config.scheduler.concurrency = 4;
+        let fetch = config.fetch_config();
+        assert_eq!(fetch.timeout, Duration::from_secs(7));
+        assert!(fetch.user_agent.starts_with("vigil/"));
+        config.fetch.user_agent = Some("custom".into());
+        assert_eq!(config.fetch_config().user_agent, "custom");
+        assert_eq!(config.scheduler_settings().concurrency, 4);
+        assert_eq!(config.db_path(), PathBuf::from("data/vigil.db"));
     }
 
     #[test]

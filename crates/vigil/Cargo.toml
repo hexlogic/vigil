@@ -16,12 +16,19 @@ anyhow = "1.0.104"
 axum = "0.8.9"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 figment = { version = "0.10.19", features = ["toml", "env"] }
+humantime = "2.4.0"
 serde = { version = "1.0.229", features = ["derive"] }
 tokio = { version = "1.54.0", features = ["macros", "rt-multi-thread", "signal", "net"] }
+tokio-util = "0.7.20"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+vigil-core = { version = "0.1.0", path = "../vigil-core" }
+vigil-fetch = { version = "0.1.0", path = "../vigil-fetch" }
+vigil-scheduler = { version = "0.1.0", path = "../vigil-scheduler" }
 vigil-store = { version = "0.1.0", path = "../vigil-store" }
 vigil-web = { version = "0.1.0", path = "../vigil-web" }
 
 [dev-dependencies]
 figment = { version = "0.10.19", features = ["test"] }
+tempfile = "3.27.0"
+wiremock = "0.6.5"
