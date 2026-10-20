@@ -7,6 +7,7 @@
 mod error;
 mod html;
 mod jq;
+mod jq_value;
 mod json;
 mod limits;
 mod step;

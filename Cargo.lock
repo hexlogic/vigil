@@ -1538,6 +1538,7 @@ dependencies = [
  "num-traits",
  "ryu",
  "self_cell",
+ "serde_core",
 ]
 
 [[package]]

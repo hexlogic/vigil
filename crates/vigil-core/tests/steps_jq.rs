@@ -214,3 +214,58 @@ fn jq_needs_the_json_processor() {
         );
     }
 }
+
+#[test]
+fn jq_maps_what_json_cannot_hold_the_way_jq_prints_it() -> TestResult {
+    assert_eq!(jq("nan", "{}")?, "[\n  null\n]\n");
+    assert_eq!(jq("[nan, 1]", "{}")?, "[\n  [\n    null,\n    1\n  ]\n]\n");
+    assert_eq!(jq("infinite", "{}")?, "[\n  1.7976931348623157e+308\n]\n");
+    assert_eq!(jq("-infinite", "{}")?, "[\n  -1.7976931348623157e+308\n]\n");
+    // The minimum of an empty list, a common way to meet infinity.
+    let program = "reduce (.[]) as $x (infinite; if $x < . then $x else . end)";
+    assert_eq!(jq(program, "[]")?, "[\n  1.7976931348623157e+308\n]\n");
+    assert_eq!(jq(program, "[3, 1, 2]")?, "[\n  1\n]\n");
+    Ok(())
+}
+
+#[test]
+fn jq_keeps_integers_exact_and_big_numbers_as_floats() -> TestResult {
+    assert_eq!(jq(".", "9007199254740993")?, "[\n  9007199254740993\n]\n");
+    // Beyond 64 bits the nearest float is all JSON can hold.
+    assert_eq!(
+        jq(". + 1", "18446744073709551615")?,
+        "[\n  1.8446744073709552e+19\n]\n"
+    );
+    assert_eq!(jq(".[0] * 2", "[1.5]")?, "[\n  3.0\n]\n");
+    Ok(())
+}
+
+#[test]
+fn jq_values_that_are_not_json_are_reported_in_words() {
+    assert_eq!(
+        error_of("{(1): 2}", "{}"),
+        "step 1 (jq): jq failed: an object key is not text, which JSON needs"
+    );
+    assert_eq!(
+        error_of("reduce range(0; 200) as $i (null; [.])", "{}"),
+        "step 1 (jq): jq failed: the program built a value nested more than 128 levels deep"
+    );
+}
+
+#[test]
+fn jq_values_that_share_structure_cannot_blow_up_the_copy() {
+    // 2^25 leaves described by a few dozen nodes; copying them out is stopped by the limit.
+    assert_eq!(
+        error_of("reduce range(0; 25) as $i (1; [., .])", "{}"),
+        "step 1 (jq): the output is larger than 16 MiB"
+    );
+}
+
+#[test]
+fn jq_text_with_bytes_that_are_not_utf8_is_cleaned() -> TestResult {
+    assert_eq!(
+        jq("\"abc\" | explode | implode", "{}")?,
+        "[\n  \"abc\"\n]\n"
+    );
+    Ok(())
+}
