@@ -83,6 +83,12 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `minijinja` (builtins, fuel; default features off) | Message templates (PLAN.md section 2). Pure Rust. `fuel` bounds the work one render can do, so a loop in a user's template cannot stall a worker; the default features add macros, multi-template support and more that notifications do not need. |
 | `humantime` (notify) | Formats `checked_at` as RFC 3339 for templates, without a date library. Already used by the binary. |
 | `insta` (dev, notify) | Snapshots of the built-in messages. |
+| `reqwest` (notify; rustls, default features off) | Delivery over HTTP. Same TLS stack as the page fetcher (rustls with aws-lc-rs, no OpenSSL). Cargo unifies features across the workspace, so leaving the defaults on here would also turn on `system-proxy` for the fetcher, which ignores proxy variables on purpose. JSON and form bodies are encoded with `serde_json` and `url`, so the `json` and `form` features are not needed. |
+| `serde_json` (notify) | Builds every JSON request body, so message text can never break the JSON. Already in the tree. |
+| `tokio` (notify; time, macros) | Waiting between retries, and `select!` on cancellation. |
+| `tokio-util` (notify) | `CancellationToken`, so shutdown can stop a retry sleep. Already in the tree through axum. |
+| `tracing` (notify) | Logs failed attempts, without credentials. |
+| `wiremock` (dev, notify) | A mock server for each HTTP channel. |
 
 ## Text processor (Phase 1)
 
@@ -231,3 +237,11 @@ Templates are `minijinja`. Variables: `watch_id`, `watch_name`, `watch_url`, `di
 Values printed by a template are escaped for the channel; the template's own text is not. This is done with `minijinja`'s auto-escape (a custom mode named after the channel, plus a custom formatter) rather than by escaping the variables in advance, which would break `length`, `join` and truncation. `|code` and `|link` return markup that is not escaped again. Telegram uses `parse_mode: "HTML"` instead of Markdown (a deviation from PLAN.md section 7): MarkdownV2 needs `. - ! ( )` escaped, which would make users escape their own template text, while HTML needs only `& < > "`. Discord output is Markdown-escaped (a backslash before punctuation is an escape there) and is sent with `allowed_mentions` empty; Slack needs only `& < >` escaped, which also defuses `<!channel>` and `<@user>`.
 
 Messages are cut to each service's limit (Telegram 4096 characters, Discord 2000 characters, ntfy 4096 bytes; Slack 4000 characters and Gotify 32,000 are conservative choices; email and webhook bodies 256 KiB). The long values (diff, added and removed lines, snapshot, triggered text) that the template actually prints are shortened on character boundaries, preferably at a line, sharing the room fairly, before escaping so that an entity or a tag is never split; "… truncated." and a link to the diff page are added at the end. Escaping can make the text longer than the raw values, so the budget is scaled down and the render repeated (up to four times) until it fits, then a minimal message is sent.
+
+## Notification delivery
+
+Messages are sent by a `Sender` with its own HTTP client: no redirects (a redirect could carry a token to another host), no proxy (like the page fetcher), a 15 second timeout per attempt, and a `vigil/<version>` user agent. A failed delivery is retried three times, after 2, 10 and 30 seconds (four attempts in all). Connection errors, timeouts, 5xx, 408 and 429 are retried, and a `Retry-After` of up to 60 seconds is honoured; any other status (a bad token, a missing topic) fails at once, since waiting will not fix it. Cancelling the delivery's token stops the wait between attempts.
+
+Errors are written to be shown. The request URL is dropped from network errors (`reqwest::Error::without_url`), and the reply of a service, cut to 200 characters, has the request path, query and every credential replaced by `***`, because some servers echo the path in their error page. Telegram, Discord and Slack are reached at fixed addresses held in `Endpoints`, which a library user (and the tests) can change; it also lets Telegram be pointed at a self-hosted Bot API server. There is no configuration key for it yet.
+
+JSON bodies are built with `serde_json`, never by filling in text. Generic webhooks (`json://`, `form://`) receive the title, the message, the watch (id, name, URL), `checked_at`, `diff_url`, the added and removed lines and the triggered text (capped at 256 KiB each), and `truncated`; form webhooks get the same fields with the lists joined by newlines.

@@ -15,7 +15,10 @@ mod error;
 mod escape;
 mod event;
 mod message;
+mod request;
+mod retry;
 mod secret;
+mod send;
 mod template;
 mod truncate;
 
@@ -23,10 +26,13 @@ pub use channel::{
     Channel, Discord, Email, Gotify, HttpAuth, Ntfy, SCHEMES, Slack, SmtpTls, Telegram, Webhook,
     WebhookFormat,
 };
-pub use error::{ParseError, TemplateError};
+pub use error::{ParseError, SendError, TemplateError};
 pub use escape::{Markup, code_block, escape, link};
 pub use event::Event;
 pub use message::{Prepared, prepare};
+pub use request::{Endpoints, HttpBody, HttpRequest, http_request};
+pub use retry::{DeliveryReport, RetryPolicy, deliver};
 pub use secret::{Secret, SecretUrl};
+pub use send::{Sender, SenderConfig};
 pub use template::validate_template;
 pub use truncate::Limit;

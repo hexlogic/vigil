@@ -3708,8 +3708,14 @@ dependencies = [
  "lettre",
  "minijinja",
  "percent-encoding",
+ "reqwest",
+ "serde_json",
  "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
  "url",
+ "wiremock",
 ]
 
 [[package]]

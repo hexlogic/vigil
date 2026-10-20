@@ -1,5 +1,7 @@
 //! The facts about a change that a notification is built from.
 
+use std::time::{Duration, UNIX_EPOCH};
+
 /// What happened to a watch, as the variables a message template can use.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event {
@@ -28,6 +30,12 @@ pub struct Event {
 }
 
 impl Event {
+    /// When the check ran, as an RFC 3339 UTC timestamp.
+    pub fn checked_at_rfc3339(&self) -> String {
+        let millis = u64::try_from(self.checked_at_ms).unwrap_or(0);
+        humantime::format_rfc3339_seconds(UNIX_EPOCH + Duration::from_millis(millis)).to_string()
+    }
+
     /// A made-up event, for checking templates and for test notifications.
     pub fn sample() -> Self {
         Self {
