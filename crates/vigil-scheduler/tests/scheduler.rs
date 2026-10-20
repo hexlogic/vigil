@@ -521,3 +521,76 @@ async fn a_check_time_in_the_future_does_not_stall_a_watch() -> TestResult {
     handle.await?;
     Ok(())
 }
+
+fn settings_with_resync(resync: u64) -> Settings {
+    Settings {
+        resync: secs(resync),
+        ..Settings::default()
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_shorter_interval_takes_effect_at_the_next_reload() -> TestResult {
+    // Checked a minute ago, once a day: nothing is due for almost a day.
+    let mut daily = job(1, "a", 86_400)?;
+    daily.last_checked_at = Some(now_ms() - 60_000);
+    let fake = Arc::new(Fake::new(vec![daily.clone()]));
+    let (cancel, handle) = start(&fake, settings_with_resync(10));
+    sleep(secs(5)).await;
+    assert_eq!(fake.total_runs(), 0);
+
+    // The user edits it to every two minutes. The last check was a minute ago, so the next
+    // one is a minute away, not a day.
+    let started = Instant::now();
+    daily.interval = secs(120);
+    daily.last_checked_at = Some(now_ms() - 60_000);
+    *lock(&fake.jobs) = vec![daily];
+    sleep(secs(90)).await;
+    let runs = fake.runs_of(id(1)?);
+    assert_eq!(runs.len(), 1, "{runs:?}");
+    assert!(
+        runs[0] - started < secs(75),
+        "ran after {:?}",
+        runs[0] - started
+    );
+
+    cancel.cancel();
+    handle.await?;
+    Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn clearing_the_failure_streak_ends_the_backoff() -> TestResult {
+    // Five failures in a row: the next check is 32 intervals away.
+    let mut failing = job(1, "a", 60)?;
+    failing.last_checked_at = Some(now_ms() - 10_000);
+    failing.consecutive_errors = 5;
+    let fake = Arc::new(Fake::new(vec![failing.clone()]));
+    let (cancel, handle) = start(&fake, settings_with_resync(10));
+    sleep(secs(100)).await;
+    assert_eq!(fake.total_runs(), 0);
+
+    // An edit resets the streak, so the watch is back on its ordinary schedule.
+    failing.consecutive_errors = 0;
+    failing.last_checked_at = Some(now_ms() - 10_000);
+    *lock(&fake.jobs) = vec![failing];
+    sleep(secs(60)).await;
+    assert_eq!(fake.runs_of(id(1)?).len(), 1);
+
+    cancel.cancel();
+    handle.await?;
+    Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_unchanged_watch_keeps_its_place_in_the_schedule() -> TestResult {
+    let fake = Arc::new(Fake::new(vec![job(1, "a", 300)?]));
+    let (cancel, handle) = start(&fake, settings_with_resync(10));
+    // Reloads every 10 seconds must not push the checks around.
+    sleep(secs(1_000)).await;
+    let runs = fake.runs_of(id(1)?);
+    assert_eq!(gaps(&runs), vec![secs(300); runs.len() - 1]);
+    cancel.cancel();
+    handle.await?;
+    Ok(())
+}

@@ -203,6 +203,28 @@ struct Entry {
     job: Job,
     due: Instant,
     running: bool,
+    /// What the store said about the schedule the last time the watch list was loaded.
+    /// Comparing against this, not against `job`, keeps a failed recording from looking like
+    /// an edit.
+    loaded: Loaded,
+}
+
+/// The parts of a watch that decide when it runs next.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Loaded {
+    interval: Duration,
+    jitter: Duration,
+    consecutive_errors: u32,
+}
+
+impl Loaded {
+    fn of(job: &Job) -> Self {
+        Self {
+            interval: job.interval,
+            jitter: job.jitter,
+            consecutive_errors: job.consecutive_errors,
+        }
+    }
 }
 
 /// Schedule bookkeeping. Heap items whose entry has since moved on are skipped when popped.
@@ -230,10 +252,20 @@ impl State {
                     } else {
                         job.consecutive_errors
                     };
+                    // An edit that changes the interval or clears the failure streak moves the
+                    // next check; otherwise a watch changed from daily to every five minutes
+                    // would wait out the day, and a fixed watch the whole backoff.
+                    let loaded = Loaded::of(&job);
+                    let moved = loaded != entry.loaded;
+                    entry.loaded = loaded;
                     entry.job = Job {
                         consecutive_errors: errors,
                         ..job
                     };
+                    if moved && !entry.running {
+                        entry.due = initial_due(&entry.job, now, now_ms);
+                        self.heap.push(Reverse((entry.due, entry.job.id)));
+                    }
                 }
                 None => {
                     let due = initial_due(&job, now, now_ms);
@@ -241,6 +273,7 @@ impl State {
                     self.entries.insert(
                         job.id,
                         Entry {
+                            loaded: Loaded::of(&job),
                             job,
                             due,
                             running: false,
