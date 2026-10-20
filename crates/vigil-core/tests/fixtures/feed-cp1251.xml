@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="windows-1251"?>
+<rss version="2.0">
+  <channel>
+    <title>Новини порту</title>
+    <link>https://port.example/</link>
+    <item>
+      <title>Зміна графіка роботи</title>
+      <link>https://port.example/news/schedule</link>
+      <pubDate>Fri, 09 Oct 2026 14:30:00 +0300</pubDate>
+    </item>
+    <item>
+      <title>Тендер на ремонт причалу</title>
+      <link>https://port.example/news/tender</link>
+      <pubDate>Mon, 12 Oct 2026 09:00:00 +0300</pubDate>
+    </item>
+  </channel>
+</rss>

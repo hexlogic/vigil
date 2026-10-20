@@ -1,0 +1,11 @@
+---
+source: crates/vigil-core/tests/process_fixtures.rs
+expression: text
+---
+Тендер на ремонт причалу
+https://port.example/news/tender
+2026-10-12T06:00:00Z
+
+Зміна графіка роботи
+https://port.example/news/schedule
+2026-10-09T11:30:00Z

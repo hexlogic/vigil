@@ -68,6 +68,7 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `tokio-util` (binary) | Share one `CancellationToken` between the HTTP server and the scheduler. |
 | `wiremock`, `tempfile` (dev, binary) | End-to-end tests that run the real binary against a mock server and a throwaway data directory. |
 | `regex` | Patterns for ignore/trigger/block conditions and the regex steps (PLAN.md section 2). Linear-time matching, so hostile patterns cannot stall a check. |
+| `feed-rs` | Parse RSS, Atom and JSON Feed for the `feed` processor (PLAN.md section 2). Pure Rust (quick-xml); brings `chrono`, `url` and `mediatype`. |
 | `serde_json` (core) | Parse JSON bodies for the `json` processor and the JSON steps, and (de)serialize pipeline steps in the store. Already a dependency of the store. |
 
 ## Text processor (Phase 1)
@@ -125,3 +126,7 @@ A pattern is a plain substring, matched case-insensitively with Unicode simple c
 ## JSON processor
 
 The `json` processor parses the body (any content type) and prints it with two-space indentation, object keys sorted at every level, arrays in their original order and one trailing newline, so key order and formatting never register as changes. Keys are sorted by our own printer rather than by the map type, because `serde_json` keeps insertion order as soon as any crate in the build enables `preserve_order`. Numbers go through `serde_json`: integers that fit 64 bits stay exact, larger ones become floating point and lose precision, and `1.0` stays `1.0`. Nesting is limited to 128 levels (the parser's own limit, applied to values built by later steps too) and any step's output to 16 MiB, so a small input cannot make a check use unbounded memory. A body that is not JSON fails the check with the parser's message.
+
+## Feed processor
+
+Each entry becomes up to three lines (title, link, date) and entries are separated by a blank line. The date is `published`, or `updated` when there is none, converted to UTC and printed as `2026-10-12T09:00:00Z`. Entries are sorted newest first; entries without a date come after the dated ones in the order the feed lists them (the sort is stable). Lines the feed leaves out are left out, and an entry with no title, link or date is skipped. Entry ids and summaries are not part of the text: feed software generates ids when a feed has none, and summaries are often rewritten without the item changing. Feed-level data (channel title, build date) is not part of the text either, so a feed that touches `lastBuildDate` on every request does not look changed. The link is the `alternate` one when an entry has several. Titles collapse inner whitespace so line wrapping in the source does not matter. The body has already been decoded by `decode`, so the feed's own `encoding` declaration is rewritten to UTF-8 before parsing; otherwise the parser would decode the text a second time and garble it.

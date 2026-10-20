@@ -1,5 +1,6 @@
 //! Turning a decoded body into the text that gets hashed and diffed.
 
+mod feed;
 mod json;
 
 use crate::model::Processor;
@@ -15,15 +16,15 @@ const RENDER_WIDTH: usize = 10_000;
 /// Why a body could not be processed.
 #[derive(Debug, thiserror::Error)]
 pub enum ProcessError {
-    /// The processor is not implemented yet.
-    #[error("the {0} processor is not supported yet")]
-    Unsupported(Processor),
     /// HTML could not be converted to text.
     #[error("converting html to text failed: {0}")]
     Html(#[from] html2text::Error),
     /// The body is not valid JSON.
     #[error("the response is not valid JSON: {0}")]
     Json(#[from] serde_json::Error),
+    /// The body is not an RSS, Atom or JSON feed.
+    #[error("the response is not a valid feed: {0}")]
+    Feed(#[from] feed_rs::parser::ParseFeedError),
     /// The JSON nests deeper than [`json::MAX_DEPTH`] levels.
     #[error("the JSON nests deeper than {} levels", json::MAX_DEPTH)]
     TooDeep,
@@ -41,7 +42,7 @@ pub fn process(
     match processor {
         Processor::Text => process_text(body, content_type),
         Processor::Json => process_json(body),
-        other => Err(ProcessError::Unsupported(other)),
+        Processor::Feed => process_feed(body),
     }
 }
 
@@ -52,6 +53,12 @@ pub fn process(
 /// lose precision.
 pub fn process_json(body: &str) -> Result<String, ProcessError> {
     json::render_canonical(&serde_json::from_str(body)?)
+}
+
+/// The `feed` processor: RSS, Atom or JSON Feed entries, one block of title, link and date
+/// each, newest first. The content type is ignored.
+pub fn process_feed(body: &str) -> Result<String, ProcessError> {
+    feed::render_feed(body)
 }
 
 /// The `text` processor: HTML becomes readable text, anything else passes through unchanged.
@@ -134,14 +141,6 @@ mod tests {
         assert!(!out.contains("color"));
         assert!(!out.contains("var x"));
         Ok(())
-    }
-
-    #[test]
-    fn unfinished_processors_report_unsupported() {
-        assert!(matches!(
-            process(Processor::Feed, "{}", None),
-            Err(ProcessError::Unsupported(Processor::Feed))
-        ));
     }
 
     #[test]

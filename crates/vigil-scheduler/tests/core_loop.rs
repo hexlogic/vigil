@@ -51,6 +51,14 @@ async fn serve_json(server: &MockServer, body: &str) {
         .await;
 }
 
+async fn serve_xml(server: &MockServer, body: &str) {
+    server.reset().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/rss+xml"))
+        .mount(server)
+        .await;
+}
+
 async fn add_watch(setup: &Setup, interval: u64) -> Result<Watch, StoreError> {
     let schedule = Schedule::Interval(interval);
     setup
@@ -272,17 +280,57 @@ async fn checking_a_missing_watch_is_a_store_error() -> TestResult {
     Ok(())
 }
 
+const FEED_V1: &str = "<rss version=\"2.0\"><channel><title>News</title>\
+    <item><title>Older</title><link>https://n.example/1</link>\
+    <pubDate>Mon, 05 Oct 2026 10:00:00 GMT</pubDate></item></channel></rss>";
+const FEED_V2: &str = "<rss version=\"2.0\"><channel><title>News (renamed)</title>\
+    <item><title>Older</title><link>https://n.example/1</link>\
+    <pubDate>Mon, 05 Oct 2026 10:00:00 GMT</pubDate></item>\
+    <item><title>Newer</title><link>https://n.example/2</link>\
+    <pubDate>Tue, 06 Oct 2026 10:00:00 GMT</pubDate></item></channel></rss>";
+
 #[tokio::test]
-async fn unfinished_processors_fail_the_check_clearly() -> TestResult {
+async fn feed_watches_report_new_items_and_ignore_feed_metadata() -> TestResult {
     let s = setup().await?;
-    serve_page(&s.server, "{}").await;
+    let mut new = NewWatch::new(s.server.uri(), Schedule::Interval(3600));
+    new.processor = vigil_core::Processor::Feed;
+    let watch = s.store.create_watch(new).await?;
+
+    serve_xml(&s.server, FEED_V1).await;
+    assert_eq!(
+        s.checker.check(watch.id).await?.result,
+        CheckResult::Baseline
+    );
+
+    // A new item shows up as exactly the added block; the renamed channel is not a change.
+    serve_xml(&s.server, FEED_V2).await;
+    let CheckResult::Changed { current, diff, .. } = s.checker.check(watch.id).await?.result else {
+        return Err("expected a change".into());
+    };
+    assert_eq!(
+        s.store.snapshot_content(current).await?,
+        "Newer\nhttps://n.example/2\n2026-10-06T10:00:00Z\n\n\
+         Older\nhttps://n.example/1\n2026-10-05T10:00:00Z\n"
+    );
+    assert_eq!(diff.removed().count(), 0);
+    assert!(diff.added().any(|line| line == "Newer"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_feed_watch_on_an_html_page_fails_the_check_clearly() -> TestResult {
+    let s = setup().await?;
+    serve_page(&s.server, PAGE_V1).await;
     let mut new = NewWatch::new(s.server.uri(), Schedule::Interval(3600));
     new.processor = vigil_core::Processor::Feed;
     let watch = s.store.create_watch(new).await?;
     let CheckResult::Failed { message, .. } = s.checker.check(watch.id).await?.result else {
         return Err("expected a failure".into());
     };
-    assert_eq!(message, "the feed processor is not supported yet");
+    assert!(
+        message.starts_with("the response is not a valid feed: "),
+        "{message}"
+    );
     Ok(())
 }
 
