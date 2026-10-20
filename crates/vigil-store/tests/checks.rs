@@ -67,7 +67,7 @@ async fn baseline_then_unchanged_then_changed() -> TestResult {
     let watch = new_watch(&store, 100).await?;
 
     let first = store
-        .record_success(watch.id, success(1_000, "v1\n"))
+        .record_success(watch.id, &success(1_000, "v1\n"))
         .await?;
     let RecordOutcome::Baseline { snapshot: first_id } = first else {
         return Err(format!("expected baseline, got {first:?}").into());
@@ -75,18 +75,24 @@ async fn baseline_then_unchanged_then_changed() -> TestResult {
     assert_eq!(count(&store, "snapshots", &watch).await?, 1);
 
     let same = store
-        .record_success(watch.id, success(2_000, "v1\n"))
+        .record_success(watch.id, &success(2_000, "v1\n"))
         .await?;
     assert_eq!(same, RecordOutcome::Unchanged);
     assert_eq!(count(&store, "snapshots", &watch).await?, 1);
 
     let second = store
-        .record_success(watch.id, success(3_000, "v2\n"))
+        .record_success(watch.id, &success(3_000, "v2\n"))
         .await?;
-    let RecordOutcome::Changed { previous, current } = second else {
+    let RecordOutcome::Changed {
+        previous,
+        current,
+        previous_text,
+    } = second
+    else {
         return Err(format!("expected change, got {second:?}").into());
     };
     assert_eq!(previous, first_id);
+    assert_eq!(previous_text, "v1\n");
     assert_eq!(count(&store, "snapshots", &watch).await?, 2);
 
     let snapshots = store.list_snapshots(watch.id, 10).await?;
@@ -118,10 +124,10 @@ async fn identical_content_keeps_last_changed_at() -> TestResult {
     let (_dir, store) = open_temp().await?;
     let watch = new_watch(&store, 100).await?;
     store
-        .record_success(watch.id, success(1_000, "same\n"))
+        .record_success(watch.id, &success(1_000, "same\n"))
         .await?;
     store
-        .record_success(watch.id, success(5_000, "same\n"))
+        .record_success(watch.id, &success(5_000, "same\n"))
         .await?;
 
     let state = store.get_watch(watch.id).await?.state;
@@ -137,9 +143,9 @@ async fn validators_are_stored_and_a_304_keeps_them() -> TestResult {
     let mut first = success(1_000, "v1\n");
     first.etag = Some("\"abc\"".into());
     first.last_modified = Some("Mon, 01 Jan 2024 00:00:00 GMT".into());
-    store.record_success(watch.id, first).await?;
+    store.record_success(watch.id, &first).await?;
 
-    let outcome = store.record_success(watch.id, not_modified(2_000)).await?;
+    let outcome = store.record_success(watch.id, &not_modified(2_000)).await?;
     assert_eq!(outcome, RecordOutcome::Unchanged);
     assert_eq!(count(&store, "snapshots", &watch).await?, 1);
 
@@ -158,7 +164,7 @@ async fn validators_are_stored_and_a_304_keeps_them() -> TestResult {
 
     // A fresh 200 without validators clears the old ones.
     store
-        .record_success(watch.id, success(3_000, "v1\n"))
+        .record_success(watch.id, &success(3_000, "v1\n"))
         .await?;
     let state = store.get_watch(watch.id).await?.state;
     assert_eq!((state.etag, state.last_modified), (None, None));
@@ -172,7 +178,7 @@ async fn old_snapshots_are_pruned_to_the_retention_limit() -> TestResult {
     for n in 1..=4 {
         let text = format!("version {n}\n");
         store
-            .record_success(watch.id, success(n * 1_000, &text))
+            .record_success(watch.id, &success(n * 1_000, &text))
             .await?;
     }
     let snapshots = store.list_snapshots(watch.id, 10).await?;
@@ -193,10 +199,10 @@ async fn zero_retention_still_keeps_the_latest_snapshot() -> TestResult {
     let (_dir, store) = open_temp().await?;
     let watch = new_watch(&store, 0).await?;
     store
-        .record_success(watch.id, success(1_000, "a\n"))
+        .record_success(watch.id, &success(1_000, "a\n"))
         .await?;
     store
-        .record_success(watch.id, success(2_000, "b\n"))
+        .record_success(watch.id, &success(2_000, "b\n"))
         .await?;
     let snapshots = store.list_snapshots(watch.id, 10).await?;
     assert_eq!(snapshots.len(), 1);
@@ -211,7 +217,7 @@ async fn check_log_is_trimmed_to_the_newest_rows() -> TestResult {
     let extra = 5;
     for n in 0..(CHECK_LOG_KEEP + extra) {
         store
-            .record_success(watch.id, success(n, "steady\n"))
+            .record_success(watch.id, &success(n, "steady\n"))
             .await?;
     }
     assert_eq!(count(&store, "check_log", &watch).await?, CHECK_LOG_KEEP);
@@ -244,7 +250,7 @@ async fn errors_are_counted_and_cleared_by_the_next_success() -> TestResult {
     assert_eq!(state.last_checked_at, Some(2_000));
 
     store
-        .record_success(watch.id, success(3_000, "ok\n"))
+        .record_success(watch.id, &success(3_000, "ok\n"))
         .await?;
     let state = store.get_watch(watch.id).await?.state;
     assert_eq!(state.consecutive_errors, 0);
@@ -282,7 +288,7 @@ async fn recording_for_a_deleted_watch_is_not_found() -> TestResult {
     let watch = new_watch(&store, 100).await?;
     store.delete_watch(watch.id).await?;
     assert!(matches!(
-        store.record_success(watch.id, success(1, "x\n")).await,
+        store.record_success(watch.id, &success(1, "x\n")).await,
         Err(StoreError::NotFound(_))
     ));
     assert!(matches!(
@@ -299,5 +305,40 @@ async fn unknown_snapshot_is_not_found() -> TestResult {
         store.snapshot_content(uuid::Uuid::nil()).await,
         Err(StoreError::NotFound(_))
     ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn retention_of_one_still_reports_the_previous_text() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let watch = new_watch(&store, 1).await?;
+    store
+        .record_success(watch.id, &success(1_000, "v1\n"))
+        .await?;
+
+    let outcome = store
+        .record_success(watch.id, &success(2_000, "v2\n"))
+        .await?;
+    let RecordOutcome::Changed {
+        previous,
+        current,
+        previous_text,
+    } = outcome
+    else {
+        return Err(format!("expected a change, got {outcome:?}").into());
+    };
+    assert_eq!(previous_text, "v1\n");
+
+    // The previous snapshot was pruned, but the caller already has its text.
+    let snapshots = store.list_snapshots(watch.id, 10).await?;
+    assert_eq!(
+        snapshots.iter().map(|s| s.id).collect::<Vec<_>>(),
+        [current]
+    );
+    assert!(matches!(
+        store.snapshot_content(previous).await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert_eq!(store.snapshot_content(current).await?, "v2\n");
     Ok(())
 }

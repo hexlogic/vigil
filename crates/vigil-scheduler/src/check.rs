@@ -82,7 +82,7 @@ impl Checker {
             Ok(mut success) => {
                 success.at = at;
                 success.duration_ms = duration_ms;
-                self.record(id, success).await?
+                self.record(id, &success).await?
             }
             Err(message) => {
                 let consecutive_errors = self
@@ -117,17 +117,22 @@ impl Checker {
         })
     }
 
-    async fn record(&self, id: WatchId, success: CheckSuccess) -> Result<CheckResult, StoreError> {
+    async fn record(&self, id: WatchId, success: &CheckSuccess) -> Result<CheckResult, StoreError> {
         Ok(match self.store.record_success(id, success).await? {
             RecordOutcome::Baseline { .. } => CheckResult::Baseline,
             RecordOutcome::Unchanged => CheckResult::Unchanged,
-            RecordOutcome::Changed { previous, current } => {
-                let old = self.store.snapshot_content(previous).await?;
-                let new = self.store.snapshot_content(current).await?;
+            RecordOutcome::Changed {
+                previous,
+                current,
+                previous_text,
+            } => {
+                // Diff against the text the store read before pruning: with a retention of 1
+                // the previous snapshot is already gone by now.
+                let new_text = success.content.as_ref().map_or("", |c| c.text.as_str());
                 CheckResult::Changed {
                     previous,
                     current,
-                    diff: LineDiff::between(&old, &new),
+                    diff: LineDiff::between(&previous_text, new_text),
                 }
             }
         })

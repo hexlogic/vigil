@@ -125,6 +125,35 @@ async fn page_v1_then_v2_yields_two_snapshots_and_a_correct_diff() -> TestResult
 }
 
 #[tokio::test]
+async fn a_retention_of_one_still_reports_changes() -> TestResult {
+    let s = setup().await?;
+    let mut new = NewWatch::new(s.server.uri(), Schedule::Interval(3600));
+    new.snapshot_retention = 1;
+    let watch = s.store.create_watch(new).await?;
+
+    serve_page(&s.server, PAGE_V1).await;
+    assert_eq!(
+        s.checker.check(watch.id).await?.result,
+        CheckResult::Baseline
+    );
+    s.server.reset().await;
+    serve_page(&s.server, PAGE_V2).await;
+
+    let CheckResult::Changed { diff, current, .. } = s.checker.check(watch.id).await?.result else {
+        return Err("expected a change".into());
+    };
+    assert_eq!(diff.removed().collect::<Vec<_>>(), ["Widget: $10"]);
+    assert_eq!(diff.added().collect::<Vec<_>>(), ["Widget: $12"]);
+    let snapshots = s.store.list_snapshots(watch.id, 10).await?;
+    assert_eq!(
+        snapshots.iter().map(|snap| snap.id).collect::<Vec<_>>(),
+        [current]
+    );
+    assert_eq!(outcomes(&s.store, &watch).await?, ["changed", "changed"]);
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_304_counts_as_unchanged_without_a_new_snapshot() -> TestResult {
     let s = setup().await?;
     let watch = add_watch(&s, 3600).await?;
