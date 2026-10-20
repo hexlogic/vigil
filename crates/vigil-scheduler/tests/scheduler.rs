@@ -453,3 +453,36 @@ async fn no_new_checks_start_after_cancellation() -> TestResult {
     assert_eq!(fake.total_runs(), before);
     Ok(())
 }
+
+#[tokio::test(start_paused = true)]
+async fn checks_still_queued_at_shutdown_never_start() -> TestResult {
+    // One slot, three due watches: one runs, two wait for the slot.
+    let jobs = (1..=3)
+        .map(|n| job(n, &format!("host{n}:443"), 1000))
+        .collect::<Result<_, _>>()?;
+    let mut fake = Fake::new(jobs);
+    fake.run_time = secs(10);
+    let fake = Arc::new(fake);
+    let settings = Settings {
+        concurrency: 1,
+        per_host: 1,
+        ..Settings::default()
+    };
+    let started = Instant::now();
+    let (cancel, handle) = start(&fake, settings);
+
+    sleep(secs(1)).await;
+    assert_eq!(fake.total_runs(), 1);
+    cancel.cancel();
+    handle.await?;
+
+    // Only the running check was waited for; the queued ones were dropped, not started.
+    assert_eq!(fake.total_runs(), 1);
+    assert_eq!(fake.finished.load(Ordering::SeqCst), 1);
+    assert!(
+        started.elapsed() < secs(15),
+        "shutdown took {:?}",
+        started.elapsed()
+    );
+    Ok(())
+}
