@@ -129,3 +129,25 @@ fn text_that_is_not_html_is_not_measured() -> Result<(), ProcessError> {
     assert_eq!(process_text(&body, Some("text/plain"))?, body);
     Ok(())
 }
+
+#[test]
+fn svg_icons_and_charts_are_not_mistaken_for_deep_nesting() -> Result<(), ProcessError> {
+    // Self-closing children of an inline svg are siblings, however many there are.
+    let paths = r#"<path d="M0 0 L1 1"/>"#.repeat(2_000);
+    let page =
+        format!("<html><body><p>chart</p><svg viewBox='0 0 9 9'>{paths}</svg></body></html>");
+    assert!(process_text(&page, Some("text/html"))?.contains("chart"));
+    Ok(())
+}
+
+#[test]
+fn a_comment_that_ends_early_does_not_hide_nesting() {
+    let started = std::time::Instant::now();
+    let hostile = format!("<!-->{}", "<div>".repeat(100_000));
+    let error = process_text(&hostile, Some("text/html")).err();
+    assert_eq!(
+        error.map(|e| e.to_string()).as_deref(),
+        Some("the page nests elements deeper than 512 levels")
+    );
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+}
