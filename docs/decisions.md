@@ -47,3 +47,18 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `serde` (derive) | Config (de)serialization. |
 | `anyhow` | Error handling in the binary (CLAUDE.md). |
 | `tower` (util, dev), `http-body-util` (dev) | Drive the axum router in-process (`oneshot`) and read response bodies in tests. |
+| `blake3` | Fast content hash for change detection (PLAN.md section 2). |
+| `similar` | Line diffs between snapshots (PLAN.md section 2). |
+| `html2text` | HTML to readable text for the `text` processor (PLAN.md section 2). |
+| `encoding_rs` | Charset decoding of fetched bodies; also handles BOM sniffing. |
+| `uuid` (serde) | Typed watch ids; the store adds the `v7` feature to generate them. |
+| `insta` (dev) | Snapshot tests of the text pipeline on fixture pages. |
+| `serde_json` (dev) | Check the stored JSON shape of core types in tests. |
+
+## Text processor (Phase 1)
+
+HTML is rendered with `html2text` in plain mode at a width of 10,000 columns so text is never re-wrapped, and without link decoration, which means link targets are not part of the compared text yet. Non-HTML bodies pass through untouched. A response is treated as HTML when its `Content-Type` says so, or by sniffing a doctype or `<html` when the header is missing. All text is normalised (LF endings, trailing whitespace trimmed, blank runs collapsed) before hashing so cosmetic differences never register as changes.
+
+## Charset decoding
+
+The charset comes from the `Content-Type` header and defaults to UTF-8. A byte-order mark in the body wins over the header, and malformed bytes decode to U+FFFD instead of failing the check. `<meta charset>` sniffing is deferred to Phase 2.
