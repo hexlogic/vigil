@@ -26,14 +26,34 @@ Log verbosity is controlled by `RUST_LOG`. The default is `info` (stdout) for `v
 | Command | What it does |
 |---|---|
 | `vigil serve` | Start the HTTP server and the scheduler. `GET /healthz` returns `200 ok` when the database is reachable. Ctrl-C or SIGTERM stops starting checks and waits up to 30 seconds for running ones. |
-| `vigil watch add <url> [--every 1h] [--name <name>]` | Watch a page. The interval takes values like `30s`, `5m`, `1h 30m`, `1d` and must be between one second and 365 days. |
+| `vigil watch add <url> [--every 1h] [--name <name>] [content options]` | Watch a page. The interval takes values like `30s`, `5m`, `1h 30m`, `1d` and must be between one second and 365 days. See [Content options](#content-options). |
+| `vigil watch edit <id> [--every <interval>] [--name <name>] [content options]` | Change a watch. Only the options given change. The remembered `ETag` is cleared, so the next check fetches the page afresh and may report the edit itself as a change. |
+| `vigil watch show <id>` | Print a watch's settings as JSON, in the shape `--pipeline` and `--conditions` take. |
+| `vigil preview <id> [content options]` | Fetch a watch and show what a check would store: the text, a diff against the newest snapshot and whether it would notify. Saves nothing. With content options, tries them in place of the watch's own. Exits non-zero if the page or the settings do not work. |
 | `vigil watch list` | Show all watches with their id, interval, last check, last change and status (`pending`, `ok`, `paused` or `error xN`). |
 | `vigil watch remove <id>` | Delete a watch with its snapshots and history. |
-| `vigil check <id>` | Check a watch now. Prints `baseline stored`, `unchanged` or `changed, +N -M lines`; exits non-zero if the page could not be checked. |
+| `vigil check <id>` | Check a watch now. Prints `baseline stored`, `unchanged` or `changed, +N -M lines` (with `no notification: <reason>` when the watch's conditions hold the change back); exits non-zero if the page could not be checked. |
 | `vigil diff <id>` | Show the difference between the two newest snapshots as a unified diff, in color on a terminal (`NO_COLOR` turns it off). |
 
 An `<id>` is the full id from `vigil watch list` or its last six or more characters. The commands read and write the same database as `vigil serve` and can run while it is running.
 
+### Content options
+
+`watch add`, `watch edit` and `preview` take these. Each replaces that part of the watch as a whole, and the result is checked before anything is saved: a bad selector or regex is refused with the step's number.
+
+| Option | Meaning |
+|---|---|
+| `--processor text\|json\|feed` | How the response becomes text. `text` (the default) turns HTML into readable text and uses other content as is; `json` prints JSON with sorted keys; `feed` lists the entries of an RSS, Atom or JSON feed. |
+| `--pipeline <JSON\|@FILE>` | Steps applied after the processor: a JSON array, or `@path` to a file holding one. See [pipeline.md](pipeline.md). |
+| `--conditions <JSON\|@FILE>` | Which changes notify: a JSON object, or `@path`. See [pipeline.md](pipeline.md#conditions). |
+
+```sh
+vigil watch add https://shop.example/widget --every 15m \
+  --pipeline '[{"type": "css", "selector": "#price"}]' \
+  --conditions '{"trigger_text": ["in stock"]}'
+vigil preview <id>        # what would a check store, and would it notify?
+```
+
 ## How a check works
 
-The page is fetched (redirects followed up to 10 hops, responses over `fetch.max_body_bytes` rejected), decoded, converted to text (HTML becomes readable text, other content is used as is) and normalised. A snapshot is stored only when the text differs from the previous one. When the server sent an `ETag` or `Last-Modified`, the next request is conditional and a `304` counts as unchanged. A failed check is recorded on the watch and the next attempt waits `interval x 2^failures`, at most 6 hours. Each run is delayed by a random jitter of up to a tenth of the interval (at most 60 seconds). Only `http` and `https` URLs are fetched.
+The page is fetched (redirects followed up to 10 hops, responses over `fetch.max_body_bytes` rejected), decoded (the charset comes from a byte-order mark, the `Content-Type` header, or a declaration in the first kilobyte of an HTML or XML page, in that order), turned into text by the watch's processor, run through its pipeline steps, and normalised (line endings, trailing spaces and blank runs). Processing runs on its own thread and a check that takes more than 30 seconds fails. A snapshot is stored only when the text differs from the previous one; the watch's conditions then decide whether the change would notify, but the change is stored either way. When the server sent an `ETag` or `Last-Modified`, the next request is conditional and a `304` counts as unchanged. A failed check is recorded on the watch and the next attempt waits `interval x 2^failures`, at most 6 hours. Each run is delayed by a random jitter of up to a tenth of the interval (at most 60 seconds). Only `http` and `https` URLs are fetched.
