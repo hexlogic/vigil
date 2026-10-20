@@ -69,10 +69,7 @@ impl HtmlStep {
                 mode,
                 required,
             } => {
-                let found: Vec<Selected> = document
-                    .select(selector)
-                    .map(|element| Selected::Node(element.id()))
-                    .collect();
+                let found = select_attached(&document, selector);
                 apply_selection(document, &found, *mode, *required)
             }
             Self::XPath(step) => {
@@ -81,6 +78,22 @@ impl HtmlStep {
             }
         }
     }
+}
+
+/// The elements of the page that match `selector`, in document order.
+///
+/// `Html::select` walks every node the tree ever allocated, which includes subtrees that a
+/// `remove` step detached, so it would bring removed content back. This walks the tree from
+/// its root instead.
+fn select_attached(document: &Html, selector: &Selector) -> Vec<Selected> {
+    document
+        .tree
+        .root()
+        .descendants()
+        .filter_map(ElementRef::wrap)
+        .filter(|element| selector.matches(element))
+        .map(|element| Selected::Node(element.id()))
+        .collect()
 }
 
 /// Keep or remove what a step found (in document order).
