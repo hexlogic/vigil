@@ -277,3 +277,20 @@ fn expressions_that_are_too_long_or_too_nested_are_refused() {
         Some("1\n")
     );
 }
+
+#[test]
+fn xpath_numbers_and_booleans_are_written_the_way_xpath_writes_them() -> TestResult {
+    for (expr, expected) in [
+        ("1 div 0", "Infinity\n"),
+        ("-1 div 0", "-Infinity\n"),
+        ("0 div 0", "NaN\n"),
+        ("1.5 + 1", "2.5\n"),
+        ("3", "3\n"),
+        ("-0", "0\n"),
+        ("true()", "true\n"),
+        ("1 = 2", "false\n"),
+    ] {
+        assert_eq!(include(expr, "<p>x</p>")?, expected, "{expr}");
+    }
+    Ok(())
+}

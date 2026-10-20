@@ -21,7 +21,7 @@ A pipeline is a JSON array of steps, run in order. Each step is an object with a
 | `jsonpath` | `expr`, `required` | A JSONPath query ([RFC 9535](https://www.rfc-editor.org/rfc/rfc9535), filters and functions included). The result is always an array of the matches. |
 | `jq` | `program` | A jq program ([jaq](https://github.com/01mf02/jaq)). The outputs are collected into an array; no output gives `[]`. `env`, `now`, `input`, `halt`, `debug` and other filters that read the machine or the clock are not available, so the same input always gives the same output. At most 10,000 outputs. |
 | `regex_extract` | `pattern`, `group` (default 0), `required` | Keep only what the regex matches, one match per line, or one capture group of each. |
-| `regex_replace` | `pattern`, `replacement` | Replace every match. `$1` and `${name}` refer to capture groups, `$$` is a dollar sign. |
+| `regex_replace` | `pattern`, `replacement` | Replace every match. `$1` and `${name}` refer to capture groups, `$$` is a dollar sign. A name runs as far as letters, digits and underscores go, so text right after a group needs braces (`${1}USD`, not `$1USD`); a group the pattern does not have is refused. |
 | `ignore_lines` | `patterns` | Drop lines that match any pattern. |
 | `sort`, `unique`, `trim`, `collapse_whitespace`, `lowercase` | none | Sort the lines (byte order); drop repeated lines, keeping the first; strip both ends of every line; turn every run of whitespace into one space; lowercase everything. |
 

@@ -25,6 +25,14 @@ pub enum PipelineErrorKind {
     /// A pattern or regular expression is invalid.
     #[error("{0}")]
     Pattern(#[from] PatternError),
+    /// A replacement names a capture group the pattern does not have.
+    #[error("the replacement refers to group {name:?}, which the pattern does not have{hint}")]
+    ReplacementGroup {
+        /// The name the replacement used.
+        name: String,
+        /// How to write what was probably meant, or nothing.
+        hint: String,
+    },
     /// A CSS selector is invalid.
     #[error("invalid selector {selector:?}: {reason}")]
     Selector {

@@ -46,10 +46,68 @@ pub(super) fn extract(
 }
 
 pub(super) fn replace(pattern: &str, replacement: &str) -> Result<TextStep, PipelineErrorKind> {
+    let regex = raw_regex(pattern)?;
+    check_replacement(&regex, replacement)?;
     Ok(TextStep::Replace {
-        regex: raw_regex(pattern)?,
+        regex,
         replacement: replacement.to_owned(),
     })
+}
+
+/// Refuse a replacement that names a group the pattern does not have.
+///
+/// The `regex` crate reads `$1USD` as the group called `1USD`, which does not exist, and
+/// replaces it with nothing, so the text after the group silently disappears. `${1}USD` is
+/// what was meant.
+fn check_replacement(regex: &Regex, replacement: &str) -> Result<(), PipelineErrorKind> {
+    let mut rest = replacement;
+    while let Some(dollar) = rest.find('$') {
+        rest = &rest[dollar + 1..];
+        if let Some(after) = rest.strip_prefix('$') {
+            rest = after;
+            continue;
+        }
+        let (name, after) = match rest.strip_prefix('{') {
+            Some(inner) => match inner.find('}') {
+                Some(end) => (&inner[..end], &inner[end + 1..]),
+                None => continue,
+            },
+            None => {
+                let end = rest
+                    .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                    .unwrap_or(rest.len());
+                (&rest[..end], &rest[end..])
+            }
+        };
+        rest = after;
+        if !name.is_empty() && !has_group(regex, name) {
+            return Err(PipelineErrorKind::ReplacementGroup {
+                name: name.to_owned(),
+                hint: group_then_text_hint(regex, name),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn has_group(regex: &Regex, name: &str) -> bool {
+    if name.bytes().all(|b| b.is_ascii_digit()) {
+        name.parse::<usize>()
+            .is_ok_and(|index| index < regex.captures_len())
+    } else {
+        regex.capture_names().flatten().any(|group| group == name)
+    }
+}
+
+/// For `1USD`, where group 1 exists: how to write the group followed by text.
+fn group_then_text_hint(regex: &Regex, name: &str) -> String {
+    let digits = name.len() - name.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    let (number, text) = name.split_at(digits);
+    if !number.is_empty() && !text.is_empty() && has_group(regex, number) {
+        format!("; to put text right after group {number}, write ${{{number}}}{text}")
+    } else {
+        String::new()
+    }
 }
 
 pub(super) fn ignore(patterns: &[String]) -> Result<TextStep, PipelineErrorKind> {

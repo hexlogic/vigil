@@ -228,3 +228,64 @@ fn blank_lines_left_by_a_step_do_not_survive() -> TestResult {
     assert_eq!(text, "  disk   usage:   71%\n  disk   usage:   71%\n");
     Ok(())
 }
+
+#[test]
+fn replacements_may_follow_a_group_with_text_when_the_group_is_in_braces() -> TestResult {
+    let steps = r#"[{"type": "regex_replace", "pattern": "(\\d+)", "replacement": "${1}USD"}]"#;
+    assert_eq!(
+        render(Processor::Text, steps, "price 10", "text/plain")?,
+        "price 10USD\n"
+    );
+    Ok(())
+}
+
+#[test]
+fn replacements_naming_a_missing_group_are_refused_with_a_hint() {
+    let steps = r#"[{"type": "regex_replace", "pattern": "(\\d+)", "replacement": "$1USD"}]"#;
+    assert_eq!(
+        error_of(steps, "price 10"),
+        "step 1 (regex_replace): the replacement refers to group \"1USD\", which the pattern does \
+         not have; to put text right after group 1, write ${1}USD"
+    );
+    for (replacement, name) in [
+        ("$2", "2"),
+        ("${missing}", "missing"),
+        ("x $nope y", "nope"),
+    ] {
+        let steps = serde_json::json!([
+            {"type": "regex_replace", "pattern": "(\\d+)", "replacement": replacement}
+        ])
+        .to_string();
+        assert_eq!(
+            error_of(&steps, "price 10"),
+            format!(
+                "step 1 (regex_replace): the replacement refers to group \"{name}\", which the \
+                 pattern does not have"
+            ),
+            "{replacement}"
+        );
+    }
+}
+
+#[test]
+fn replacements_that_are_fine_are_accepted() -> TestResult {
+    for (pattern, replacement) in [
+        ("(\\d+)", "$1"),
+        ("(\\d+)", "$0"),
+        ("(\\d+)", "[$1]"),
+        ("(\\d+)", "$$1"),
+        ("(\\d+)", "cost $"),
+        ("(\\d+)", "$ 1"),
+        ("(\\d+)", "${"),
+        ("(?P<n>\\d+)", "$n!"),
+        ("(?P<n>\\d+)", "${n}x"),
+        ("(\\d+)-(\\d+)", "$2-$1"),
+    ] {
+        let steps = serde_json::json!([
+            {"type": "regex_replace", "pattern": pattern, "replacement": replacement}
+        ])
+        .to_string();
+        render(Processor::Text, &steps, "10-20", "text/plain")?;
+    }
+    Ok(())
+}
