@@ -14,6 +14,7 @@ use jaq_json::Val;
 use serde_json::Value;
 
 use super::error::PipelineErrorKind;
+use super::jq_value::{Unconvertible, from_json, to_json};
 use super::limits::{MAX_JQ_BYTES, too_big};
 use crate::process::MAX_OUTPUT_BYTES;
 
@@ -62,9 +63,7 @@ pub(super) fn jq(program: &str) -> Result<JqStep, PipelineErrorKind> {
 impl JqStep {
     /// Run the program on `value` and collect its outputs into an array.
     pub(super) fn apply(&self, value: Value) -> Result<Value, PipelineErrorKind> {
-        let input = serde_json::to_vec(&value)
-            .map_err(|error| PipelineErrorKind::JqRuntime(error.to_string()))?;
-        let outputs = catch_unwind(AssertUnwindSafe(|| run(&self.program, &input)))
+        let outputs = catch_unwind(AssertUnwindSafe(|| run(&self.program, value)))
             .unwrap_or_else(|_| {
                 Err(Failure::Message(
                     "the jq engine failed unexpectedly".to_owned(),
@@ -124,10 +123,10 @@ impl From<String> for Failure {
     }
 }
 
-fn run(program: &str, input: &[u8]) -> Result<Vec<Value>, Failure> {
+fn run(program: &str, input: Value) -> Result<Vec<Value>, Failure> {
     let arena = Arena::default();
     let filter = build(&arena, program)?;
-    let input = jaq_json::read::parse_single(input).map_err(|error| error.to_string())?;
+    let input = from_json(input).map_err(|error| error.to_string())?;
     let context = Ctx::<Data>::new(&filter.lut, Vars::new([]));
     let mut outputs = Vec::new();
     let mut left = MAX_OUTPUT_BYTES;
@@ -147,10 +146,14 @@ fn run(program: &str, input: &[u8]) -> Result<Vec<Value>, Failure> {
             outputs.push(Value::Null);
             break;
         }
-        let text = value.to_string();
-        left = left.checked_sub(text.len()).ok_or(Failure::TooLarge)?;
-        outputs.push(serde_json::from_str(&text).map_err(|_| {
-            Failure::Message("the program produced a value that is not JSON".to_owned())
+        outputs.push(to_json(&value, &mut left).map_err(|error| match error {
+            Unconvertible::TooLarge => Failure::TooLarge,
+            Unconvertible::TooDeep => Failure::Message(
+                "the program built a value nested more than 128 levels deep".to_owned(),
+            ),
+            Unconvertible::BadKey => {
+                Failure::Message("an object key is not text, which JSON needs".to_owned())
+            }
         })?);
     }
     Ok(outputs)
