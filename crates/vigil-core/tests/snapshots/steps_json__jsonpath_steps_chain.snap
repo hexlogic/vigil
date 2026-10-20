@@ -1,0 +1,10 @@
+---
+source: crates/vigil-core/tests/steps_json.rs
+expression: text
+---
+[
+  {
+    "name": "Відділ освіти",
+    "region": "Харківська область"
+  }
+]

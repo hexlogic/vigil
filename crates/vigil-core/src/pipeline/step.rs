@@ -32,6 +32,14 @@ pub enum Step {
         #[serde(default)]
         mode: SelectMode,
     },
+    /// Select values from JSON with a JSONPath query (RFC 9535). The result is always an array
+    /// of the matches, so its shape does not depend on how many there are, and finding
+    /// nothing is an error. Only works with the `json` processor.
+    #[serde(rename = "jsonpath")]
+    JsonPath {
+        /// A JSONPath query such as `$.items[*].price`.
+        expr: String,
+    },
     /// Keep only what a regex matches, one match per line. With `group` set, keep that
     /// capture group of each match instead of the whole match. Finding nothing is an error.
     RegexExtract {
@@ -84,6 +92,7 @@ pub enum SelectMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum Stage {
     Html,
+    Json,
     Text,
 }
 
@@ -92,6 +101,7 @@ impl Stage {
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::Html => "html",
+            Self::Json => "json",
             Self::Text => "text",
         }
     }
@@ -101,6 +111,7 @@ impl Step {
     pub(super) fn stage(&self) -> Stage {
         match self {
             Self::Css { .. } | Self::XPath { .. } => Stage::Html,
+            Self::JsonPath { .. } => Stage::Json,
             _ => Stage::Text,
         }
     }
@@ -110,6 +121,7 @@ impl Step {
         match self {
             Self::Css { .. } => "css",
             Self::XPath { .. } => "xpath",
+            Self::JsonPath { .. } => "jsonpath",
             Self::RegexExtract { .. } => "regex_extract",
             Self::RegexReplace { .. } => "regex_replace",
             Self::IgnoreLines { .. } => "ignore_lines",
@@ -153,6 +165,12 @@ mod tests {
                     mode: SelectMode::Include,
                 },
                 json!({"type": "xpath", "expr": "//a/@href", "mode": "include"}),
+            ),
+            (
+                Step::JsonPath {
+                    expr: "$.items[*].price".into(),
+                },
+                json!({"type": "jsonpath", "expr": "$.items[*].price"}),
             ),
             (
                 Step::RegexExtract {

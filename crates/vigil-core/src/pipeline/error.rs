@@ -33,6 +33,14 @@ pub enum PipelineErrorKind {
         /// One-line description of the problem.
         reason: String,
     },
+    /// A JSONPath expression is invalid.
+    #[error("invalid jsonpath {expr:?}: {reason}")]
+    JsonPath {
+        /// The expression as given.
+        expr: String,
+        /// One-line description of the problem.
+        reason: String,
+    },
     /// An XPath expression is invalid or could not be evaluated.
     #[error("invalid xpath {expr:?}: {reason}")]
     XPath {

@@ -1,0 +1,8 @@
+---
+source: crates/vigil-core/tests/steps_json.rs
+expression: "jsonpath(\"$.data[?@.value.amount > 1000000].title\", TENDERS)?"
+---
+[
+  "Закупівля паливно-мастильних матеріалів",
+  "Послуги з поточного ремонту дорожнього покриття"
+]
