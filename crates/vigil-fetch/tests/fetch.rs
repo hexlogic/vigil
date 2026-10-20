@@ -351,3 +351,85 @@ async fn garbage_urls_and_headers_are_rejected_before_sending() -> TestResult {
     );
     Ok(())
 }
+
+/// Values of header `name` in the first request the server received.
+async fn received_header(server: &MockServer, name: &str) -> Vec<String> {
+    let requests = server.received_requests().await.unwrap_or_default();
+    requests
+        .first()
+        .map(|r| {
+            r.headers
+                .get_all(name)
+                .iter()
+                .filter_map(|v| v.to_str().ok().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+async fn ok_server() -> MockServer {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+        .mount(&server)
+        .await;
+    server
+}
+
+#[tokio::test]
+async fn a_configured_user_agent_header_replaces_the_default() -> TestResult {
+    let server = ok_server().await;
+    let mut request = FetchRequest::new(server.uri());
+    request.user_agent = Some("from-field/1".into());
+    request.headers = vec![("User-Agent".into(), "from-header/1".into())];
+    body_of(fetcher()?.fetch(&request).await?)?;
+    assert_eq!(
+        received_header(&server, "user-agent").await,
+        ["from-header/1"]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_configured_validator_header_replaces_the_stored_one() -> TestResult {
+    let server = ok_server().await;
+    let mut request = FetchRequest::new(server.uri());
+    request.etag = Some("\"stored\"".into());
+    request.headers = vec![("if-none-match".into(), "\"custom\"".into())];
+    body_of(fetcher()?.fetch(&request).await?)?;
+    assert_eq!(
+        received_header(&server, "if-none-match").await,
+        ["\"custom\""]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_304_is_accepted_when_a_configured_header_made_the_request_conditional() -> TestResult {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(304))
+        .mount(&server)
+        .await;
+    let mut request = FetchRequest::new(server.uri());
+    request.headers = vec![("If-None-Match".into(), "\"custom\"".into())];
+    let outcome = fetcher()?.fetch(&request).await?;
+    assert!(
+        matches!(outcome, FetchOutcome::NotModified { .. }),
+        "{outcome:?}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn invalid_header_errors_name_the_header_but_never_show_its_value() -> TestResult {
+    let mut request = FetchRequest::new("http://127.0.0.1:9/");
+    request.headers = vec![("X-Api-Key".into(), "s3cret-token\nwith-newline".into())];
+    let Err(error) = fetcher()?.fetch(&request).await else {
+        return Err("expected an error".into());
+    };
+    let shown = format!("{error} / {error:?}");
+    assert!(shown.contains("X-Api-Key"), "{shown}");
+    assert!(!shown.contains("s3cret"), "{shown}");
+    Ok(())
+}

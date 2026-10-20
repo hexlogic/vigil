@@ -111,3 +111,7 @@ A page that cannot be fetched or processed is not an error of the checker: it is
 ## Scheduler failure stops the server
 
 `vigil serve` watches the scheduler task. If it ends before a shutdown was requested (for example after a panic), `serve` exits with an error instead of carrying on answering `/healthz` while nothing is checked, so systemd or Docker can restart it.
+
+## Request headers
+
+Per-watch headers replace a default of the same name (`User-Agent`, `If-None-Match`, `If-Modified-Since`) instead of being sent beside it. A header that makes the request conditional also makes a 304 acceptable. Errors about an unusable header name the header but never include its value, since values often hold tokens and these messages end up in the check log. Custom headers are still forwarded if a page redirects to another host; restricting that is future work.
