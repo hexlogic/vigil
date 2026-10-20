@@ -41,6 +41,15 @@ pub enum PipelineErrorKind {
         /// One-line description of the problem.
         reason: String,
     },
+    /// A jq program is invalid.
+    #[error("invalid jq program: {0}")]
+    JqProgram(String),
+    /// A jq program failed while running.
+    #[error("jq failed: {0}")]
+    JqRuntime(String),
+    /// A jq program produced more outputs than the limit.
+    #[error("jq produced more than {0} outputs")]
+    JqTooManyOutputs(usize),
     /// An XPath expression is invalid or could not be evaluated.
     #[error("invalid xpath {expr:?}: {reason}")]
     XPath {
