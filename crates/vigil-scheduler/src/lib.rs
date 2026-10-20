@@ -3,8 +3,10 @@
 pub mod backoff;
 mod check;
 pub mod limits;
+mod preview;
 mod render;
 mod scheduler;
 
 pub use check::{CheckReport, CheckResult, Checker};
+pub use preview::{Preview, PreviewReport};
 pub use scheduler::{Backend, Job, RunOutcome, Scheduler, Settings};
