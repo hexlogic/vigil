@@ -14,13 +14,15 @@ workspace = true
 [dependencies]
 fastrand = "2.5.0"
 tokio = { version = "1.54.0", features = ["rt", "sync", "time", "macros"] }
-tokio-util = "0.7.20"
+tokio-util = { version = "0.7.20", features = ["rt"] }
 tracing = "0.1.44"
 vigil-core = { version = "0.1.0", path = "../vigil-core" }
 vigil-fetch = { version = "0.1.0", path = "../vigil-fetch" }
+vigil-notify = { version = "0.1.0", path = "../vigil-notify" }
 vigil-store = { version = "0.1.0", path = "../vigil-store" }
 
 [dev-dependencies]
+serde_json = "1.0.154"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "sqlite"] }
 tempfile = "3.27.0"
 tokio = { version = "1.54.0", features = ["macros", "rt-multi-thread", "test-util"] }

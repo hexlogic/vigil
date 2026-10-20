@@ -89,6 +89,8 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `tokio-util` (notify) | `CancellationToken`, so shutdown can stop a retry sleep. Already in the tree through axum. |
 | `tracing` (notify) | Logs failed attempts, without credentials. |
 | `wiremock` (dev, notify) | A mock server for each HTTP channel. |
+| `tokio-util` (`rt`; scheduler) | `TaskTracker`, to wait for the background notification deliveries at shutdown. |
+| `serde_json` (dev, scheduler) | Reads the notification bodies the mock ntfy server receives. |
 
 ## Text processor (Phase 1)
 
@@ -255,3 +257,11 @@ The tests run `lettre` against a small SMTP responder in `crates/vigil-notify/te
 ## Test notifications
 
 PLAN.md Phase 3 asks for a test endpoint, but there is no API or login yet (auth arrives with the web UI, the API in Phase 5), and an unauthenticated endpoint that makes the server send to arbitrary configured targets is not something to ship. A test notification is `vigil notify test <target>` on the command line, backed by `send_test()` in `vigil-notify`; the HTTP endpoint and the UI button follow once there is auth. A test notification is titled "Vigil test notification" and says it is a test, tries the target's own template (so a broken template shows up there, not on the first real change), links to Vigil when `base_url` is set, and is retried like any other delivery. Its result is recorded in the delivery log with no watch.
+
+## Notification dispatch
+
+A check that finds a change the watch's conditions want a notification for (`Verdict::notify`) hands it to the `Notifier` (attached with `Checker::with_notifier`, so existing callers and tests are unchanged), which loads the watch's linked, enabled targets and delivers to each on a background task (`TaskTracker`). `check` returns as soon as the tasks are spawned, so the scheduler's host and global slots, which are held only while a check runs, are released before any request to a notification service, and retries (up to a minute) never delay the next check of the watched site. Delivery cannot change a check: it never turns it into `CheckResult::Failed`, never adds to `consecutive_errors` and never causes a backoff, because the page was fetched fine. Each delivery writes one row to the delivery log (`sent`, or `failed` with the attempts and the reason; a template that fell back to the built-in one is noted there too). A baseline never notifies.
+
+The watch's template wins over the target's `default_template`, which wins over the built-in one. The diff page link is `<base_url>/watch/<watch id>/diff?from=<previous snapshot>&to=<new snapshot>`, a path the web UI will serve; with no `base_url` the link is left out. `diff_full` is a unified diff with 3 lines of context.
+
+`vigil check` waits for its deliveries (`close_and_wait`, no time limit: the user is looking at the terminal). `vigil serve` gives them 30 seconds after the scheduler has stopped (`shutdown`): waiting to retry is abandoned at once (the log says "shutting down") and attempts already on the wire get the grace period. A target whose stored URL no longer parses (the parser was made stricter, or the row was edited by hand) is logged as failed with 0 attempts and a message that does not repeat the URL.
