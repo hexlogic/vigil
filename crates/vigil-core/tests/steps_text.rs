@@ -85,21 +85,33 @@ fn regex_extract_with_a_missing_group_fails_when_built() {
 }
 
 #[test]
-fn regex_extract_that_finds_nothing_is_an_error() {
+fn regex_extract_that_finds_nothing_leaves_empty_text() -> TestResult {
     let steps = r#"[{"type": "regex_extract", "pattern": "\\d{9}"}]"#;
     assert_eq!(
-        error_of(steps, "no digits"),
-        "step 1 (regex_extract): matched nothing"
+        render(Processor::Text, steps, "no digits", "text/plain")?,
+        ""
     );
+    Ok(())
 }
 
 #[test]
-fn regex_extract_skips_empty_matches() {
+fn regex_extract_skips_empty_matches() -> TestResult {
     let steps = r#"[{"type": "regex_extract", "pattern": "x*"}]"#;
-    assert_eq!(
-        error_of(steps, "abc"),
-        "step 1 (regex_extract): matched nothing"
-    );
+    assert_eq!(render(Processor::Text, steps, "abc", "text/plain")?, "");
+    Ok(())
+}
+
+#[test]
+fn regex_extract_required_turns_nothing_found_into_an_error() {
+    for (pattern, text) in [("\\d{9}", "no digits"), ("x*", "abc")] {
+        let steps =
+            serde_json::json!([{"type": "regex_extract", "pattern": pattern, "required": true}]);
+        assert_eq!(
+            error_of(&steps.to_string(), text),
+            "step 1 (regex_extract): matched nothing",
+            "{pattern}"
+        );
+    }
 }
 
 #[test]

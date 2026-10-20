@@ -16,6 +16,7 @@ pub(super) enum HtmlStep {
     Css {
         selector: Selector,
         mode: SelectMode,
+        required: bool,
     },
     XPath(XPathStep),
 }
@@ -29,7 +30,11 @@ pub(super) enum Selected {
     Literal(String),
 }
 
-pub(super) fn css(selector: &str, mode: SelectMode) -> Result<HtmlStep, PipelineErrorKind> {
+pub(super) fn css(
+    selector: &str,
+    mode: SelectMode,
+    required: bool,
+) -> Result<HtmlStep, PipelineErrorKind> {
     let parsed = Selector::parse(selector).map_err(|error| PipelineErrorKind::Selector {
         selector: selector.to_owned(),
         reason: error
@@ -42,6 +47,7 @@ pub(super) fn css(selector: &str, mode: SelectMode) -> Result<HtmlStep, Pipeline
     Ok(HtmlStep::Css {
         selector: parsed,
         mode,
+        required,
     })
 }
 
@@ -58,27 +64,38 @@ pub(super) fn serialize(document: &Html) -> String {
 impl HtmlStep {
     pub(super) fn apply(&self, document: Html) -> Result<Html, PipelineErrorKind> {
         match self {
-            Self::Css { selector, mode } => {
+            Self::Css {
+                selector,
+                mode,
+                required,
+            } => {
                 let found: Vec<Selected> = document
                     .select(selector)
                     .map(|element| Selected::Node(element.id()))
                     .collect();
-                apply_selection(document, &found, *mode)
+                apply_selection(document, &found, *mode, *required)
             }
             Self::XPath(step) => {
                 let found = step.select(&document)?;
-                apply_selection(document, &found, step.mode())
+                apply_selection(document, &found, step.mode(), step.required())
             }
         }
     }
 }
 
 /// Keep or remove what a step found (in document order).
+///
+/// Finding nothing is a normal result: `include` then leaves an empty page and `remove`
+/// leaves the page alone. With `required`, it is an error instead.
 pub(super) fn apply_selection(
     mut document: Html,
     found: &[Selected],
     mode: SelectMode,
+    required: bool,
 ) -> Result<Html, PipelineErrorKind> {
+    if required && found.is_empty() {
+        return Err(PipelineErrorKind::NoMatch);
+    }
     match mode {
         SelectMode::Remove => {
             for item in found {
@@ -112,9 +129,7 @@ fn include(document: &Html, found: &[Selected]) -> Result<Html, PipelineErrorKin
         })
         .collect();
     let mut body = String::new();
-    let mut kept = 0usize;
     for item in found {
-        let before = body.len();
         match item {
             Selected::Literal(text) => push_text(&mut body, text),
             Selected::Node(id) => {
@@ -138,13 +153,9 @@ fn include(document: &Html, found: &[Selected]) -> Result<Html, PipelineErrorKin
                 }
             }
         }
-        kept += usize::from(body.len() > before);
         if body.len() > MAX_OUTPUT_BYTES {
             return Err(PipelineErrorKind::TooLarge);
         }
-    }
-    if kept == 0 {
-        return Err(PipelineErrorKind::NoMatch);
     }
     Ok(Html::parse_document(&format!(
         "<html><body>{body}</body></html>"

@@ -19,6 +19,9 @@ pub enum Step {
         /// Keep only the selected elements, or remove them.
         #[serde(default)]
         mode: SelectMode,
+        /// Fail the check when nothing is selected, instead of treating that as an empty page.
+        #[serde(default, skip_serializing_if = "is_false")]
+        required: bool,
     },
     /// Select parts of an HTML page with an XPath 1.0 expression, before the page is turned
     /// into text. Works like `css`, and an `include` expression may also select text nodes,
@@ -31,14 +34,20 @@ pub enum Step {
         /// Keep only the selected nodes, or remove them.
         #[serde(default)]
         mode: SelectMode,
+        /// Fail the check when nothing is selected, instead of treating that as an empty page.
+        #[serde(default, skip_serializing_if = "is_false")]
+        required: bool,
     },
     /// Select values from JSON with a JSONPath query (RFC 9535). The result is always an array
     /// of the matches, so its shape does not depend on how many there are, and finding
-    /// nothing is an error. Only works with the `json` processor.
+    /// nothing gives `[]` unless `required` is set. Only works with the `json` processor.
     #[serde(rename = "jsonpath")]
     JsonPath {
         /// A JSONPath query such as `$.items[*].price`.
         expr: String,
+        /// Fail the check when nothing matches, instead of storing an empty array.
+        #[serde(default, skip_serializing_if = "is_false")]
+        required: bool,
     },
     /// Transform the JSON with a jq program (the jaq implementation). The outputs are
     /// collected into an array, so a program that yields one value and one that yields
@@ -50,13 +59,17 @@ pub enum Step {
         program: String,
     },
     /// Keep only what a regex matches, one match per line. With `group` set, keep that
-    /// capture group of each match instead of the whole match. Finding nothing is an error.
+    /// capture group of each match instead of the whole match. Finding nothing leaves empty
+    /// text unless `required` is set.
     RegexExtract {
         /// Regular expression syntax of the `regex` crate; use `(?i)` for flags.
         pattern: String,
         /// Capture group to keep; 0 is the whole match.
         #[serde(default)]
         group: usize,
+        /// Fail the check when nothing matches, instead of producing empty text.
+        #[serde(default, skip_serializing_if = "is_false")]
+        required: bool,
     },
     /// Replace every match of a regex. `$1` and `${name}` in the replacement refer to
     /// capture groups and `$$` is a literal dollar sign.
@@ -85,8 +98,7 @@ pub enum Step {
 
 /// What a selection step does with the elements it finds.
 ///
-/// `include` keeps only the selected elements (a selection that finds nothing is an error);
-/// `remove` deletes them and keeps the rest.
+/// `include` keeps only the selected elements; `remove` deletes them and keeps the rest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SelectMode {
@@ -114,6 +126,10 @@ impl Stage {
             Self::Text => "text",
         }
     }
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 impl Step {
@@ -159,6 +175,7 @@ mod tests {
                 Step::Css {
                     selector: "div.price > span".into(),
                     mode: SelectMode::Remove,
+                    required: false,
                 },
                 json!({"type": "css", "selector": "div.price > span", "mode": "remove"}),
             ),
@@ -166,21 +183,39 @@ mod tests {
                 Step::Css {
                     selector: "main".into(),
                     mode: SelectMode::Include,
+                    required: true,
                 },
-                json!({"type": "css", "selector": "main", "mode": "include"}),
+                json!({"type": "css", "selector": "main", "mode": "include", "required": true}),
             ),
             (
                 Step::XPath {
                     expr: "//a/@href".into(),
                     mode: SelectMode::Include,
+                    required: false,
                 },
                 json!({"type": "xpath", "expr": "//a/@href", "mode": "include"}),
             ),
             (
+                Step::XPath {
+                    expr: "//a".into(),
+                    mode: SelectMode::Remove,
+                    required: true,
+                },
+                json!({"type": "xpath", "expr": "//a", "mode": "remove", "required": true}),
+            ),
+            (
                 Step::JsonPath {
                     expr: "$.items[*].price".into(),
+                    required: false,
                 },
                 json!({"type": "jsonpath", "expr": "$.items[*].price"}),
+            ),
+            (
+                Step::JsonPath {
+                    expr: "$.items[*]".into(),
+                    required: true,
+                },
+                json!({"type": "jsonpath", "expr": "$.items[*]", "required": true}),
             ),
             (
                 Step::Jq {
@@ -192,8 +227,17 @@ mod tests {
                 Step::RegexExtract {
                     pattern: "a(b)".into(),
                     group: 1,
+                    required: false,
                 },
                 json!({"type": "regex_extract", "pattern": "a(b)", "group": 1}),
+            ),
+            (
+                Step::RegexExtract {
+                    pattern: "a".into(),
+                    group: 0,
+                    required: true,
+                },
+                json!({"type": "regex_extract", "pattern": "a", "group": 0, "required": true}),
             ),
             (
                 Step::RegexReplace {
@@ -243,7 +287,8 @@ mod tests {
             step,
             Step::RegexExtract {
                 pattern: "a".into(),
-                group: 0
+                group: 0,
+                required: false
             }
         );
         Ok(())
@@ -256,9 +301,37 @@ mod tests {
             step,
             Step::Css {
                 selector: "p".into(),
-                mode: SelectMode::Include
+                mode: SelectMode::Include,
+                required: false
             }
         );
+        Ok(())
+    }
+
+    #[test]
+    fn selection_steps_do_not_require_a_match_unless_asked() -> TestResult {
+        for shape in [
+            json!({"type": "css", "selector": "p"}),
+            json!({"type": "xpath", "expr": "//p"}),
+            json!({"type": "jsonpath", "expr": "$.a"}),
+            json!({"type": "regex_extract", "pattern": "a"}),
+        ] {
+            let step: Step = serde_json::from_value(shape.clone())?;
+            // Defaults are not written back, so stored configs keep their shape.
+            assert_eq!(
+                serde_json::to_value(&step)?["required"],
+                Value::Null,
+                "{shape}"
+            );
+            let mut asked = shape.clone();
+            asked["required"] = json!(true);
+            let step: Step = serde_json::from_value(asked.clone())?;
+            assert_eq!(
+                serde_json::to_value(&step)?["required"],
+                json!(true),
+                "{asked}"
+            );
+        }
         Ok(())
     }
 

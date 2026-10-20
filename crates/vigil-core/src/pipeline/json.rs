@@ -11,7 +11,7 @@ use crate::process::MAX_OUTPUT_BYTES;
 /// A compiled JSON step.
 #[derive(Debug)]
 pub(super) enum JsonStep {
-    Path(JsonPath),
+    Path { path: JsonPath, required: bool },
     Jq(JqStep),
 }
 
@@ -19,9 +19,9 @@ pub(super) fn jq(program: &str) -> Result<JsonStep, PipelineErrorKind> {
     jq::jq(program).map(JsonStep::Jq)
 }
 
-pub(super) fn jsonpath(expr: &str) -> Result<JsonStep, PipelineErrorKind> {
+pub(super) fn jsonpath(expr: &str, required: bool) -> Result<JsonStep, PipelineErrorKind> {
     JsonPath::parse(expr)
-        .map(JsonStep::Path)
+        .map(|path| JsonStep::Path { path, required })
         .map_err(|error| PipelineErrorKind::JsonPath {
             expr: expr.to_owned(),
             reason: error
@@ -36,9 +36,9 @@ impl JsonStep {
     pub(super) fn apply(&self, value: Value) -> Result<Value, PipelineErrorKind> {
         match self {
             Self::Jq(step) => step.apply(value),
-            Self::Path(path) => {
+            Self::Path { path, required } => {
                 let found = path.query(&value).all();
-                if found.is_empty() {
+                if found.is_empty() && *required {
                     return Err(PipelineErrorKind::NoMatch);
                 }
                 // Matches can overlap (`$..*` returns every value inside every other one), so
