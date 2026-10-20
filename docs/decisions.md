@@ -203,3 +203,11 @@ The CSS selector parser, the XPath parser and evaluator, and the jq parser recur
 ## Rescheduling after an edit
 
 The scheduler reloads the watch list every 30 seconds. A watch it already knows keeps its place in the schedule, unless what the store says about its timing has changed since the last reload: its interval, its jitter or its failure streak. Then its next check is recomputed from its last check time, as if it had just been seen, and the old queue entry is skipped. Otherwise `vigil watch edit --every 5m` on a daily watch would wait out the day, and an edit that fixes a failing watch (which resets the streak) would wait out the backoff, up to 6 hours. The comparison is with what was last loaded, not with the scheduler's own copy, so a check whose result could not be recorded (which the scheduler counts as a failure locally) is not mistaken for an edit. An edit that changes neither leaves the schedule alone: its pipeline applies to the next check at the usual time.
+
+## Delivery log
+
+Notification results go in a new `delivery_log` table (migration 0002), not in `check_log` as PLAN.md section 7 words it. A check can notify several targets, delivery happens after the check's transaction has committed and retries can take minutes, `check_log` is trimmed to 500 rows and its `outcome` CHECK constraint cannot be changed without rebuilding the table, and a test notification has no check at all. Rows are trimmed to 500 per watch (per target for test notifications, which have no watch). `snapshot_id` has no foreign key because snapshot retention prunes snapshots.
+
+## Notification targets
+
+Target names are unique (a unique index in migration 0002; nothing wrote the table before, so existing databases cannot violate it). Commands resolve a target by exact name first, then by full id or a suffix of at least 6 hex characters, as for watches. Disabled targets stay linked but are skipped when notifying. The URL is stored as typed, in plaintext, like the rest of the database: it holds credentials, so it is never logged or printed unredacted.
