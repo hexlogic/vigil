@@ -57,6 +57,9 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `serde_json` | Read and write the JSON `TEXT` columns (fetch settings, schedule). |
 | `uuid` (v7) | Time-ordered ids for watches and snapshots (PLAN.md section 4). |
 | `zstd` | Snapshot compression (PLAN.md section 2). Binds the C library; if cross builds get painful in Phase 6, `ruzstd` is the pure-Rust fallback. |
+| `reqwest` (rustls, http2, gzip, brotli; default features off) | HTTP client (PLAN.md section 2). Default features are off so native-tls/OpenSSL never enters the tree. |
+| `wiremock` (dev) | Mock HTTP server for fetcher and end-to-end tests (PLAN.md section 2). |
+| `flate2` (dev) | Build gzip bodies to test transparent decompression and the decompressed size cap. |
 
 ## Text processor (Phase 1)
 
@@ -77,3 +80,7 @@ Ids are UUID v7, whose leading 48 bits are a millisecond timestamp, so watches c
 ## Runtime SQL queries (revisited)
 
 Phase 1 adds about a dozen queries. They stay runtime-checked `sqlx::query(...)` calls and are covered by integration tests against a real SQLite file, which keeps builds free of `DATABASE_URL` and offline query data.
+
+## Fetcher behaviour
+
+TLS is rustls through reqwest's `rustls` feature, which uses the aws-lc-rs crypto provider and the platform certificate verifier; `cargo tree` shows no OpenSSL or native-tls. Revisit armv7 musl builds in Phase 6. Redirects stop after 10 hops, cookies and system proxies are off (proxy support comes later), and only `http`/`https` URLs are accepted, so `file://` is never fetched. The size cap applies to the decompressed body, checked chunk by chunk, so a small gzip bomb cannot slip past a `Content-Length` check. `If-None-Match`/`If-Modified-Since` are sent only when the watch has stored validators, and a 304 is accepted only in that case; an unsolicited 304 is reported as an error. Bodies are returned as `Vec<u8>` rather than `bytes::Bytes` to avoid a direct dependency.

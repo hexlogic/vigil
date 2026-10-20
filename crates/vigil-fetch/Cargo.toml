@@ -10,3 +10,12 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "http2", "gzip", "brotli"] }
+thiserror = "2.0.21"
+
+[dev-dependencies]
+flate2 = "1.1.10"
+tokio = { version = "1.54.0", features = ["macros", "rt-multi-thread"] }
+wiremock = "0.6.5"
