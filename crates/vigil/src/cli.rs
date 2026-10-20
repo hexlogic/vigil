@@ -41,6 +41,17 @@ pub enum Command {
         /// Watch id, or the last 6 or more characters of it.
         id: String,
     },
+    /// Fetch a watch and show what a check would store, without saving anything.
+    ///
+    /// The options replace the watch's settings for this run only, to try a pipeline before
+    /// saving it with `vigil watch edit`.
+    Preview {
+        /// Watch id, or the last 6 or more characters of it.
+        id: String,
+        /// Settings to try instead of the watch's own.
+        #[command(flatten)]
+        content: ContentArgs,
+    },
 }
 
 impl Command {
@@ -286,6 +297,18 @@ mod tests {
         assert!(content.is_empty());
         assert!(parse(&["watch", "edit", "abc123", "--every", "0s"]).is_err());
         assert!(parse(&["watch", "edit"]).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn preview_takes_an_id_and_optional_overrides() -> Result<(), clap::Error> {
+        let cli = parse(&["preview", "abc123", "--pipeline", "[]"])?;
+        let Command::Preview { id, content } = cli.command else {
+            panic!("expected preview");
+        };
+        assert_eq!(id, "abc123");
+        assert_eq!(content.pipeline.as_deref(), Some("[]"));
+        assert!(parse(&["preview"]).is_err());
         Ok(())
     }
 

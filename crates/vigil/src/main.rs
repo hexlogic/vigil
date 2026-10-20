@@ -50,5 +50,6 @@ async fn main() -> anyhow::Result<ExitCode> {
         Command::Diff { id } => commands::diff::run(&config, &id)
             .await
             .map(|()| ExitCode::SUCCESS),
+        Command::Preview { id, content } => commands::preview::run(&config, &id, &content).await,
     }
 }

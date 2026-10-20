@@ -26,9 +26,14 @@ pub async fn run(config: &Config, id: &str) -> anyhow::Result<ExitCode> {
             );
         }
         CheckResult::Unchanged => println!("{}: unchanged ({took})", watch.url),
-        CheckResult::Changed { diff, .. } => {
+        CheckResult::Changed { diff, verdict, .. } => {
+            let notify = if verdict.notify {
+                String::new()
+            } else {
+                format!("; no notification: {}", verdict.reason)
+            };
             println!(
-                "{}: changed, +{} -{} lines ({took}); run `vigil diff {id}` to see it",
+                "{}: changed, +{} -{} lines ({took}){notify}; run `vigil diff {id}` to see it",
                 watch.url,
                 diff.added_count(),
                 diff.removed_count(),
