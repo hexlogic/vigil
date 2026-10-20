@@ -74,7 +74,7 @@ HTML is rendered with `html2text` in plain mode at a width of 10,000 columns so 
 
 ## Charset decoding
 
-The charset comes from the `Content-Type` header and defaults to UTF-8. A byte-order mark in the body wins over the header, and malformed bytes decode to U+FFFD instead of failing the check. `<meta charset>` sniffing is deferred to Phase 2.
+The charset comes from the `Content-Type` header and defaults to UTF-8. A byte-order mark in the body wins over the header, malformed bytes decode to U+FFFD instead of failing the check, and charsets that encoding_rs maps to its REPLACEMENT encoding (iso-2022-kr, iso-2022-cn, hz-gb-2312) are treated as unknown, because REPLACEMENT turns every page into a single U+FFFD and would hide all changes. `<meta charset>` sniffing is deferred to Phase 2.
 
 ## Snapshot storage and check recording
 

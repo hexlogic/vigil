@@ -1,6 +1,6 @@
 //! Charset decoding of fetched bodies.
 
-use encoding_rs::{Encoding, UTF_8};
+use encoding_rs::{Encoding, REPLACEMENT, UTF_8};
 
 /// Decode `bytes` to text.
 ///
@@ -20,6 +20,9 @@ fn charset_of(content_type: &str) -> Option<&'static Encoding> {
         .filter_map(|param| param.split_once('='))
         .find(|(key, _)| key.trim().eq_ignore_ascii_case("charset"))
         .and_then(|(_, value)| Encoding::for_label(value.trim().trim_matches('"').as_bytes()))
+        // Labels such as iso-2022-kr map to the REPLACEMENT encoding, which decodes any input
+        // to a single U+FFFD. Using it would make every such page look identical forever.
+        .filter(|encoding| *encoding != REPLACEMENT)
 }
 
 #[cfg(test)]
@@ -48,6 +51,19 @@ mod tests {
     #[test]
     fn unknown_charset_falls_back_to_utf8() {
         assert_eq!(decode(b"abc", Some("text/html; charset=nonsense")), "abc");
+    }
+
+    #[test]
+    fn the_replacement_encoding_is_not_used() {
+        for label in ["iso-2022-kr", "iso-2022-cn", "hz-gb-2312"] {
+            let header = format!("text/html; charset={label}");
+            assert_eq!(decode(b"abc", Some(&header)), "abc", "{label}");
+            assert_ne!(
+                decode(b"one", Some(&header)),
+                decode(b"two", Some(&header)),
+                "{label}"
+            );
+        }
     }
 
     #[test]
