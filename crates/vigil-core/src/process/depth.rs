@@ -18,6 +18,69 @@ const IMPLIED_END: &[&str] = &[
     "caption", "colgroup", "option", "optgroup", "rb", "rt", "rtc", "rp",
 ];
 
+/// HTML elements that end foreign (SVG or MathML) content when they appear inside it, so they
+/// are read by the HTML rules even inside `<svg>`.
+const BREAKOUT: &[&str] = &[
+    "b",
+    "big",
+    "blockquote",
+    "body",
+    "br",
+    "center",
+    "code",
+    "dd",
+    "div",
+    "dl",
+    "dt",
+    "em",
+    "embed",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "head",
+    "hr",
+    "i",
+    "img",
+    "li",
+    "listing",
+    "menu",
+    "meta",
+    "nobr",
+    "ol",
+    "p",
+    "pre",
+    "ruby",
+    "s",
+    "small",
+    "span",
+    "strong",
+    "strike",
+    "sub",
+    "sup",
+    "table",
+    "tt",
+    "u",
+    "ul",
+    "var",
+    "font",
+];
+
+/// Elements inside `svg` and `math` in which HTML is parsed again.
+const INTEGRATION_POINTS: &[&str] = &[
+    "foreignobject",
+    "desc",
+    "title",
+    "annotation-xml",
+    "mi",
+    "mo",
+    "mn",
+    "ms",
+    "mtext",
+];
+
 /// Elements whose content is text up to their end tag.
 const RAW_TEXT: &[&str] = &[
     "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes",
@@ -28,14 +91,20 @@ const RAW_TEXT: &[&str] = &[
 /// ignored, as the parser ignores it, so stray end tags cannot hide the depth.
 pub(super) fn nests_deeper_than(html: &str, limit: usize) -> bool {
     let bytes = html.as_bytes();
-    let mut open: Vec<String> = Vec::new();
+    let mut open: Vec<Open> = Vec::new();
+    // How many open elements are `svg` or `math`, and how many are places inside them where
+    // HTML is parsed again. Between the two, tags follow the foreign-content rules: a
+    // trailing `/>` closes the element (`<path d="…"/>`), and nothing is raw text.
+    let (mut foreign, mut island) = (0usize, 0usize);
     let mut at = 0;
     while let Some(found) = find(bytes, at, b'<') {
         let rest = &bytes[found + 1..];
         match rest.first() {
             Some(b'!') => {
                 at = if rest.starts_with(b"!--") {
-                    skip_past(bytes, found + 4, b"-->")
+                    skip_comment(bytes, found + 4)
+                } else if foreign > 0 && rest.starts_with(b"![CDATA[") {
+                    skip_past(bytes, found + 9, b"]]>")
                 } else {
                     skip_past(bytes, found + 2, b">")
                 };
@@ -43,26 +112,45 @@ pub(super) fn nests_deeper_than(html: &str, limit: usize) -> bool {
             Some(b'?') => at = skip_past(bytes, found + 2, b">"),
             Some(b'/') => {
                 let (name, after) = tag_name(bytes, found + 2);
-                if let Some(index) = open.iter().rposition(|open| *open == name) {
-                    open.truncate(index);
+                if let Some(index) = open.iter().rposition(|open| open.name == name) {
+                    for closed in open.drain(index..) {
+                        foreign -= usize::from(closed.foreign_root);
+                        island -= usize::from(closed.island);
+                    }
                 }
-                at = skip_tag(bytes, after);
+                at = skip_tag(bytes, after).0;
             }
             Some(first) if first.is_ascii_alphabetic() => {
                 let (name, after) = tag_name(bytes, found + 1);
-                at = skip_tag(bytes, after);
-                if VOID.contains(&name.as_str()) || IMPLIED_END.contains(&name.as_str()) {
-                    continue;
-                }
-                if RAW_TEXT.contains(&name.as_str()) {
-                    // Everything up to the end tag is text, whatever it looks like.
-                    match find_end_tag(bytes, at, &name) {
-                        Some(end) => at = end,
-                        None => return false,
+                let (end, self_closing) = skip_tag(bytes, after);
+                at = end;
+                let in_foreign = foreign > 0 && island == 0 && !BREAKOUT.contains(&name.as_str());
+                if in_foreign || (is_foreign_root(&name) && island == 0) {
+                    if self_closing {
+                        continue;
                     }
-                    continue;
+                } else {
+                    if VOID.contains(&name.as_str()) || IMPLIED_END.contains(&name.as_str()) {
+                        continue;
+                    }
+                    if RAW_TEXT.contains(&name.as_str()) {
+                        // Everything up to the end tag is text, whatever it looks like.
+                        match find_end_tag(bytes, at, &name) {
+                            Some(end) => at = end,
+                            None => return false,
+                        }
+                        continue;
+                    }
                 }
-                open.push(name);
+                let foreign_root = is_foreign_root(&name);
+                foreign += usize::from(foreign_root);
+                let island_start = foreign > 0 && INTEGRATION_POINTS.contains(&name.as_str());
+                island += usize::from(island_start);
+                open.push(Open {
+                    name,
+                    foreign_root,
+                    island: island_start,
+                });
                 if open.len() > limit {
                     return true;
                 }
@@ -74,6 +162,44 @@ pub(super) fn nests_deeper_than(html: &str, limit: usize) -> bool {
         }
     }
     false
+}
+
+/// An open element, with what it added to the foreign-content counters.
+struct Open {
+    name: String,
+    foreign_root: bool,
+    island: bool,
+}
+
+fn is_foreign_root(name: &str) -> bool {
+    matches!(name, "svg" | "math")
+}
+
+/// The index just past the comment whose text starts at `from`. A comment ends at `-->` or
+/// `--!>`, and also right away at `<!-->` and `<!--->`.
+fn skip_comment(bytes: &[u8], from: usize) -> usize {
+    let tail = bytes.get(from..).unwrap_or_default();
+    if tail.starts_with(b">") {
+        return from + 1;
+    }
+    if tail.starts_with(b"->") {
+        return from + 2;
+    }
+    let mut i = 0;
+    while let Some(dashes) = tail
+        .get(i..)
+        .and_then(|rest| rest.windows(2).position(|w| w == b"--"))
+    {
+        let after = i + dashes + 2;
+        match tail.get(after) {
+            Some(b'>') => return from + after + 1,
+            Some(b'!') if tail.get(after + 1) == Some(&b'>') => return from + after + 2,
+            // `--->`: the second and third dash start the ending.
+            Some(b'-') => i += dashes + 1,
+            _ => i = after,
+        }
+    }
+    bytes.len()
 }
 
 fn find(bytes: &[u8], from: usize, wanted: u8) -> Option<usize> {
@@ -103,14 +229,17 @@ fn tag_name(bytes: &[u8], from: usize) -> (String, usize) {
     (name, from + len)
 }
 
-/// The index just past the `>` that ends the tag whose attributes start at `from`. Quoted
-/// attribute values may contain `>`.
-fn skip_tag(bytes: &[u8], from: usize) -> usize {
+/// The index just past the `>` that ends the tag whose attributes start at `from`, and
+/// whether the tag ends in `/>`. Quoted attribute values may contain `>`.
+fn skip_tag(bytes: &[u8], from: usize) -> (usize, bool) {
     let mut i = from;
+    let mut slash = false;
     while i < bytes.len() {
-        match bytes[i] {
-            b'>' => return i + 1,
+        let byte = bytes[i];
+        match byte {
+            b'>' => return (i + 1, slash),
             b'=' => {
+                slash = false;
                 i += 1;
                 while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
                     i += 1;
@@ -129,10 +258,13 @@ fn skip_tag(bytes: &[u8], from: usize) -> usize {
                     }
                 }
             }
-            _ => i += 1,
+            _ => {
+                slash = byte == b'/';
+                i += 1;
+            }
         }
     }
-    bytes.len()
+    (bytes.len(), false)
 }
 
 /// The index of the `<` of the end tag for the raw-text element `name`, searching from `from`.
@@ -238,6 +370,95 @@ mod tests {
     }
 
     #[test]
+    fn self_closing_svg_children_do_not_nest() {
+        let paths = r#"<path d="M0 0"/>"#.repeat(5_000);
+        assert!(!nests_deeper_than(&format!("<svg>{paths}</svg>"), 512));
+        assert!(!nests_deeper_than(
+            &format!("<svg><g>{paths}</g></svg>"),
+            512
+        ));
+        assert!(!nests_deeper_than(
+            &format!("<math>{}</math>", "<mspace/>".repeat(5_000)),
+            512
+        ));
+        assert!(!nests_deeper_than(
+            &format!("<svg>{}</svg>", "<g/>".repeat(5_000)),
+            512
+        ));
+        assert!(!nests_deeper_than(&"<svg/>".repeat(5_000), 512));
+        // A closing slash separated from the `>` is not self-closing.
+        assert!(nests_deeper_than(
+            &format!("<svg>{}", "<path / >".repeat(600)),
+            512
+        ));
+    }
+
+    #[test]
+    fn svg_children_that_are_not_closed_still_nest() {
+        assert!(nests_deeper_than(
+            &format!("<svg>{}", "<g>".repeat(600)),
+            512
+        ));
+    }
+
+    #[test]
+    fn html_elements_are_never_self_closing() {
+        assert!(nests_deeper_than(&"<div/>".repeat(600), 512));
+        assert!(nests_deeper_than(&"<span/>".repeat(600), 512));
+        assert!(nests_deeper_than(&"<a href=x/>".repeat(600), 512));
+    }
+
+    #[test]
+    fn html_inside_foreign_content_follows_the_html_rules() {
+        // `<div>` breaks out of svg, and foreignObject and title hold HTML again.
+        assert!(nests_deeper_than(
+            &format!("<svg>{}", "<div/>".repeat(600)),
+            512
+        ));
+        assert!(nests_deeper_than(
+            &format!("<svg><foreignObject>{}", "<section/>".repeat(600)),
+            512
+        ));
+        assert!(nests_deeper_than(
+            &format!("<svg><title>{}", "<div>".repeat(600)),
+            512
+        ));
+    }
+
+    #[test]
+    fn cdata_and_raw_text_names_in_svg_follow_foreign_rules() {
+        let tags = "<div>".repeat(1_000);
+        assert!(!nests_deeper_than(
+            &format!("<svg><![CDATA[{tags}]]></svg>"),
+            512
+        ));
+        // Outside svg, CDATA is a bogus comment that ends at the first `>`.
+        assert!(nests_deeper_than(&format!("<![CDATA[{tags}]]>"), 512));
+        // `<style>` inside svg is an ordinary element, so what follows is read as markup.
+        assert!(nests_deeper_than(&format!("<svg><style>{tags}"), 512));
+    }
+
+    #[test]
+    fn every_way_to_end_a_comment_is_followed() {
+        let tags = "<div>".repeat(1_000);
+        for text in [
+            format!("<!-->{tags}"),
+            format!("<!--->{tags}"),
+            format!("<!-- x --!>{tags}"),
+            format!("<!-- x --->{tags}"),
+            format!("<!-- x -->{tags}"),
+        ] {
+            assert!(nests_deeper_than(&text, 512), "{}", &text[..16]);
+        }
+        // A comment that is never closed hides everything after it.
+        assert!(!nests_deeper_than(&format!("<!-- x {tags}"), 512));
+        assert!(!nests_deeper_than(
+            &format!("<!-- x -- y --- z {tags}"),
+            512
+        ));
+    }
+
+    #[test]
     fn malformed_markup_does_not_panic() {
         for html in [
             "",
@@ -267,6 +488,18 @@ mod tests {
             "<a/>",
             "<a / >",
             "\u{0}<\u{0}>",
+            "<svg",
+            "<svg>",
+            "<svg><![CDATA[",
+            "</svg></svg>",
+            "<svg><foreignObject></svg>",
+            "<!-->",
+            "<!--->",
+            "<!---",
+            "<!-- --",
+            "<!-- --!",
+            "<math><mi></math></mi>",
+            "<svg><title></desc>",
         ] {
             let _ = nests_deeper_than(html, 512);
         }
