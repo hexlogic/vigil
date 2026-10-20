@@ -102,17 +102,32 @@ fn xpath_results_come_in_document_order() -> TestResult {
 }
 
 #[test]
-fn xpath_include_that_finds_nothing_is_an_error() {
+fn xpath_include_that_finds_nothing_leaves_an_empty_page() -> TestResult {
     for expr in [
         "//nothing",
         "string(//nothing)",
         "//p[@class='none']/text()",
     ] {
-        assert_eq!(
-            error_of(expr, "include", NEWS),
-            "step 1 (xpath): matched nothing",
-            "{expr}"
-        );
+        assert_eq!(include(expr, NEWS)?, "", "{expr}");
+    }
+    Ok(())
+}
+
+#[test]
+fn xpath_required_turns_an_empty_selection_into_an_error() {
+    for (expr, mode) in [
+        ("//nothing", "include"),
+        ("string(//nothing)", "include"),
+        ("//p[@class='none']/text()", "include"),
+        ("//nothing", "remove"),
+    ] {
+        let steps =
+            serde_json::json!([{"type": "xpath", "expr": expr, "mode": mode, "required": true}]);
+        let message = render(&steps.to_string(), NEWS)
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert_eq!(message, "step 1 (xpath): matched nothing", "{expr} {mode}");
     }
 }
 

@@ -108,11 +108,18 @@ fn jsonpath_output_feeds_text_steps() -> TestResult {
 }
 
 #[test]
-fn jsonpath_that_finds_nothing_is_an_error() {
+fn jsonpath_that_finds_nothing_gives_an_empty_array() -> TestResult {
+    assert_eq!(jsonpath("$.data[*].missing", TENDERS)?, "[]\n");
+    assert_eq!(jsonpath("$.data[?@.status == 'none']", TENDERS)?, "[]\n");
+    Ok(())
+}
+
+#[test]
+fn jsonpath_required_turns_an_empty_selection_into_an_error() {
     assert_eq!(
         error_of(
             Processor::Json,
-            r#"[{"type": "jsonpath", "expr": "$.data[*].missing"}]"#,
+            r#"[{"type": "jsonpath", "expr": "$.data[*].missing", "required": true}]"#,
             TENDERS
         ),
         "step 1 (jsonpath): matched nothing"

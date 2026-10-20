@@ -11,8 +11,15 @@ use crate::process::MAX_OUTPUT_BYTES;
 /// A compiled text step.
 #[derive(Debug)]
 pub(super) enum TextStep {
-    Extract { regex: Regex, group: usize },
-    Replace { regex: Regex, replacement: String },
+    Extract {
+        regex: Regex,
+        group: usize,
+        required: bool,
+    },
+    Replace {
+        regex: Regex,
+        replacement: String,
+    },
     Ignore(Vec<Pattern>),
     Sort,
     Unique,
@@ -21,13 +28,21 @@ pub(super) enum TextStep {
     Lowercase,
 }
 
-pub(super) fn extract(pattern: &str, group: usize) -> Result<TextStep, PipelineErrorKind> {
+pub(super) fn extract(
+    pattern: &str,
+    group: usize,
+    required: bool,
+) -> Result<TextStep, PipelineErrorKind> {
     let regex = raw_regex(pattern)?;
     let groups = regex.captures_len() - 1;
     if group > groups {
         return Err(PipelineErrorKind::NoSuchGroup { group, groups });
     }
-    Ok(TextStep::Extract { regex, group })
+    Ok(TextStep::Extract {
+        regex,
+        group,
+        required,
+    })
 }
 
 pub(super) fn replace(pattern: &str, replacement: &str) -> Result<TextStep, PipelineErrorKind> {
@@ -46,7 +61,11 @@ impl TextStep {
     /// Run the step over `text`.
     pub(super) fn apply(&self, text: &str) -> Result<String, PipelineErrorKind> {
         let out = match self {
-            Self::Extract { regex, group } => extract_matches(regex, *group, text)?,
+            Self::Extract {
+                regex,
+                group,
+                required,
+            } => extract_matches(regex, *group, *required, text)?,
             Self::Replace { regex, replacement } => replace_matches(regex, replacement, text)?,
             Self::Ignore(patterns) => lines_where(text, |line| {
                 !patterns.iter().any(|pattern| pattern.is_match(line))
@@ -71,7 +90,12 @@ impl TextStep {
     }
 }
 
-fn extract_matches(regex: &Regex, group: usize, text: &str) -> Result<String, PipelineErrorKind> {
+fn extract_matches(
+    regex: &Regex,
+    group: usize,
+    required: bool,
+    text: &str,
+) -> Result<String, PipelineErrorKind> {
     let mut out = String::new();
     for captures in regex.captures_iter(text) {
         let Some(found) = captures.get(group).filter(|found| !found.is_empty()) else {
@@ -83,7 +107,7 @@ fn extract_matches(regex: &Regex, group: usize, text: &str) -> Result<String, Pi
             return Err(PipelineErrorKind::TooLarge);
         }
     }
-    if out.is_empty() {
+    if out.is_empty() && required {
         return Err(PipelineErrorKind::NoMatch);
     }
     Ok(out)

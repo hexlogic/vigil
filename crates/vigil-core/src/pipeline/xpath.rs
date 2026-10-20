@@ -27,9 +27,14 @@ pub(super) struct XPathStep {
     expr: String,
     xpath: XPath,
     mode: SelectMode,
+    required: bool,
 }
 
-pub(super) fn xpath(expr: &str, mode: SelectMode) -> Result<HtmlStep, PipelineErrorKind> {
+pub(super) fn xpath(
+    expr: &str,
+    mode: SelectMode,
+    required: bool,
+) -> Result<HtmlStep, PipelineErrorKind> {
     let invalid = |reason: String| PipelineErrorKind::XPath {
         expr: expr.to_owned(),
         reason,
@@ -46,12 +51,17 @@ pub(super) fn xpath(expr: &str, mode: SelectMode) -> Result<HtmlStep, PipelineEr
         expr: expr.to_owned(),
         xpath: compiled,
         mode,
+        required,
     }))
 }
 
 impl XPathStep {
     pub(super) fn mode(&self) -> SelectMode {
         self.mode
+    }
+
+    pub(super) fn required(&self) -> bool {
+        self.required
     }
 
     /// Evaluate the expression on `document` and return what it found, in document order.
@@ -78,6 +88,8 @@ impl XPathStep {
                 .into_iter()
                 .filter_map(|node| mirror.original(node))
                 .collect(),
+            // A computed empty string is "nothing", like an empty selection.
+            Value::String(text) if text.is_empty() => Vec::new(),
             Value::String(text) => vec![Selected::Literal(text)],
             Value::Number(number) => vec![Selected::Literal(number.to_string())],
             Value::Boolean(flag) => vec![Selected::Literal(flag.to_string())],

@@ -84,30 +84,42 @@ impl Pipeline {
                 }));
             }
             match step {
-                Step::Css { selector, mode } => html.push(Slot {
+                Step::Css {
+                    selector,
+                    mode,
+                    required,
+                } => html.push(Slot {
                     index,
                     name,
-                    step: html::css(selector, *mode).map_err(fail)?,
+                    step: html::css(selector, *mode, *required).map_err(fail)?,
                 }),
-                Step::XPath { expr, mode } => html.push(Slot {
+                Step::XPath {
+                    expr,
+                    mode,
+                    required,
+                } => html.push(Slot {
                     index,
                     name,
-                    step: xpath::xpath(expr, *mode).map_err(fail)?,
+                    step: xpath::xpath(expr, *mode, *required).map_err(fail)?,
                 }),
-                Step::JsonPath { expr } => json.push(Slot {
+                Step::JsonPath { expr, required } => json.push(Slot {
                     index,
                     name,
-                    step: json::jsonpath(expr).map_err(fail)?,
+                    step: json::jsonpath(expr, *required).map_err(fail)?,
                 }),
                 Step::Jq { program } => json.push(Slot {
                     index,
                     name,
                     step: json::jq(program).map_err(fail)?,
                 }),
-                Step::RegexExtract { pattern, group } => text.push(Slot {
+                Step::RegexExtract {
+                    pattern,
+                    group,
+                    required,
+                } => text.push(Slot {
                     index,
                     name,
-                    step: text::extract(pattern, *group).map_err(fail)?,
+                    step: text::extract(pattern, *group, *required).map_err(fail)?,
                 }),
                 Step::RegexReplace {
                     pattern,
@@ -217,6 +229,7 @@ mod tests {
             Step::RegexExtract {
                 pattern: "a(b)".into(),
                 group: 3,
+                required: false,
             },
         ];
         let Err(error) = Pipeline::new(Processor::Text, &steps) else {

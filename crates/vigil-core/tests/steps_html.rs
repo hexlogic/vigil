@@ -75,12 +75,45 @@ fn css_include_does_not_repeat_nested_matches() -> TestResult {
 }
 
 #[test]
-fn css_include_that_finds_nothing_is_an_error() {
-    let steps = r#"[{"type": "css", "selector": ".gone"}]"#;
+fn css_include_that_finds_nothing_leaves_an_empty_page() -> TestResult {
     assert_eq!(
-        error_of(Processor::Text, steps, NEWS),
-        "step 1 (css): matched nothing"
+        render(r#"[{"type": "css", "selector": ".gone"}]"#, NEWS)?,
+        ""
     );
+    Ok(())
+}
+
+#[test]
+fn css_required_turns_an_empty_selection_into_an_error() -> TestResult {
+    for mode in ["include", "remove"] {
+        let steps = format!(
+            r#"[{{"type": "css", "selector": ".gone", "mode": "{mode}", "required": true}}]"#
+        );
+        assert_eq!(
+            error_of(Processor::Text, &steps, NEWS),
+            "step 1 (css): matched nothing",
+            "{mode}"
+        );
+    }
+    // A required selection that does find something is unaffected.
+    let found = render(
+        r#"[{"type": "css", "selector": "h1", "required": true}]"#,
+        NEWS,
+    )?;
+    assert_eq!(found, "# Top stories\n");
+    Ok(())
+}
+
+#[test]
+fn css_required_is_satisfied_by_any_match() -> TestResult {
+    let found = render(
+        r#"[{"type": "css", "selector": "h1", "required": true}]"#,
+        NEWS,
+    )?;
+    assert_eq!(found, "# Top stories\n");
+    let steps = r#"[{"type": "css", "selector": "p", "required": true}]"#;
+    assert_eq!(render(steps, "<p></p>")?, "");
+    Ok(())
 }
 
 #[test]
