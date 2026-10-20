@@ -5,35 +5,32 @@
 //! `render`, so a preview shows exactly what a check would store.
 
 mod error;
+mod html;
 mod step;
 mod text;
 
 pub use error::{PipelineError, PipelineErrorKind};
-pub use step::Step;
+pub use step::{SelectMode, Step};
 
 use crate::decode::decode;
 use crate::model::Processor;
 use crate::normalize::normalize;
-use crate::process::{MAX_OUTPUT_BYTES, process};
+use crate::process::{MAX_OUTPUT_BYTES, process, process_text};
+use html::HtmlStep;
+use step::Stage;
 use text::TextStep;
 
-/// A compiled step with the name used to report errors about it.
+/// A compiled step with its position and the name used to report errors about it.
 #[derive(Debug)]
-struct Slot {
+struct Slot<T> {
+    index: usize,
     name: &'static str,
-    step: Compiled,
+    step: T,
 }
 
-#[derive(Debug)]
-enum Compiled {
-    Text(TextStep),
-}
-
-impl Compiled {
-    fn apply(&self, text: &str) -> Result<String, PipelineErrorKind> {
-        match self {
-            Self::Text(step) => step.apply(text),
-        }
+impl<T> Slot<T> {
+    fn fail(&self, kind: PipelineErrorKind) -> PipelineError {
+        PipelineError::at(self.index, self.name, kind)
     }
 }
 
@@ -41,69 +38,127 @@ impl Compiled {
 #[derive(Debug)]
 pub struct Pipeline {
     processor: Processor,
-    steps: Vec<Slot>,
+    html: Vec<Slot<HtmlStep>>,
+    text: Vec<Slot<TextStep>>,
 }
 
 impl Pipeline {
-    /// Check `steps` against `processor` and compile them. Invalid regular expressions,
-    /// patterns and capture groups are reported here, naming the step.
+    /// Check `steps` against `processor` and compile them. Invalid selectors, regular
+    /// expressions, patterns and capture groups, steps that need another processor, and steps
+    /// in the wrong order are reported here, naming the step.
+    ///
+    /// Steps must be ordered by what they work on: HTML steps first, then text steps.
     pub fn new(processor: Processor, steps: &[Step]) -> Result<Self, PipelineError> {
-        let mut slots = Vec::with_capacity(steps.len());
+        let mut html = Vec::new();
+        let mut text = Vec::new();
+        let mut stage = Stage::Html;
         for (index, step) in steps.iter().enumerate() {
             let name = step.name();
-            let compiled = compile(step).map_err(|kind| PipelineError::at(index, name, kind))?;
-            slots.push(Slot {
-                name,
-                step: compiled,
-            });
+            let fail = |kind: PipelineErrorKind| PipelineError::at(index, name, kind);
+            if step.stage() < stage {
+                return Err(fail(PipelineErrorKind::OutOfOrder {
+                    stage: step.stage().label(),
+                    after: stage.label(),
+                }));
+            }
+            stage = step.stage();
+            if step.stage() == Stage::Html && processor != Processor::Text {
+                return Err(fail(PipelineErrorKind::WrongProcessor {
+                    stage: Stage::Html.label(),
+                    needed: Processor::Text,
+                    found: processor,
+                }));
+            }
+            match step {
+                Step::Css { selector, mode } => html.push(Slot {
+                    index,
+                    name,
+                    step: html::css(selector, *mode).map_err(fail)?,
+                }),
+                Step::RegexExtract { pattern, group } => text.push(Slot {
+                    index,
+                    name,
+                    step: text::extract(pattern, *group).map_err(fail)?,
+                }),
+                Step::RegexReplace {
+                    pattern,
+                    replacement,
+                } => text.push(Slot {
+                    index,
+                    name,
+                    step: text::replace(pattern, replacement).map_err(fail)?,
+                }),
+                Step::IgnoreLines { patterns } => text.push(Slot {
+                    index,
+                    name,
+                    step: text::ignore(patterns).map_err(fail)?,
+                }),
+                Step::Sort {} => text.push(Slot {
+                    index,
+                    name,
+                    step: TextStep::Sort,
+                }),
+                Step::Unique {} => text.push(Slot {
+                    index,
+                    name,
+                    step: TextStep::Unique,
+                }),
+                Step::Trim {} => text.push(Slot {
+                    index,
+                    name,
+                    step: TextStep::Trim,
+                }),
+                Step::CollapseWhitespace {} => text.push(Slot {
+                    index,
+                    name,
+                    step: TextStep::CollapseWhitespace,
+                }),
+                Step::Lowercase {} => text.push(Slot {
+                    index,
+                    name,
+                    step: TextStep::Lowercase,
+                }),
+            }
         }
         Ok(Self {
             processor,
-            steps: slots,
+            html,
+            text,
         })
     }
 
     /// Turn a fetched body into its final text.
     ///
-    /// The body is decoded (see [`decode`]), run through the processor, normalised, and then
-    /// through every step in order, normalising again after each. The result ends in exactly
-    /// one newline, or is empty.
+    /// The body is decoded (see [`decode`]) and turned into text by the processor. With HTML
+    /// steps, the processor is bypassed: the page is parsed as HTML whatever its content type
+    /// says, the steps are applied to the tree, and the result is converted to text. The text
+    /// is normalised, then run through every text step in order, normalising after each. The
+    /// result ends in exactly one newline, or is empty.
     pub fn render(
         &self,
         bytes: &[u8],
         content_type: Option<&str>,
     ) -> Result<String, PipelineError> {
         let decoded = decode(bytes, content_type);
-        let mut text = normalize(&process(self.processor, &decoded, content_type)?);
+        let processed = if self.html.is_empty() {
+            process(self.processor, &decoded, content_type)?
+        } else {
+            let mut document = html::parse(&decoded);
+            for slot in &self.html {
+                document = slot.step.apply(document).map_err(|kind| slot.fail(kind))?;
+            }
+            process_text(&html::serialize(&document), Some("text/html"))?
+        };
+        let mut text = normalize(&processed);
         if text.len() > MAX_OUTPUT_BYTES {
             return Err(PipelineErrorKind::TooLarge.into());
         }
-        for (index, slot) in self.steps.iter().enumerate() {
-            let output = slot
-                .step
-                .apply(&text)
-                .map_err(|kind| PipelineError::at(index, slot.name, kind))?;
+        for slot in &self.text {
+            let output = slot.step.apply(&text).map_err(|kind| slot.fail(kind))?;
             text = normalize(&output);
         }
         Ok(text)
     }
-}
-
-fn compile(step: &Step) -> Result<Compiled, PipelineErrorKind> {
-    let text = match step {
-        Step::RegexExtract { pattern, group } => text::extract(pattern, *group)?,
-        Step::RegexReplace {
-            pattern,
-            replacement,
-        } => text::replace(pattern, replacement)?,
-        Step::IgnoreLines { patterns } => text::ignore(patterns)?,
-        Step::Sort {} => TextStep::Sort,
-        Step::Unique {} => TextStep::Unique,
-        Step::Trim {} => TextStep::Trim,
-        Step::CollapseWhitespace {} => TextStep::CollapseWhitespace,
-        Step::Lowercase {} => TextStep::Lowercase,
-    };
-    Ok(Compiled::Text(text))
 }
 
 impl From<PipelineErrorKind> for PipelineError {

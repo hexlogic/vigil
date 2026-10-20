@@ -1,0 +1,19 @@
+---
+source: crates/vigil-core/tests/steps_html.rs
+expression: text
+---
+──────┬────
+Volume│30 L
+──────┴────
+
+──────┬──────
+Weight│1.1 kg
+──────┴──────
+
+─────┬──────
+Price│€89.90
+─────┴──────
+
+───┬───────
+Was│€109.00
+───┴───────

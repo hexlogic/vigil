@@ -2,6 +2,7 @@
 
 use std::fmt;
 
+use crate::model::Processor;
 use crate::pattern::PatternError;
 use crate::process::{MAX_OUTPUT_BYTES, ProcessError};
 
@@ -24,6 +25,32 @@ pub enum PipelineErrorKind {
     /// A pattern or regular expression is invalid.
     #[error("{0}")]
     Pattern(#[from] PatternError),
+    /// A CSS selector is invalid.
+    #[error("invalid selector {selector:?}: {reason}")]
+    Selector {
+        /// The selector as given.
+        selector: String,
+        /// One-line description of the problem.
+        reason: String,
+    },
+    /// The step needs a different processor than the watch uses.
+    #[error("{stage} steps need the {needed} processor, but the watch uses {found}")]
+    WrongProcessor {
+        /// Kind of step ("html").
+        stage: &'static str,
+        /// The processor the step needs.
+        needed: Processor,
+        /// The processor the watch uses.
+        found: Processor,
+    },
+    /// Steps are in the wrong order.
+    #[error("{stage} steps must come before {after} steps")]
+    OutOfOrder {
+        /// Kind of the step that is too late.
+        stage: &'static str,
+        /// Kind of the step that came before it.
+        after: &'static str,
+    },
     /// The regex has fewer capture groups than the step asks for.
     #[error("capture group {group} does not exist, the pattern has {groups}")]
     NoSuchGroup {

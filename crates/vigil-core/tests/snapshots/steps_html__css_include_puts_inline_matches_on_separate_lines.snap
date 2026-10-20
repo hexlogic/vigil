@@ -1,0 +1,7 @@
+---
+source: crates/vigil-core/tests/steps_html.rs
+expression: text
+---
+€89.90
+€14.50
+€39.00
