@@ -34,3 +34,16 @@ pub(crate) fn invalid(scheme: &'static str, problem: impl Into<String>) -> Parse
         problem: problem.into(),
     }
 }
+
+/// A message template that does not compile or does not render.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("template: {0}")]
+pub struct TemplateError(pub(crate) String);
+
+impl From<minijinja::Error> for TemplateError {
+    fn from(error: minijinja::Error) -> Self {
+        // Without minijinja's `debug` feature the message holds the problem and its position
+        // but not the template source.
+        Self(error.to_string())
+    }
+}

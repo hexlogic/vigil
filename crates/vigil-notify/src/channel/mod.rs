@@ -20,7 +20,9 @@ pub use telegram::Telegram;
 pub use webhook::{Webhook, WebhookFormat};
 
 use crate::error::ParseError;
+use crate::escape::Markup;
 pub use crate::secret::Secret;
+use crate::truncate::Limit;
 
 /// Every URL scheme that names a channel.
 pub const SCHEMES: &[&str] = &[
@@ -126,6 +128,29 @@ impl Channel {
             Self::Email(_) => "email",
             Self::Webhook(_) => "webhook",
             Self::Gotify(_) => "gotify",
+        }
+    }
+
+    /// The markup this channel's message body is written in.
+    pub fn markup(&self) -> Markup {
+        match self {
+            Self::Telegram(_) => Markup::TelegramHtml,
+            Self::Discord(_) => Markup::DiscordMarkdown,
+            Self::Slack(_) => Markup::SlackMrkdwn,
+            Self::Ntfy(_) | Self::Email(_) | Self::Webhook(_) | Self::Gotify(_) => Markup::Plain,
+        }
+    }
+
+    /// How long a message body may be, from each service's documented limit (Slack's is a
+    /// conservative choice: it accepts more but truncates long messages on display).
+    pub fn limit(&self) -> Limit {
+        match self {
+            Self::Ntfy(_) => Limit::Bytes(4096),
+            Self::Telegram(_) => Limit::Chars(4096),
+            Self::Discord(_) => Limit::Chars(2000),
+            Self::Slack(_) => Limit::Chars(4000),
+            Self::Gotify(_) => Limit::Chars(32_000),
+            Self::Email(_) | Self::Webhook(_) => Limit::Bytes(256 * 1024),
         }
     }
 
