@@ -10,6 +10,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Step {
+    /// Select parts of an HTML page with a CSS selector, before the page is turned into text.
+    /// Only works with the `text` processor, and the page is parsed as HTML whatever its
+    /// `Content-Type` says.
+    Css {
+        /// A CSS selector.
+        selector: String,
+        /// Keep only the selected elements, or remove them.
+        #[serde(default)]
+        mode: SelectMode,
+    },
     /// Keep only what a regex matches, one match per line. With `group` set, keep that
     /// capture group of each match instead of the whole match. Finding nothing is an error.
     RegexExtract {
@@ -44,10 +54,49 @@ pub enum Step {
     Lowercase {},
 }
 
+/// What a selection step does with the elements it finds.
+///
+/// `include` keeps only the selected elements (a selection that finds nothing is an error);
+/// `remove` deletes them and keeps the rest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SelectMode {
+    /// Keep only the selected elements.
+    #[default]
+    Include,
+    /// Delete the selected elements.
+    Remove,
+}
+
+/// What a step works on. Steps must be listed in this order: HTML, then JSON, then text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Stage {
+    Html,
+    Text,
+}
+
+impl Stage {
+    /// Word used in error messages.
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::Html => "html",
+            Self::Text => "text",
+        }
+    }
+}
+
 impl Step {
+    pub(super) fn stage(&self) -> Stage {
+        match self {
+            Self::Css { .. } => Stage::Html,
+            _ => Stage::Text,
+        }
+    }
+
     /// The step's `type` as written in the stored JSON, used to name it in error messages.
     pub fn name(&self) -> &'static str {
         match self {
+            Self::Css { .. } => "css",
             Self::RegexExtract { .. } => "regex_extract",
             Self::RegexReplace { .. } => "regex_replace",
             Self::IgnoreLines { .. } => "ignore_lines",
@@ -64,13 +113,27 @@ impl Step {
 mod tests {
     use serde_json::{Value, json};
 
-    use super::Step;
+    use super::{SelectMode, Step};
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
 
     /// Every variant with the exact JSON it is stored as.
     fn shapes() -> Vec<(Step, Value)> {
         vec![
+            (
+                Step::Css {
+                    selector: "div.price > span".into(),
+                    mode: SelectMode::Remove,
+                },
+                json!({"type": "css", "selector": "div.price > span", "mode": "remove"}),
+            ),
+            (
+                Step::Css {
+                    selector: "main".into(),
+                    mode: SelectMode::Include,
+                },
+                json!({"type": "css", "selector": "main", "mode": "include"}),
+            ),
             (
                 Step::RegexExtract {
                     pattern: "a(b)".into(),
@@ -133,8 +196,23 @@ mod tests {
     }
 
     #[test]
+    fn the_mode_defaults_to_include() -> TestResult {
+        let step: Step = serde_json::from_value(json!({"type": "css", "selector": "p"}))?;
+        assert_eq!(
+            step,
+            Step::Css {
+                selector: "p".into(),
+                mode: SelectMode::Include
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
     fn unknown_fields_are_rejected() {
         for bad in [
+            json!({"type": "css", "selector": "p", "mod": "remove"}),
+            json!({"type": "css", "selector": "p", "mode": "exclude"}),
             json!({"type": "regex_extract", "pattern": "a", "grup": 1}),
             json!({"type": "sort", "reverse": true}),
             json!({"type": "ignore_lines", "patterns": [], "pattern": "x"}),

@@ -1,0 +1,16 @@
+---
+source: crates/vigil-core/tests/steps_html.rs
+expression: "render(r#\"[{\"type\": \"css\", \"selector\": \"article\"}]\"#, NEWS)?"
+---
+## [Ferry timetable changes from Monday]
+
+The harbor authority confirmed that two evening crossings will be dropped while the east pier is repaired.
+
+By Mira Okafor · 12 minutes ago
+
+## [Grain prices ease for a third week]
+
+Wheat futures slipped again as shipments resumed.
+* Wheat: down 1.2%
+* Barley: down 0.4%
+* Oats: unchanged
