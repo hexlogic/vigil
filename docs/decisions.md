@@ -54,6 +54,9 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `uuid` (serde) | Typed watch ids; the store adds the `v7` feature to generate them. |
 | `insta` (dev) | Snapshot tests of the text pipeline on fixture pages. |
 | `serde_json` (dev) | Check the stored JSON shape of core types in tests. |
+| `serde_json` | Read and write the JSON `TEXT` columns (fetch settings, schedule). |
+| `uuid` (v7) | Time-ordered ids for watches and snapshots (PLAN.md section 4). |
+| `zstd` | Snapshot compression (PLAN.md section 2). Binds the C library; if cross builds get painful in Phase 6, `ruzstd` is the pure-Rust fallback. |
 
 ## Text processor (Phase 1)
 
@@ -62,3 +65,15 @@ HTML is rendered with `html2text` in plain mode at a width of 10,000 columns so 
 ## Charset decoding
 
 The charset comes from the `Content-Type` header and defaults to UTF-8. A byte-order mark in the body wins over the header, and malformed bytes decode to U+FFFD instead of failing the check. `<meta charset>` sniffing is deferred to Phase 2.
+
+## Snapshot storage and check recording
+
+Both `record_success` and `record_error` run in a `BEGIN IMMEDIATE` transaction so a `vigil check` run next to `vigil serve` queues for the write lock instead of failing with `SQLITE_BUSY_SNAPSHOT`. A snapshot is stored only when the blake3 of the processed text differs from `watches.last_hash`. A 304 or an identical body only updates `last_checked_at`. The first successful check is logged as `changed` in `check_log` because its outcome column only allows `unchanged`, `changed` and `error`. Retention keeps at least one snapshot even if a watch says 0, and the check log is trimmed to the newest 500 rows per watch on every write.
+
+## Watch ids on the command line
+
+Ids are UUID v7, whose leading 48 bits are a millisecond timestamp, so watches created in the same sitting share long prefixes. The CLI therefore accepts a full id or a unique *suffix* of at least 6 characters, never a prefix.
+
+## Runtime SQL queries (revisited)
+
+Phase 1 adds about a dozen queries. They stay runtime-checked `sqlx::query(...)` calls and are covered by integration tests against a real SQLite file, which keeps builds free of `DATABASE_URL` and offline query data.
