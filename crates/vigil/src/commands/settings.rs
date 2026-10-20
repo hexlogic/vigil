@@ -2,7 +2,7 @@
 
 use anyhow::{Context, anyhow, bail};
 use serde::de::DeserializeOwned;
-use vigil_core::{Pipeline, PipelineErrorKind};
+use vigil_core::{Pipeline, PipelineErrorKind, Watch};
 use vigil_store::NewWatch;
 
 use crate::cli::ContentArgs;
@@ -32,6 +32,19 @@ pub fn apply(settings: &mut NewWatch, args: &ContentArgs) -> anyhow::Result<()> 
         settings.conditions = read_json("conditions", value)?;
     }
     validate(settings)
+}
+
+/// A copy of `watch` with the options that were given applied, for trying settings out
+/// without saving them.
+pub fn overridden(watch: &Watch, args: &ContentArgs) -> anyhow::Result<Watch> {
+    let mut settings = NewWatch::from(watch);
+    apply(&mut settings, args)?;
+    Ok(Watch {
+        processor: settings.processor,
+        pipeline: settings.pipeline,
+        conditions: settings.conditions,
+        ..watch.clone()
+    })
 }
 
 /// Check a watch's processor, steps and conditions without fetching anything.

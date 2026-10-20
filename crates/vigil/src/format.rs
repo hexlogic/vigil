@@ -1,6 +1,12 @@
 //! Plain-text rendering helpers for CLI output.
 
+use std::io::IsTerminal;
 use std::time::{Duration, UNIX_EPOCH};
+
+/// Color only when writing to a terminal and `NO_COLOR` is not set.
+pub fn wants_color() -> bool {
+    std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+}
 
 /// "5m ago", "3h ago", or "never" when there is no time.
 pub fn ago(at_ms: Option<i64>, now_ms: i64) -> String {

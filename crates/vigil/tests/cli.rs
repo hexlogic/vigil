@@ -474,3 +474,149 @@ async fn watch_edit_refuses_nothing_to_change_and_invalid_results() -> TestResul
     assert!(!run.ok);
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn preview_shows_the_output_the_diff_and_the_verdict_and_saves_nothing() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let server = MockServer::start().await;
+    serve_page(&server, &shop("Welcome", "$10")).await;
+    let id = add_watch(dir.path(), &server.uri()).await?;
+
+    // Nothing to compare with yet.
+    let run = vigil(dir.path(), &["preview", &id]).await?;
+    assert!(run.ok, "{}", run.stderr);
+    assert!(
+        run.stdout.contains("--- output ---\nWelcome"),
+        "{}",
+        run.stdout
+    );
+    assert!(
+        run.stdout
+            .contains("--- no snapshot to compare with yet ---"),
+        "{}",
+        run.stdout
+    );
+
+    assert!(vigil(dir.path(), &["check", &id]).await?.ok);
+    server.reset().await;
+    serve_page(&server, &shop("Welcome", "$12")).await;
+
+    let run = vigil(dir.path(), &["preview", &id]).await?;
+    assert!(run.ok, "{}", run.stderr);
+    assert!(run.stdout.contains("-$10\n+$12\n"), "{}", run.stdout);
+    assert!(
+        run.stdout.ends_with("would notify (matched)\n"),
+        "{}",
+        run.stdout
+    );
+
+    // Overrides apply to this run only.
+    let run = vigil(
+        dir.path(),
+        &[
+            "preview",
+            &id,
+            "--pipeline",
+            r##"[{"type": "css", "selector": "#price"}]"##,
+            "--conditions",
+            r#"{"block_text": ["$12"]}"#,
+        ],
+    )
+    .await?;
+    assert!(run.ok, "{}", run.stderr);
+    assert!(
+        run.stdout.contains("--- output ---\n$12\n"),
+        "{}",
+        run.stdout
+    );
+    assert!(
+        run.stdout
+            .ends_with("would not notify (an added line matches block_text \"$12\")\n"),
+        "{}",
+        run.stdout
+    );
+    let shown = vigil(dir.path(), &["watch", "show", &id]).await?;
+    let json: serde_json::Value = serde_json::from_str(&shown.stdout)?;
+    assert_eq!(json["pipeline"], serde_json::json!([]));
+
+    // Still one snapshot, and the stored state is untouched.
+    let store = Store::open(&dir.path().join("data").join("vigil.db")).await?;
+    let watch = store.get_watch(id.parse()?).await?;
+    assert_eq!(store.list_snapshots(watch.id, 10).await?.len(), 1);
+    assert_eq!(watch.state.consecutive_errors, 0);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn preview_fails_with_a_message_when_the_settings_or_the_page_do_not_work() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let server = MockServer::start().await;
+    serve_page(&server, V1).await;
+    let id = add_watch(dir.path(), &server.uri()).await?;
+
+    let run = vigil(
+        dir.path(),
+        &[
+            "preview",
+            &id,
+            "--pipeline",
+            r#"[{"type": "css", "selector": ".none", "required": true}]"#,
+        ],
+    )
+    .await?;
+    assert!(!run.ok);
+    assert!(run.stderr.contains("preview failed"), "{}", run.stderr);
+    assert!(
+        run.stderr.contains("step 1 (css): matched nothing"),
+        "{}",
+        run.stderr
+    );
+
+    // Refused before fetching: the override itself is invalid.
+    let run = vigil(dir.path(), &["preview", &id, "--pipeline", "nope"]).await?;
+    assert!(!run.ok);
+    assert!(run.stderr.contains("invalid --pipeline"), "{}", run.stderr);
+
+    let run = vigil(dir.path(), &["preview", "zzzzzz"]).await?;
+    assert!(!run.ok);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn check_says_when_conditions_hold_a_change_back() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let server = MockServer::start().await;
+    serve_page(&server, V1).await;
+    let run = vigil(
+        dir.path(),
+        &[
+            "watch",
+            "add",
+            &server.uri(),
+            "--conditions",
+            r#"{"trigger_text": ["gadget"]}"#,
+        ],
+    )
+    .await?;
+    let id = run
+        .stdout
+        .split_whitespace()
+        .nth(1)
+        .ok_or("no id")?
+        .to_owned();
+    assert!(vigil(dir.path(), &["check", &id]).await?.ok);
+
+    server.reset().await;
+    serve_page(&server, V2).await;
+    let run = vigil(dir.path(), &["check", &id]).await?;
+    assert!(run.ok, "{}", run.stderr);
+    assert!(
+        run.stdout.contains("changed, +1 -1 lines")
+            && run
+                .stdout
+                .contains("no notification: no added line matches trigger_text"),
+        "{}",
+        run.stdout
+    );
+    Ok(())
+}

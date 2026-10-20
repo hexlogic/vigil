@@ -1,10 +1,8 @@
 //! `vigil diff <id>`.
 
-use std::io::IsTerminal;
-
 use super::{open_store, resolve};
 use crate::config::Config;
-use crate::format::{colorize, timestamp};
+use crate::format::{colorize, timestamp, wants_color};
 use vigil_core::LineDiff;
 
 /// Lines of unchanged context around each change.
@@ -49,9 +47,4 @@ pub async fn run(config: &Config, id: &str) -> anyhow::Result<()> {
     }
     print!("{out}");
     Ok(())
-}
-
-/// Color only when writing to a terminal and `NO_COLOR` is not set.
-fn wants_color() -> bool {
-    std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
 }
