@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Harbor Weekly</title>
+    <link>https://harbor.example/</link>
+    <description>News from the harbor</description>
+    <lastBuildDate>Mon, 12 Oct 2026 10:00:00 GMT</lastBuildDate>
+    <item>
+      <title>Maintenance window</title>
+      <link>https://harbor.example/news/maintenance</link>
+      <pubDate>Wed, 07 Oct 2026 22:00:00 GMT</pubDate>
+      <description>The east dock is closed overnight.</description>
+    </item>
+    <item>
+      <title>Archive note</title>
+      <link>https://harbor.example/archive/note</link>
+      <description>Undated, listed second.</description>
+    </item>
+    <item>
+      <title>Quarterly report published</title>
+      <link>https://harbor.example/reports/q3</link>
+      <pubDate>Mon, 12 Oct 2026 09:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>
+        Prices &amp; fees
+        updated
+      </title>
+      <link>https://harbor.example/news/fees</link>
+      <pubDate>Fri, 09 Oct 2026 14:30:00 +0300</pubDate>
+    </item>
+    <item>
+      <title>Second undated entry</title>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,20 @@
+---
+source: crates/vigil-core/tests/process_fixtures.rs
+expression: text
+---
+Quarterly report published
+https://harbor.example/reports/q3
+2026-10-12T09:00:00Z
+
+Prices & fees updated
+https://harbor.example/news/fees
+2026-10-09T11:30:00Z
+
+Maintenance window
+https://harbor.example/news/maintenance
+2026-10-07T22:00:00Z
+
+Archive note
+https://harbor.example/archive/note
+
+Second undated entry

@@ -1,0 +1,15 @@
+---
+source: crates/vigil-core/tests/process_fixtures.rs
+expression: text
+---
+Version 2.1 released
+https://example.org/releases/2.1
+2026-10-12T09:45:00Z
+
+Version 2.0 released
+https://example.org/releases/2.0
+2026-09-01T08:00:00Z
+
+Version 1.9 released
+https://example.org/releases/1.9
+2026-08-15T00:00:00Z
