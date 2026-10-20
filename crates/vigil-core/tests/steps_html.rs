@@ -239,3 +239,58 @@ fn pages_nested_too_deeply_fail_before_any_step_runs() {
         );
     }
 }
+
+#[test]
+fn later_steps_do_not_see_what_an_earlier_remove_took_out() -> TestResult {
+    let page = "<p>keep</p><div class=ad><p>AD</p><span>AD2</span></div><span>tail</span>";
+    let remove_ad = r#"{"type": "css", "selector": ".ad", "mode": "remove"}"#;
+    for next in [
+        r#"{"type": "css", "selector": "p"}"#,
+        r#"{"type": "css", "selector": "p, span, div"}"#,
+        r#"{"type": "xpath", "expr": "//p | //span"}"#,
+        r#"{"type": "css", "selector": "span", "mode": "remove"}"#,
+    ] {
+        let text = render(&format!("[{remove_ad}, {next}]"), page)?;
+        assert!(!text.contains("AD"), "{next}: {text:?}");
+        assert!(
+            text.contains("keep") || next.contains("remove"),
+            "{next}: {text:?}"
+        );
+    }
+    let xpath_first = r#"{"type": "xpath", "expr": "//div", "mode": "remove"}"#;
+    let text = render(
+        &format!(r#"[{xpath_first}, {{"type": "css", "selector": "p"}}]"#),
+        page,
+    )?;
+    assert_eq!(text, "keep\n");
+    Ok(())
+}
+
+#[test]
+fn removing_everything_leaves_nothing_for_later_steps() -> TestResult {
+    for first in ["*", "html", "body"] {
+        let steps = format!(
+            r#"[{{"type": "css", "selector": "{first}", "mode": "remove"}},
+                {{"type": "css", "selector": "p"}},
+                {{"type": "xpath", "expr": "//p"}}]"#
+        );
+        assert_eq!(render(&steps, "<p>x</p>")?, "", "{first}");
+    }
+    Ok(())
+}
+
+#[test]
+fn css_matches_come_in_document_order() -> TestResult {
+    // A table cell outside a row is moved in front of the table by the parser; the matches
+    // must still be listed as they are in the tree.
+    let text = render(
+        r#"[{"type": "css", "selector": "p, td"}]"#,
+        "<p>one</p><table><p>two</p><tr><td>three</td></tr></table>",
+    )?;
+    assert_eq!(
+        text.lines().filter(|l| !l.is_empty()).count(),
+        3,
+        "{text:?}"
+    );
+    Ok(())
+}
