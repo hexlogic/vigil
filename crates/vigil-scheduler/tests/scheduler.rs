@@ -486,3 +486,38 @@ async fn checks_still_queued_at_shutdown_never_start() -> TestResult {
     );
     Ok(())
 }
+
+#[tokio::test(start_paused = true)]
+async fn an_absurdly_long_interval_does_not_crash_the_scheduler() -> TestResult {
+    let mut forever = job(1, "a:443", 100)?;
+    forever.interval = Duration::MAX;
+    forever.jitter = secs(5);
+    let fake = Arc::new(Fake::new(vec![forever, job(2, "b:443", 100)?]));
+    let (cancel, handle) = start(&fake, Settings::default());
+
+    sleep(secs(250)).await;
+    assert!(!handle.is_finished(), "the scheduler task died");
+    assert_eq!(fake.runs_of(id(1)?).len(), 1);
+    // Other watches keep running.
+    assert_eq!(fake.runs_of(id(2)?).len(), 3);
+
+    cancel.cancel();
+    handle.await?;
+    Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_check_time_in_the_future_does_not_stall_a_watch() -> TestResult {
+    // Recorded while the wall clock was a day ahead of where it is now.
+    let mut skewed = job(1, "a:443", 100)?;
+    skewed.last_checked_at = Some(now_ms() + 86_400_000);
+    let fake = Arc::new(Fake::new(vec![skewed]));
+    let (cancel, handle) = start(&fake, Settings::default());
+
+    sleep(secs(110)).await;
+    assert_eq!(fake.runs_of(id(1)?).len(), 1);
+
+    cancel.cancel();
+    handle.await?;
+    Ok(())
+}

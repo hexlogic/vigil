@@ -5,6 +5,10 @@ use std::time::Duration;
 /// Longest delay between checks of a failing watch.
 pub const MAX_BACKOFF: Duration = Duration::from_secs(6 * 60 * 60);
 
+/// Longest interval a watch may have; anything above is treated as this. It keeps the time
+/// arithmetic far from overflow and is a limit nobody checking web pages will miss.
+pub const MAX_INTERVAL: Duration = Duration::from_secs(365 * 24 * 60 * 60);
+
 /// Upper bound of the default jitter.
 const MAX_DEFAULT_JITTER: Duration = Duration::from_secs(60);
 
