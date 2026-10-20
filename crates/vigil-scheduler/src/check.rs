@@ -1,17 +1,18 @@
-//! One check of one watch: fetch, decode, process, normalise, record.
+//! One check of one watch: fetch, render through the pipeline, record, judge.
 
 use std::error::Error;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use vigil_core::decode::decode;
-use vigil_core::normalize::normalize;
-use vigil_core::process::process;
-use vigil_core::{LineDiff, Watch, WatchId};
+use vigil_core::{CompiledConditions, LineDiff, Pipeline, Verdict, Watch, WatchId};
 use vigil_fetch::{FetchOutcome, FetchRequest, Fetcher, host_key};
 use vigil_store::{CheckSuccess, Content, RecordOutcome, SnapshotId, Store, StoreError};
 
 use crate::backoff::{MAX_INTERVAL, default_jitter};
+use crate::render::run_with_limit;
 use crate::scheduler::{Backend, Job, RunOutcome};
+
+/// How long processing one response may take before the check fails.
+const RENDER_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Shortest interval the scheduler accepts, so a zero interval cannot spin. The longest is
 /// [`MAX_INTERVAL`].
@@ -32,6 +33,9 @@ pub enum CheckResult {
         current: SnapshotId,
         /// Line diff from the previous to the new text.
         diff: LineDiff,
+        /// Whether the watch's conditions want a notification for this change. The change is
+        /// stored either way.
+        verdict: Verdict,
     },
     /// The page could not be fetched or processed; the error was recorded.
     Failed {
@@ -58,12 +62,24 @@ pub struct CheckReport {
 pub struct Checker {
     store: Store,
     fetcher: Fetcher,
+    render_timeout: Duration,
 }
 
 impl Checker {
     /// Build a checker.
     pub fn new(store: Store, fetcher: Fetcher) -> Self {
-        Self { store, fetcher }
+        Self {
+            store,
+            fetcher,
+            render_timeout: RENDER_TIMEOUT,
+        }
+    }
+
+    /// Change how long processing one response may take (30 seconds by default).
+    #[must_use]
+    pub fn with_render_timeout(mut self, timeout: Duration) -> Self {
+        self.render_timeout = timeout;
+        self
     }
 
     /// Check one watch now and record the result.
@@ -74,16 +90,22 @@ impl Checker {
     pub async fn check(&self, id: WatchId) -> Result<CheckReport, StoreError> {
         let watch = self.store.get_watch(id).await?;
         let started = Instant::now();
-        let fetched = self.fetch_and_process(&watch).await;
+        let fetched = match watch.conditions.compile() {
+            Ok(conditions) => self
+                .fetch_and_process(&watch)
+                .await
+                .map(|success| (success, conditions)),
+            Err(error) => Err(format!("conditions: {}", describe(&error))),
+        };
         let duration = started.elapsed();
         let duration_ms = i64::try_from(duration.as_millis()).unwrap_or(i64::MAX);
         let at = now_ms();
 
         let result = match fetched {
-            Ok(mut success) => {
+            Ok((mut success, conditions)) => {
                 success.at = at;
                 success.duration_ms = duration_ms;
-                self.record(id, &success).await?
+                self.record(id, &success, &conditions).await?
             }
             Err(message) => {
                 let consecutive_errors = self
@@ -101,11 +123,13 @@ impl Checker {
             CheckResult::Baseline => {
                 tracing::info!(watch = %id, url = %watch.url, "baseline stored")
             }
-            CheckResult::Changed { diff, .. } => tracing::info!(
+            CheckResult::Changed { diff, verdict, .. } => tracing::info!(
                 watch = %id,
                 url = %watch.url,
                 added = diff.added_count(),
                 removed = diff.removed_count(),
+                notify = verdict.notify,
+                reason = %verdict.reason,
                 "change detected"
             ),
             CheckResult::Unchanged => tracing::debug!(watch = %id, "unchanged"),
@@ -118,7 +142,12 @@ impl Checker {
         })
     }
 
-    async fn record(&self, id: WatchId, success: &CheckSuccess) -> Result<CheckResult, StoreError> {
+    async fn record(
+        &self,
+        id: WatchId,
+        success: &CheckSuccess,
+        conditions: &CompiledConditions,
+    ) -> Result<CheckResult, StoreError> {
         Ok(match self.store.record_success(id, success).await? {
             RecordOutcome::Baseline { .. } => CheckResult::Baseline,
             RecordOutcome::Unchanged => CheckResult::Unchanged,
@@ -130,10 +159,13 @@ impl Checker {
                 // Diff against the text the store read before pruning: with a retention of 1
                 // the previous snapshot is already gone by now.
                 let new_text = success.content.as_ref().map_or("", |c| c.text.as_str());
+                let diff = LineDiff::between(&previous_text, new_text);
+                let verdict = conditions.evaluate(&diff);
                 CheckResult::Changed {
                     previous,
                     current,
-                    diff: LineDiff::between(&previous_text, new_text),
+                    diff,
+                    verdict,
                 }
             }
         })
@@ -142,19 +174,7 @@ impl Checker {
     /// Fetch and process the page. `at` and `duration_ms` of the result are placeholders that
     /// the caller fills in once the work is done.
     async fn fetch_and_process(&self, watch: &Watch) -> Result<CheckSuccess, String> {
-        let request = FetchRequest {
-            url: watch.url.clone(),
-            timeout: watch.fetch.timeout_secs.map(Duration::from_secs),
-            user_agent: watch.fetch.user_agent.clone(),
-            headers: watch
-                .fetch
-                .headers
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            etag: watch.state.etag.clone(),
-            last_modified: watch.state.last_modified.clone(),
-        };
+        let request = request_for(watch, true);
         match self
             .fetcher
             .fetch(&request)
@@ -174,21 +194,22 @@ impl Checker {
                 content: None,
             }),
             FetchOutcome::Body(body) => {
-                let content_type = body.content_type.as_deref();
-                let text = decode(&body.body, content_type);
-                let processed =
-                    process(watch.processor, &text, content_type).map_err(|e| describe(&e))?;
+                let raw_size = body.body.len() as u64;
+                let text = render(
+                    watch,
+                    body.body,
+                    body.content_type.clone(),
+                    self.render_timeout,
+                )
+                .await?;
                 Ok(CheckSuccess {
                     at: 0,
                     duration_ms: 0,
                     http_status: Some(body.status),
-                    content_type: body.content_type.clone(),
-                    etag: body.etag.clone(),
-                    last_modified: body.last_modified.clone(),
-                    content: Some(Content {
-                        text: normalize(&processed),
-                        raw_size: body.body.len() as u64,
-                    }),
+                    content_type: body.content_type,
+                    etag: body.etag,
+                    last_modified: body.last_modified,
+                    content: Some(Content { text, raw_size }),
                 })
             }
         }
@@ -222,6 +243,48 @@ impl Backend for Checker {
             }
         }
     }
+}
+
+/// The request for a watch.
+///
+/// With `conditional`, the validators from the last response are sent, so the server can
+/// answer 304. A preview leaves them out: it needs a body.
+pub(crate) fn request_for(watch: &Watch, conditional: bool) -> FetchRequest {
+    FetchRequest {
+        url: watch.url.clone(),
+        timeout: watch.fetch.timeout_secs.map(Duration::from_secs),
+        user_agent: watch.fetch.user_agent.clone(),
+        headers: watch
+            .fetch
+            .headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+        etag: conditional.then(|| watch.state.etag.clone()).flatten(),
+        last_modified: conditional
+            .then(|| watch.state.last_modified.clone())
+            .flatten(),
+    }
+}
+
+/// Build the watch's pipeline and run it on `body`, on its own thread and under `limit`.
+///
+/// The pipeline is built on that thread too: a jq program or a selector is compiled from
+/// user input, and nothing it contains has to be `Send`.
+pub(crate) async fn render(
+    watch: &Watch,
+    body: Vec<u8>,
+    content_type: Option<String>,
+    limit: Duration,
+) -> Result<String, String> {
+    let (processor, steps) = (watch.processor, watch.pipeline.clone());
+    run_with_limit(limit, move || {
+        let pipeline = Pipeline::new(processor, &steps).map_err(|e| describe(&e))?;
+        pipeline
+            .render(&body, content_type.as_deref())
+            .map_err(|e| describe(&e))
+    })
+    .await
 }
 
 fn job_from(watch: Watch) -> Job {
