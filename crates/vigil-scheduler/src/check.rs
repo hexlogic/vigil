@@ -171,16 +171,24 @@ impl Checker {
         })
     }
 
+    pub(crate) fn store(&self) -> &Store {
+        &self.store
+    }
+
+    pub(crate) fn render_timeout(&self) -> Duration {
+        self.render_timeout
+    }
+
+    /// Fetch a page, with errors flattened to one line for the check log or a report.
+    pub(crate) async fn fetch(&self, request: &FetchRequest) -> Result<FetchOutcome, String> {
+        self.fetcher.fetch(request).await.map_err(|e| describe(&e))
+    }
+
     /// Fetch and process the page. `at` and `duration_ms` of the result are placeholders that
     /// the caller fills in once the work is done.
     async fn fetch_and_process(&self, watch: &Watch) -> Result<CheckSuccess, String> {
         let request = request_for(watch, true);
-        match self
-            .fetcher
-            .fetch(&request)
-            .await
-            .map_err(|e| describe(&e))?
-        {
+        match self.fetch(&request).await? {
             FetchOutcome::NotModified {
                 etag,
                 last_modified,
@@ -308,7 +316,7 @@ fn job_from(watch: Watch) -> Job {
 ///
 /// Many errors already include their cause in their own message (`#[error("...: {0}")]`
 /// with `#[from]`); a cause whose text is already present is not repeated.
-fn describe(error: &dyn Error) -> String {
+pub(crate) fn describe(error: &dyn Error) -> String {
     let mut text = error.to_string();
     let mut source = error.source();
     while let Some(inner) = source {
