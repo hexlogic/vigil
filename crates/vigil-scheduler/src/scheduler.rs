@@ -102,7 +102,7 @@ impl<B: Backend> Scheduler<B> {
     /// (up to [`Settings::shutdown_grace`]) and return.
     pub async fn run(&self, cancel: CancellationToken) {
         let mut state = State::default();
-        let mut tasks: JoinSet<(WatchId, RunOutcome)> = JoinSet::new();
+        let mut tasks: JoinSet<(WatchId, Option<RunOutcome>)> = JoinSet::new();
         let mut task_watch: HashMap<Id, WatchId> = HashMap::new();
         let mut resync = tokio::time::interval(self.settings.resync);
         resync.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -116,9 +116,21 @@ impl<B: Backend> Scheduler<B> {
                     for (id, host) in state.take_due(Instant::now()) {
                         let backend = Arc::clone(&self.backend);
                         let limits = Arc::clone(&self.limits);
+                        let cancel = cancel.clone();
                         let handle = tasks.spawn(async move {
-                            let _permit = limits.acquire(&host).await;
-                            (id, backend.run(id).await)
+                            // A check still waiting for a slot when shutdown starts never runs.
+                            let permit = tokio::select! {
+                                () = cancel.cancelled() => None,
+                                permit = limits.acquire(&host) => Some(permit),
+                            };
+                            let Some(_permit) = permit else {
+                                return (id, None);
+                            };
+                            // Both branches can be ready at once; honour the cancellation.
+                            if cancel.is_cancelled() {
+                                return (id, None);
+                            }
+                            (id, Some(backend.run(id).await))
                         });
                         task_watch.insert(handle.id(), id);
                     }
@@ -127,7 +139,10 @@ impl<B: Backend> Scheduler<B> {
                     match joined {
                         Ok((task, (id, outcome))) => {
                             task_watch.remove(&task);
-                            state.finish(id, outcome, Instant::now());
+                            // `None`: dropped at shutdown before it started, nothing to record.
+                            if let Some(outcome) = outcome {
+                                state.finish(id, outcome, Instant::now());
+                            }
                         }
                         Err(error) => {
                             if let Some(id) = task_watch.remove(&error.id()) {
@@ -150,7 +165,7 @@ impl<B: Backend> Scheduler<B> {
         }
     }
 
-    async fn drain(&self, mut tasks: JoinSet<(WatchId, RunOutcome)>) {
+    async fn drain(&self, mut tasks: JoinSet<(WatchId, Option<RunOutcome>)>) {
         if tasks.is_empty() {
             return;
         }
