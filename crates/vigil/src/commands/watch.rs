@@ -107,7 +107,7 @@ fn now_ms() -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use vigil_core::{FetchSettings, Processor, WatchState};
+    use vigil_core::{Conditions, FetchSettings, Processor, WatchState};
 
     use super::*;
 
@@ -123,6 +123,8 @@ mod tests {
             schedule: Schedule::Interval(300),
             jitter_secs: 0,
             processor: Processor::Text,
+            pipeline: Vec::new(),
+            conditions: Conditions::default(),
             snapshot_retention: 100,
             created_at: 0,
             updated_at: 0,
