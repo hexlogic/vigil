@@ -3,13 +3,17 @@
 A lightweight, self-hosted website change detection service written in Rust.
 One static binary, SQLite, low memory.
 
-> **Status:** early development (Phase 0: skeleton). Not usable yet.
+> **Status:** early development (Phase 1: core loop). The command line works; the web UI, notifications and filters are not built yet.
 
 ## Quick start
 
 ```sh
-cargo run -- serve
-curl http://127.0.0.1:5800/healthz   # -> ok
+cargo run -- watch add https://example.com --every 5m
+cargo run -- watch list
+cargo run -- check <id>     # <id>: full id or its last 6+ characters
+cargo run -- diff <id>      # after the page has changed once
+
+cargo run -- serve          # check on schedule; GET /healthz -> ok
 ```
 
 Configuration is read from `vigil.toml` (optional) and `VIGIL_*` environment
