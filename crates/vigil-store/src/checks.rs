@@ -4,7 +4,7 @@ use sqlx::Row;
 use uuid::Uuid;
 use vigil_core::{ContentHash, WatchId};
 
-use crate::snapshots::{SnapshotId, compress};
+use crate::snapshots::{SnapshotId, compress, decompress};
 use crate::{Store, StoreError};
 
 /// Check-log rows kept per watch.
@@ -51,10 +51,13 @@ pub enum RecordOutcome {
     },
     /// The text differs from the previous snapshot.
     Changed {
-        /// The snapshot that was current before this check.
+        /// The snapshot that was current before this check. Retention may already have
+        /// pruned it, so use `previous_text` rather than reading it back.
         previous: SnapshotId,
         /// The new snapshot.
         current: SnapshotId,
+        /// The text of `previous`, read before pruning.
+        previous_text: String,
     },
     /// The text is identical, or the server answered 304.
     Unchanged,
@@ -69,7 +72,7 @@ impl Store {
     pub async fn record_success(
         &self,
         watch: WatchId,
-        check: CheckSuccess,
+        check: &CheckSuccess,
     ) -> Result<RecordOutcome, StoreError> {
         let id = watch.to_string();
         // Take the write lock up front so a concurrent `vigil check` and `vigil serve` queue
@@ -119,7 +122,11 @@ impl Store {
                     .execute(&mut *tx)
                     .await?;
                     match previous {
-                        Some(previous) => RecordOutcome::Changed { previous, current },
+                        Some((previous, previous_text)) => RecordOutcome::Changed {
+                            previous,
+                            current,
+                            previous_text,
+                        },
                         None => RecordOutcome::Baseline { snapshot: current },
                     }
                 }
@@ -211,20 +218,23 @@ impl Store {
     }
 }
 
-/// The watch's newest snapshot, if it has one.
+/// The watch's newest snapshot with its text, if it has one.
 async fn latest_snapshot(
     tx: &mut sqlx::SqliteConnection,
     watch_id: &str,
-) -> Result<Option<SnapshotId>, StoreError> {
+) -> Result<Option<(SnapshotId, String)>, StoreError> {
     let row = sqlx::query(
-        "SELECT id FROM snapshots WHERE watch_id = ? ORDER BY taken_at DESC, id DESC LIMIT 1",
+        "SELECT id, content FROM snapshots WHERE watch_id = ? \
+         ORDER BY taken_at DESC, id DESC LIMIT 1",
     )
     .bind(watch_id)
     .fetch_optional(tx)
     .await?;
     row.map(|row| {
         let id: String = row.try_get("id")?;
-        Uuid::parse_str(&id).map_err(|_| StoreError::Corrupt(format!("invalid snapshot id {id:?}")))
+        let id = Uuid::parse_str(&id)
+            .map_err(|_| StoreError::Corrupt(format!("invalid snapshot id {id:?}")))?;
+        Ok((id, decompress(&row.try_get::<Vec<u8>, _>("content")?)?))
     })
     .transpose()
 }

@@ -67,7 +67,7 @@ pub(crate) fn compress(text: &str) -> Result<Vec<u8>, StoreError> {
     zstd::encode_all(text.as_bytes(), ZSTD_LEVEL).map_err(StoreError::Compression)
 }
 
-fn decompress(bytes: &[u8]) -> Result<String, StoreError> {
+pub(crate) fn decompress(bytes: &[u8]) -> Result<String, StoreError> {
     let raw = zstd::decode_all(bytes).map_err(StoreError::Compression)?;
     String::from_utf8(raw).map_err(|_| StoreError::Corrupt("snapshot is not valid utf-8".into()))
 }
