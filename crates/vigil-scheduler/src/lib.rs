@@ -2,6 +2,7 @@
 
 pub mod backoff;
 mod check;
+mod describe;
 pub mod limits;
 mod preview;
 mod render;
