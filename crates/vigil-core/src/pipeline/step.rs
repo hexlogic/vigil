@@ -72,7 +72,9 @@ pub enum Step {
         required: bool,
     },
     /// Replace every match of a regex. `$1` and `${name}` in the replacement refer to
-    /// capture groups and `$$` is a literal dollar sign.
+    /// capture groups and `$$` is a literal dollar sign. A name runs as far as letters,
+    /// digits and underscores go, so text right after a group needs braces: `${1}USD`, not
+    /// `$1USD`. A name the pattern does not have is refused.
     RegexReplace {
         /// Regular expression syntax of the `regex` crate; use `(?i)` for flags.
         pattern: String,

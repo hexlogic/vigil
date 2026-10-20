@@ -95,11 +95,20 @@ impl XPathStep {
                 .into_iter()
                 .filter_map(|node| mirror.original(node))
                 .collect(),
-            // A computed empty string is "nothing", like an empty selection.
-            Value::String(text) if text.is_empty() => Vec::new(),
-            Value::String(text) => vec![Selected::Literal(text)],
-            Value::Number(number) => vec![Selected::Literal(number.to_string())],
-            Value::Boolean(flag) => vec![Selected::Literal(flag.to_string())],
+            // Strings, numbers and booleans as XPath writes them (`Infinity`, `NaN`, `true`).
+            // An empty string is "nothing", like an empty selection.
+            computed => {
+                let text = match computed {
+                    // XPath has one zero; the library prints a negative one as `-0`.
+                    Value::Number(0.0) => "0".to_owned(),
+                    other => other.string(),
+                };
+                if text.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![Selected::Literal(text)]
+                }
+            }
         })
     }
 }
