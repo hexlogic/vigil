@@ -223,3 +223,21 @@ async fn long_webhook_line_lists_are_bounded() {
     assert!(lines > 1000 && lines < 40_000, "{lines}");
     assert_eq!(body["truncated"], true);
 }
+
+#[tokio::test]
+async fn the_ntfy_topic_stays_out_of_debug_output() {
+    use vigil_notify::{Endpoints, Event, http_request};
+    let channel = channel("ntfy://ntfy.example/S3CRETTOPIC?token=S3CRETTOK");
+    let event = Event::sample();
+    let request = http_request(
+        &channel,
+        &prepared(&channel, &event),
+        &event,
+        &Endpoints::default(),
+    )
+    .expect("a request")
+    .expect("an HTTP channel");
+    for shown in [format!("{request:?}"), format!("{request:#?}")] {
+        assert!(!shown.contains("S3CRET"), "{shown}");
+    }
+}

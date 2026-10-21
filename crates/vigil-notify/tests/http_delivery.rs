@@ -283,3 +283,22 @@ async fn a_slow_server_times_out() {
     .await;
     assert_eq!(report.result, Err("timed out".to_owned()));
 }
+
+#[tokio::test]
+async fn an_ntfy_topic_echoed_by_the_server_is_scrubbed() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(400).set_body_string(r#"{"error":"bad topic S3CRETTOPIC"}"#),
+        )
+        .mount(&server)
+        .await;
+
+    let url = format!("ntfy://127.0.0.1:{}/S3CRETTOPIC", port(&server));
+    let report = run(&server, &url, &quick()).await;
+    let error = report.result.expect_err("failed");
+    assert!(
+        error.starts_with("HTTP 400") && !error.contains("S3CRET"),
+        "{error}"
+    );
+}
