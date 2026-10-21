@@ -69,6 +69,11 @@ pub async fn run(config: &Config, id: &str, no_notify: bool) -> anyhow::Result<E
         for sent in notifier.close_and_wait().await {
             match sent.report.result {
                 Ok(()) => println!("notified {}", sent.target),
+                Err(error) if sent.queued => eprintln!(
+                    "could not notify {}: {error}; it is kept, and a running `vigil serve` sends it \
+                     when the service is back",
+                    sent.target
+                ),
                 Err(error) => eprintln!("could not notify {}: {error}", sent.target),
             }
             if let Some(note) = sent.report.note {
