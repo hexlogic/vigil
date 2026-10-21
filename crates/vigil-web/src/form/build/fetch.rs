@@ -1,0 +1,53 @@
+//! The request settings of the form.
+
+use std::collections::BTreeMap;
+
+use vigil_core::FetchSettings;
+
+use super::super::draft::Draft;
+use super::Problems;
+use crate::i18n::Translator;
+
+pub(super) fn fetch_settings(
+    draft: &Draft,
+    t: &Translator,
+    problems: &mut Problems,
+) -> FetchSettings {
+    let timeout_secs = match draft.timeout.trim() {
+        "" => None,
+        text => match text.parse::<u64>() {
+            Ok(n) if (1..=3600).contains(&n) => Some(n),
+            _ => {
+                problems.timeout = Some(t.t("form.err.timeout"));
+                None
+            }
+        },
+    };
+    let mut headers = BTreeMap::new();
+    for (number, line) in draft.headers.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let parsed = line.split_once(':').map(|(n, v)| (n.trim(), v.trim()));
+        match parsed {
+            Some((name, value))
+                if !name.is_empty()
+                    && name.bytes().all(|b| b.is_ascii_graphic())
+                    && !value.chars().any(char::is_control) =>
+            {
+                headers.insert(name.to_owned(), value.to_owned());
+            }
+            _ => {
+                problems.headers = Some(t.t1("form.err.header", "n", number + 1));
+                break;
+            }
+        }
+    }
+    let user_agent = Some(draft.user_agent.trim().to_owned()).filter(|ua| !ua.is_empty());
+    FetchSettings {
+        timeout_secs,
+        user_agent,
+        headers,
+    }
+}
