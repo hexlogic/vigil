@@ -4,6 +4,7 @@ mod api_tokens;
 mod check_log;
 mod checks;
 mod deliveries;
+mod import;
 mod links;
 mod migrate;
 mod outbox;
@@ -25,6 +26,9 @@ pub use api_tokens::{ApiToken, ApiTokenId};
 pub use check_log::{CheckEntry, CheckOutcome};
 pub use checks::{CHECK_LOG_KEEP, CheckSuccess, Content, RecordOutcome};
 pub use deliveries::{DELIVERY_LOG_KEEP, DeliveryOutcome, DeliveryRecord};
+pub use import::{
+    ImportBatch, ImportOutcome, ImportTag, ImportTarget, ImportWatch, free_name, match_name,
+};
 pub use outbox::{NewPending, PendingNotification};
 pub use sessions::Session;
 pub use snapshots::{SnapshotId, SnapshotMeta};

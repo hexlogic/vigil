@@ -1,6 +1,7 @@
 //! Watch persistence.
 
 use sqlx::Row;
+use sqlx::SqliteConnection;
 use sqlx::sqlite::SqliteRow;
 use uuid::Uuid;
 use vigil_core::{
@@ -80,30 +81,42 @@ impl From<&Watch> for NewWatch {
     }
 }
 
+/// Insert a watch row on a connection, so that a transaction can hold several.
+pub(crate) async fn insert_watch(
+    conn: &mut SqliteConnection,
+    id: WatchId,
+    new: &NewWatch,
+    now: i64,
+) -> Result<(), StoreError> {
+    sqlx::query(
+        "INSERT INTO watches \
+             (id, name, url, fetch, schedule, jitter_secs, processor, pipeline, conditions, \
+              snapshot_retention, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+    )
+    .bind(id.to_string())
+    .bind(&new.name)
+    .bind(&new.url)
+    .bind(serde_json::to_string(&new.fetch)?)
+    .bind(serde_json::to_string(&new.schedule)?)
+    .bind(i64::from(new.jitter_secs))
+    .bind(new.processor.as_str())
+    .bind(serde_json::to_string(&new.pipeline)?)
+    .bind(serde_json::to_string(&new.conditions)?)
+    .bind(i64::from(new.snapshot_retention))
+    .bind(now)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 impl Store {
     /// Insert a watch with a fresh UUID v7 id and return it as stored.
     pub async fn create_watch(&self, new: NewWatch) -> Result<Watch, StoreError> {
         let id = WatchId::from_uuid(Uuid::now_v7());
-        let now = now_ms();
-        sqlx::query(
-            "INSERT INTO watches \
-             (id, name, url, fetch, schedule, jitter_secs, processor, pipeline, conditions, \
-              snapshot_retention, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
-        )
-        .bind(id.to_string())
-        .bind(&new.name)
-        .bind(&new.url)
-        .bind(serde_json::to_string(&new.fetch)?)
-        .bind(serde_json::to_string(&new.schedule)?)
-        .bind(i64::from(new.jitter_secs))
-        .bind(new.processor.as_str())
-        .bind(serde_json::to_string(&new.pipeline)?)
-        .bind(serde_json::to_string(&new.conditions)?)
-        .bind(i64::from(new.snapshot_retention))
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
+        let mut conn = self.pool.acquire().await?;
+        insert_watch(&mut conn, id, &new, now_ms()).await?;
+        drop(conn);
         self.get_watch(id).await
     }
 
