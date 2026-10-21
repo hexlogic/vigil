@@ -97,23 +97,25 @@ impl HttpRequest {
     }
 }
 
-/// Build the request that delivers `prepared` to `channel`, or `None` for a channel that is not
-/// reached over HTTP (email).
+/// Build the request that delivers `prepared` to `channel`.
+///
+/// Email is not sent over HTTP: asking for its request is an error (see [`crate::Sender`],
+/// which sends it with SMTP).
 pub fn http_request(
     channel: &Channel,
     prepared: &Prepared,
     event: &Event,
     endpoints: &Endpoints,
-) -> Result<Option<HttpRequest>, SendError> {
-    Ok(Some(match channel {
+) -> Result<HttpRequest, SendError> {
+    Ok(match channel {
         Channel::Ntfy(c) => ntfy(c, prepared, event),
         Channel::Telegram(c) => telegram(c, prepared, endpoints)?,
         Channel::Discord(c) => discord(c, prepared, endpoints)?,
         Channel::Slack(c) => slack(c, prepared, endpoints)?,
         Channel::Webhook(c) => webhook(c, prepared, event),
         Channel::Gotify(c) => gotify(c, prepared)?,
-        Channel::Email(_) => return Ok(None),
-    }))
+        Channel::Email(_) => return Err(SendError::permanent("email is not sent over HTTP")),
+    })
 }
 
 fn json_request(url: Url, auth: Option<HttpAuth>, body: Value) -> HttpRequest {

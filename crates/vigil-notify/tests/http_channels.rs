@@ -235,8 +235,7 @@ async fn the_ntfy_topic_stays_out_of_debug_output() {
         &event,
         &Endpoints::default(),
     )
-    .expect("a request")
-    .expect("an HTTP channel");
+    .expect("a request");
     for shown in [format!("{request:?}"), format!("{request:#?}")] {
         assert!(!shown.contains("S3CRET"), "{shown}");
     }

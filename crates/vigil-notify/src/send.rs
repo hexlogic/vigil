@@ -74,10 +74,8 @@ impl Sender {
         if let Channel::Email(email) = channel {
             return send_email(email, prepared, self.timeout).await;
         }
-        match http_request(channel, prepared, event, &self.endpoints)? {
-            Some(request) => self.post(&request).await,
-            None => Err(SendError::permanent("this channel has nothing to send")),
-        }
+        let request = http_request(channel, prepared, event, &self.endpoints)?;
+        self.post(&request).await
     }
 
     async fn post(&self, request: &HttpRequest) -> Result<(), SendError> {
