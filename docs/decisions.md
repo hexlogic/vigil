@@ -265,7 +265,7 @@ A check that finds a change the watch's conditions want a notification for (`Ver
 
 The watch's template wins over the target's `default_template`, which wins over the built-in one. The diff page link is `<base_url>/watch/<watch id>/diff?from=<previous snapshot>&to=<new snapshot>`, a path the web UI will serve; with no `base_url` the link is left out. `diff_full` is a unified diff with 3 lines of context.
 
-`vigil check` waits for its deliveries (`close_and_wait`, no time limit: the user is looking at the terminal). `vigil serve` gives them 30 seconds after the scheduler has stopped (`shutdown`): waiting to retry is abandoned at once (the log says "shutting down") and attempts already on the wire get the grace period. A target whose stored URL no longer parses (the parser was made stricter, or the row was edited by hand) is logged as failed with 0 attempts and a message that does not repeat the URL.
+`vigil check` waits for its deliveries (`close_and_wait`, no time limit: the user is looking at the terminal). `vigil serve` gives them 30 seconds after the scheduler has stopped (`shutdown`): waiting to retry stops at once and attempts already on the wire get the grace period; a delivery that was still waiting stays in the outbox (see "Notification outbox"). A target whose stored URL no longer parses (the parser was made stricter, or the row was edited by hand) is logged as failed with 0 attempts and a message that does not repeat the URL.
 
 ## Notification commands and `base_url`
 
@@ -280,3 +280,9 @@ The watch's template wins over the target's `default_template`, which wins over 
 ## Left for later
 
 Not part of Phase 3, on purpose: notification defaults on tags (there is no tags code yet, so `tag_notifications` stays unused); HTML email; Matrix (PLAN.md lists it as optional for Phase 6); extra headers for generic webhooks; a configuration key for `Endpoints`; the HTTP endpoint and the UI button for a test notification (they need the authentication of Phases 4 and 5); showing the delivery log in the UI and API. The built-in templates and the texts of the docs were written for this project from scratch, as the clean-room rule asks.
+
+## Notification outbox
+
+A change is already the new baseline when its notification is built, so a notification that was lost (the process stopped while a delivery waited to retry, or died mid-delivery) would never be announced again: the next check finds the page unchanged. So each notification is saved in `notification_outbox` (migration 0003) before delivery and removed when delivery is over: sent, refused for good, or out of retries (those stay in the delivery log). A delivery stopped by shutdown reports `interrupted` and is neither recorded nor removed. `vigil serve` calls `Notifier::resume` at start-up, before the first check, and sends what is left. It does not run in `vigil check`, which might otherwise race a running server for the same rows.
+
+The row holds the event the message is built from (JSON, zstd), without the page text, which is read back from the snapshot. The watch's template and the target are looked up again at resume time, so an edit in between applies; a target that was removed or disabled drops the row; a row older than a day is recorded as failed ("too old") instead of sent, because an alert that late is noise; a row that cannot be read is dropped. Retries start again from the first attempt after a restart. Running out of retries is final: a longer outage than about 42 seconds still loses the notification, which the delivery log shows as failed.

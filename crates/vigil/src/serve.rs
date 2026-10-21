@@ -34,6 +34,11 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
     let fetcher = Fetcher::new(config.fetch_config()).context("building the http client")?;
     let notifier = Arc::new(notifier(&config, &store)?);
+    // Notifications that a shutdown or a crash cut short are sent before anything new is checked.
+    let resumed = notifier.resume().await;
+    if resumed > 0 {
+        tracing::info!(resumed, "sending notifications left over from the last run");
+    }
     let scheduler = Scheduler::new(
         Checker::new(store.clone(), fetcher).with_notifier(Arc::clone(&notifier)),
         config.scheduler_settings(),
