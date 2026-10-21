@@ -1,6 +1,8 @@
 //! The `serve` subcommand: run the HTTP server and the check scheduler until signalled.
 
 use std::future::{Future, IntoFuture};
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use tokio::net::TcpListener;
@@ -10,8 +12,12 @@ use vigil_fetch::Fetcher;
 use vigil_scheduler::{Checker, Scheduler};
 use vigil_web::{AppState, router};
 
+use crate::commands::notify::notifier;
 use crate::commands::open_store;
 use crate::config::Config;
+
+/// How long shutdown waits for notifications that are being delivered.
+const NOTIFY_GRACE: Duration = Duration::from_secs(30);
 
 /// Run until Ctrl-C or SIGTERM: stop starting checks, let running ones finish, then exit.
 pub async fn run(config: Config) -> anyhow::Result<()> {
@@ -27,8 +33,9 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     );
 
     let fetcher = Fetcher::new(config.fetch_config()).context("building the http client")?;
+    let notifier = Arc::new(notifier(&config, &store)?);
     let scheduler = Scheduler::new(
-        Checker::new(store.clone(), fetcher),
+        Checker::new(store.clone(), fetcher).with_notifier(Arc::clone(&notifier)),
         config.scheduler_settings(),
     );
     let cancel = CancellationToken::new();
@@ -43,7 +50,10 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             shutdown_signal().await;
             shutdown.cancel();
         });
-    supervise(server.into_future(), scheduler_task, &cancel).await?;
+    let served = supervise(server.into_future(), scheduler_task, &cancel).await;
+    // Notifications still being delivered get a moment after the last check has finished.
+    notifier.shutdown(NOTIFY_GRACE).await;
+    served?;
     tracing::info!("shut down cleanly");
     Ok(())
 }

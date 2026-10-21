@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use anyhow::{Context, ensure};
 use vigil_notify::{Channel, RetryPolicy, Sender, SenderConfig, validate_template};
 use vigil_scheduler::Notifier;
-use vigil_store::{NewTarget, Store};
+use vigil_store::{NewTarget, NotificationTarget, Store};
 
 use super::open_store;
 use crate::config::Config;
@@ -26,6 +26,18 @@ pub fn read_text(flag: &str, value: &str) -> anyhow::Result<String> {
         }
         None => Ok(value.to_owned()),
     }
+}
+
+/// Find each named target, failing on the first that does not exist.
+pub async fn resolve_all(
+    store: &Store,
+    names: &[String],
+) -> anyhow::Result<Vec<NotificationTarget>> {
+    let mut targets = Vec::new();
+    for name in names {
+        targets.push(store.resolve_target(name).await?);
+    }
+    Ok(targets)
 }
 
 /// Check and store a new target.

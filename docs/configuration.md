@@ -27,9 +27,9 @@ Log verbosity is controlled by `RUST_LOG`. The default is `info` (stdout) for `v
 | Command | What it does |
 |---|---|
 | `vigil serve` | Start the HTTP server and the scheduler. `GET /healthz` returns `200 ok` when the database is reachable. Ctrl-C or SIGTERM stops starting checks and waits up to 30 seconds for running ones. |
-| `vigil watch add <url> [--every 1h] [--name <name>] [content options]` | Watch a page. The interval takes values like `30s`, `5m`, `1h 30m`, `1d` and must be between one second and 365 days. See [Content options](#content-options). |
-| `vigil watch edit <id> [--every <interval>] [--name <name>] [content options]` | Change a watch. Only the options given change. The remembered `ETag` and the failure streak are cleared, so the next check fetches the page afresh and may report the edit itself as a change. A new interval, or a cleared failure streak, moves the next check within about 30 seconds (when `vigil serve` reloads its watches); other edits apply at the next scheduled check. |
-| `vigil watch show <id>` | Print a watch's settings as JSON, in the shape `--pipeline` and `--conditions` take. |
+| `vigil watch add <url> [--every 1h] [--name <name>] [content options] [--notify <target>]... [--notify-template <TEXT\|@FILE>]` | Watch a page. The interval takes values like `30s`, `5m`, `1h 30m`, `1d` and must be between one second and 365 days. See [Content options](#content-options). |
+| `vigil watch edit <id> [--every <interval>] [--name <name>] [content options] [--notify <target>]... [--no-notify <target>]... [--notify-template <TEXT\|@FILE>]` | Change a watch. Only the options given change. The remembered `ETag` and the failure streak are cleared, so the next check fetches the page afresh and may report the edit itself as a change. A new interval, or a cleared failure streak, moves the next check within about 30 seconds (when `vigil serve` reloads its watches); other edits apply at the next scheduled check. |
+| `vigil watch show <id>` | Print a watch's settings as JSON, in the shape `--pipeline` and `--conditions` take, with the targets it notifies and its notification template. |
 | `vigil preview <id> [content options]` | Fetch a watch and show what a check would store: the text, a diff against the newest snapshot and whether it would notify. Saves nothing. With content options, tries them in place of the watch's own. Exits non-zero if the page or the settings do not work. |
 | `vigil watch list` | Show all watches with their id, interval, last check, last change and status (`pending`, `ok`, `paused` or `error xN`). |
 | `vigil watch remove <id>` | Delete a watch with its snapshots and history. |
@@ -37,8 +37,10 @@ Log verbosity is controlled by `RUST_LOG`. The default is `info` (stdout) for `v
 | `vigil notify list` | Show the targets with their credentials replaced by `***`, whether they are enabled and how many watches use them. |
 | `vigil notify remove <target>` | Delete a target. A `<target>` is its name, its id or the last six or more characters of it. |
 | `vigil notify test <target>` | Send a test notification and say whether it arrived. Not retried; exits non-zero if it failed. |
-| `vigil check <id>` | Check a watch now. Prints `baseline stored`, `unchanged` or `changed, +N -M lines` (with `no notification: <reason>` when the watch's conditions hold the change back); exits non-zero if the page could not be checked. |
+| `vigil check <id> [--no-notify]` | Check a watch now. A change the watch's conditions want announced is sent to its targets, and the command waits for that (retries included) before it exits; `--no-notify` skips it. A delivery that fails is reported on stderr and does not change the exit code. Prints `baseline stored`, `unchanged` or `changed, +N -M lines` (with `no notification: <reason>` when the watch's conditions hold the change back); exits non-zero if the page could not be checked. |
 | `vigil diff <id>` | Show the difference between the two newest snapshots as a unified diff, in color on a terminal (`NO_COLOR` turns it off). |
+
+`--notify` links a watch to a target (by name or id), `--no-notify` unlinks it, and `--notify-template` sets the message template for the watch (empty text removes it). Linking and templates are not settings of the page check: unlike the other `watch edit` options they do not clear the remembered `ETag` or the failure streak, and need no wait for the scheduler.
 
 An `<id>` is the full id from `vigil watch list` or its last six or more characters. The commands read and write the same database as `vigil serve` and can run while it is running.
 
