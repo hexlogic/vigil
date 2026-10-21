@@ -8,7 +8,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 use vigil_core::{Conditions, Schedule};
 use vigil_scheduler::{CheckResult, Scheduler, Settings};
-use vigil_store::{DeliveryOutcome, NewWatch};
+use vigil_store::{DeliveryOutcome, NewTag, NewWatch};
 use wiremock::matchers::method;
 use wiremock::{Mock, ResponseTemplate};
 
@@ -173,5 +173,44 @@ async fn a_test_notification_is_sent_and_logged_without_a_watch() -> TestResult 
     .fetch_one(s.store.pool())
     .await?;
     assert_eq!(rows, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_default_targets_of_a_tag_are_notified_too() -> TestResult {
+    let s = setup().await?;
+    let watch = s
+        .store
+        .create_watch(NewWatch::new(s.page.uri(), Schedule::Interval(3600)))
+        .await?;
+    let tag = s
+        .store
+        .create_tag(&NewTag {
+            name: "prices".into(),
+            color: "blue".into(),
+            default_interval_secs: None,
+        })
+        .await?;
+    let from_tag = add_target(&s, "from-tag", "via-tag").await?;
+    let both = add_target(&s, "both", "direct-and-tag").await?;
+    s.store.set_watch_tags(watch.id, &[tag.id]).await?;
+    s.store
+        .set_tag_targets(tag.id, &[from_tag.id, both.id])
+        .await?;
+    s.store.link_target(watch.id, both.id).await?;
+
+    change(&s, &watch).await?;
+    s.notifier.close_and_wait().await;
+    let mut topics: Vec<String> = ntfy_bodies(&s)
+        .await?
+        .into_iter()
+        .filter_map(|b| b["topic"].as_str().map(str::to_owned))
+        .collect();
+    topics.sort();
+    assert_eq!(
+        topics,
+        ["direct-and-tag", "via-tag"],
+        "a target reached twice is notified once"
+    );
     Ok(())
 }
