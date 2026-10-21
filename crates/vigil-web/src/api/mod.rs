@@ -7,6 +7,7 @@ mod docs;
 mod error;
 mod guard;
 mod history;
+mod import;
 mod tags;
 mod targets;
 mod token;
@@ -75,7 +76,11 @@ async fn version(axum::extract::State(state): axum::extract::State<AppState>) ->
 
 /// The API's routes, with the checks every request goes through. Anything else under `/api`
 /// is answered with a JSON error, so a client never gets the HTML 404 page.
-pub(crate) fn router(state: &AppState, timeout: TimeoutLayer) -> axum::Router<AppState> {
+pub(crate) fn router(
+    state: &AppState,
+    timeout: TimeoutLayer,
+    import_timeout: TimeoutLayer,
+) -> axum::Router<AppState> {
     let (routes, mut spec) = OpenApiRouter::with_openapi(docs::ApiDoc::openapi())
         .nest(
             "/api/v1",
@@ -102,6 +107,15 @@ pub(crate) fn router(state: &AppState, timeout: TimeoutLayer) -> axum::Router<Ap
                 .routes(routes!(targets::test_target)),
         )
         .split_for_parts();
+    // The import takes a file of up to hundreds of megabytes, so its timeout is longer than
+    // the others', and an outer layer cannot be loosened for one route inside it.
+    let (imports, import_spec) = OpenApiRouter::new()
+        .nest(
+            "/api/v1",
+            OpenApiRouter::new().routes(routes!(import::import)),
+        )
+        .split_for_parts();
+    spec.merge(import_spec);
     let base_path = state.web.base_path();
     if !base_path.is_empty() {
         spec.servers = Some(vec![utoipa::openapi::Server::new(base_path.clone())]);
@@ -109,9 +123,12 @@ pub(crate) fn router(state: &AppState, timeout: TimeoutLayer) -> axum::Router<Ap
     let spec = Arc::new(spec);
     let pointer = base_path.clone();
 
+    // Only the endpoints need a token; the description and the 404s are open.
+    let token = || from_fn_with_state(state.clone(), guard::require_token);
+    let routes = routes.route_layer(token()).layer(timeout);
+    let imports = imports.route_layer(token()).layer(import_timeout);
     routes
-        // Only the endpoints need a token; the description and the 404s are open.
-        .route_layer(from_fn_with_state(state.clone(), guard::require_token))
+        .merge(imports)
         .route(
             "/api/docs",
             get(move || async move { docs::index(&pointer) }),
@@ -123,6 +140,5 @@ pub(crate) fn router(state: &AppState, timeout: TimeoutLayer) -> axum::Router<Ap
         .route("/api/{*rest}", any(no_such_endpoint))
         .layer(DefaultBodyLimit::max(JSON_LIMIT))
         .layer(from_fn_with_state(state.clone(), guard::open_door))
-        .layer(timeout)
         .layer(map_response(as_json))
 }

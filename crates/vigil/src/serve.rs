@@ -30,6 +30,9 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         sign_in_setup(&config, &store).await?,
         config.base_url.as_deref(),
     );
+    web.max_upload_bytes = config.import.max_upload_bytes;
+    // Uploads are kept next to the data, which is where there is room for a large backup.
+    web.upload_dir = config.data_dir.clone();
     web.password_from_env = config
         .admin_password
         .as_ref()

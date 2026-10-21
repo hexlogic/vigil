@@ -42,6 +42,21 @@ impl Default for FetchSection {
     }
 }
 
+/// Settings for importing watches (`[import]`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportSection {
+    /// Largest file the web UI and the API accept for an import, in bytes.
+    pub max_upload_bytes: u64,
+}
+
+impl Default for ImportSection {
+    fn default() -> Self {
+        Self {
+            max_upload_bytes: 256 * 1024 * 1024,
+        }
+    }
+}
+
 /// Settings for the check scheduler (`[scheduler]`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SchedulerSection {
@@ -99,6 +114,8 @@ pub struct Config {
     pub fetch: FetchSection,
     /// Check scheduling.
     pub scheduler: SchedulerSection,
+    /// Importing watches.
+    pub import: ImportSection,
 }
 
 impl Default for Config {
@@ -112,6 +129,7 @@ impl Default for Config {
             log_format: LogFormat::Text,
             fetch: FetchSection::default(),
             scheduler: SchedulerSection::default(),
+            import: ImportSection::default(),
         }
     }
 }

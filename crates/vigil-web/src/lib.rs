@@ -12,6 +12,7 @@ mod page;
 mod pages;
 mod preview_cache;
 mod security;
+mod upload;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -36,6 +37,9 @@ pub use i18n::{I18n, Lang, LocaleError, Translator};
 /// Longest a request may take. Longer than the slowest page (a preview fetches for up to 30
 /// seconds and then processes for up to 30 more), so only a stuck request is cut off.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Longest an import may take, from the first byte of the upload to the answer.
+const IMPORT_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 /// Shared state handed to every request handler.
 #[derive(Debug, Clone)]
@@ -167,13 +171,14 @@ pub fn router(state: AppState) -> Router {
         .merge(protected)
         .fallback(pages::not_found)
         .layer(from_fn_with_state(state.clone(), auth::check_origin))
-        .layer(timeout())
+        .layer(timeout(REQUEST_TIMEOUT))
         .with_state(state.clone());
     // The API has its own checks (a token, not a cookie), so it is outside the UI's. Whatever
     // is not an API path is the UI's.
-    let site = api::router(&state, timeout()).fallback_service(ui);
+    let site =
+        api::router(&state, timeout(REQUEST_TIMEOUT), timeout(IMPORT_TIMEOUT)).fallback_service(ui);
     let base_path = state.web.base_path();
-    let app = Router::new().route("/healthz", get(healthz).layer(timeout()));
+    let app = Router::new().route("/healthz", get(healthz).layer(timeout(REQUEST_TIMEOUT)));
     let app = if base_path.is_empty() {
         app.merge(site)
     } else {
@@ -194,8 +199,8 @@ pub fn router(state: AppState) -> Router {
 
 /// Cuts off a request that hangs. It is applied to the UI and to the API separately, because
 /// an outer layer cannot be loosened for one route inside it, and the import takes longer.
-fn timeout() -> TimeoutLayer {
-    TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, REQUEST_TIMEOUT)
+fn timeout(limit: Duration) -> TimeoutLayer {
+    TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, limit)
 }
 
 /// Liveness/readiness probe: `200 ok` when the database answers, `503` otherwise.

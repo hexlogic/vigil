@@ -20,6 +20,7 @@ mod urls;
 mod urlwatch;
 
 use std::fmt;
+use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -41,6 +42,7 @@ const MAX_WATCHES: usize = 20_000;
 /// What a file is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum Format {
     /// One address per line, optionally followed by tags.
     UrlList,
@@ -165,25 +167,71 @@ pub fn plan(
     options: &Options,
     existing: &Existing,
 ) -> Result<ImportPlan, ImportError> {
-    if bytes.len() > MAX_INPUT_BYTES {
-        return Err(ImportError::TooLarge {
-            limit: MAX_INPUT_BYTES,
-        });
+    plan_reader(
+        Cursor::new(bytes),
+        bytes.len() as u64,
+        format,
+        options,
+        existing,
+    )
+}
+
+/// Like [`plan`], reading from a file or anything else that can seek, `len` bytes long. A ZIP
+/// backup is read entry by entry, so a large archive is never held in memory; every other
+/// format is read whole, up to 16 MiB.
+pub fn plan_reader(
+    mut reader: impl Read + Seek,
+    len: u64,
+    format: Option<Format>,
+    options: &Options,
+    existing: &Existing,
+) -> Result<ImportPlan, ImportError> {
+    let too_large = |limit: usize| ImportError::TooLarge { limit };
+    if len > MAX_INPUT_BYTES as u64 {
+        return Err(too_large(MAX_INPUT_BYTES));
+    }
+    let io = |error: std::io::Error| ImportError::Invalid {
+        format: format.unwrap_or(Format::UrlList),
+        reason: format!("the file cannot be read: {error}"),
+    };
+    let mut magic = [0u8; 4];
+    let got = read_up_to(&mut reader, &mut magic).map_err(io)?;
+    reader.seek(SeekFrom::Start(0)).map_err(io)?;
+    if got == 4 && magic == *b"PK\x03\x04" && matches!(format, None | Some(Format::Backup)) {
+        return backup::plan_zip(reader, options, existing);
+    }
+    if len > MAX_TEXT_BYTES as u64 {
+        return Err(too_large(MAX_TEXT_BYTES));
+    }
+    let mut bytes = Vec::new();
+    reader
+        .take(MAX_TEXT_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(io)?;
+    if bytes.len() > MAX_TEXT_BYTES {
+        return Err(too_large(MAX_TEXT_BYTES));
     }
     let format = match format {
         Some(format) => format,
-        None => detect::detect(bytes).ok_or(ImportError::UnknownFormat)?,
+        None => detect::detect(&bytes).ok_or(ImportError::UnknownFormat)?,
     };
-    if format != Format::Backup && bytes.len() > MAX_TEXT_BYTES {
-        return Err(ImportError::TooLarge {
-            limit: MAX_TEXT_BYTES,
-        });
-    }
     match format {
-        Format::UrlList => urls::plan(bytes, options, existing),
-        Format::Opml => opml::plan(bytes, options, existing),
-        Format::Backup => backup::plan(bytes, options, existing),
-        Format::Urlwatch => urlwatch::plan(bytes, options, existing),
-        Format::Distill => distill::plan(bytes, options, existing),
+        Format::UrlList => urls::plan(&bytes, options, existing),
+        Format::Opml => opml::plan(&bytes, options, existing),
+        Format::Backup => backup::plan_json(&bytes, options, existing),
+        Format::Urlwatch => urlwatch::plan(&bytes, options, existing),
+        Format::Distill => distill::plan(&bytes, options, existing),
     }
+}
+
+/// Fill `buf` as far as the reader goes; the number of bytes read.
+fn read_up_to(reader: &mut impl Read, buf: &mut [u8]) -> std::io::Result<usize> {
+    let mut filled = 0;
+    while filled < buf.len() {
+        match reader.read(&mut buf[filled..])? {
+            0 => break,
+            n => filled += n,
+        }
+    }
+    Ok(filled)
 }

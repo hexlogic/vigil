@@ -4009,6 +4009,7 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "thiserror",
+ "utoipa",
  "uuid",
  "vigil-core",
  "vigil-fetch",
@@ -4080,6 +4081,7 @@ dependencies = [
  "askama",
  "axum",
  "blake3",
+ "futures-util",
  "getrandom 0.4.3",
  "http-body-util",
  "humantime",
@@ -4101,10 +4103,12 @@ dependencies = [
  "uuid",
  "vigil-core",
  "vigil-fetch",
+ "vigil-import",
  "vigil-notify",
  "vigil-scheduler",
  "vigil-store",
  "wiremock",
+ "zip",
 ]
 
 [[package]]

@@ -7,7 +7,7 @@
 //! archive declares.
 
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::{Read, Seek};
 
 use serde_json::Value;
 
@@ -93,8 +93,8 @@ fn read_limited(reader: impl Read, limit: u64) -> Result<Vec<u8>, ImportError> {
 }
 
 /// Read a ZIP backup.
-pub(super) fn from_zip(bytes: &[u8]) -> Result<Datastore, ImportError> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+pub(super) fn from_zip(reader: impl Read + Seek) -> Result<Datastore, ImportError> {
+    let mut archive = zip::ZipArchive::new(reader)
         .map_err(|error| invalid(format!("this is not a readable ZIP file: {error}")))?;
     if archive.len() > MAX_ENTRIES {
         return Err(invalid("the archive has too many files"));

@@ -12,6 +12,7 @@ mod template;
 mod watch;
 
 use std::collections::BTreeSet;
+use std::io::{Read, Seek};
 
 use crate::builder::{Builder, Existing};
 use crate::report::Note;
@@ -25,16 +26,29 @@ pub(crate) use crate::urls::header_is_valid;
 /// Most unknown option names that are listed in the report.
 const MOST_UNKNOWN: usize = 20;
 
-pub(crate) fn plan(
+/// Plan the import of a ZIP backup, reading only the entries that matter.
+pub(crate) fn plan_zip(
+    reader: impl Read + Seek,
+    options: &Options,
+    existing: &Existing,
+) -> Result<ImportPlan, ImportError> {
+    plan_data(store::from_zip(reader)?, options, existing)
+}
+
+/// Plan the import of the older single JSON file.
+pub(crate) fn plan_json(
     bytes: &[u8],
     options: &Options,
     existing: &Existing,
 ) -> Result<ImportPlan, ImportError> {
-    let data: Datastore = if bytes.starts_with(b"PK\x03\x04") {
-        store::from_zip(bytes)?
-    } else {
-        store::from_json(bytes)?
-    };
+    plan_data(store::from_json(bytes)?, options, existing)
+}
+
+fn plan_data(
+    data: Datastore,
+    options: &Options,
+    existing: &Existing,
+) -> Result<ImportPlan, ImportError> {
     let globals = Globals::read(&data.settings);
     let mut builder = Builder::new(Format::Backup, options, existing);
 

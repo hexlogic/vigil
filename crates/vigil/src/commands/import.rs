@@ -4,34 +4,11 @@ use std::io::Read;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use anyhow::{Context, bail};
-use vigil_import::{Existing, Format, MAX_INPUT_BYTES, Options, plan};
+use anyhow::Context;
+use vigil_import::{Existing, Format, MAX_INPUT_BYTES, Options, plan, plan_reader};
 
 use super::open_store;
 use crate::config::Config;
-
-/// Read the whole file, or standard input for `-`, up to the largest file an import reads.
-fn read_input(file: &str) -> anyhow::Result<Vec<u8>> {
-    let limit = u64::try_from(MAX_INPUT_BYTES).unwrap_or(u64::MAX);
-    let mut bytes = Vec::new();
-    if file == "-" {
-        std::io::stdin()
-            .lock()
-            .take(limit + 1)
-            .read_to_end(&mut bytes)
-            .context("reading standard input")?;
-    } else {
-        std::fs::File::open(file)
-            .with_context(|| format!("opening {file}"))?
-            .take(limit + 1)
-            .read_to_end(&mut bytes)
-            .with_context(|| format!("reading {file}"))?;
-    }
-    if bytes.len() as u64 > limit {
-        bail!("the file is larger than the {MAX_INPUT_BYTES} byte limit");
-    }
-    Ok(bytes)
-}
 
 /// Print what a file would import and, unless it is a dry run, import it.
 pub async fn run(
@@ -42,7 +19,6 @@ pub async fn run(
     every: Duration,
     allow_duplicates: bool,
 ) -> anyhow::Result<ExitCode> {
-    let bytes = read_input(file)?;
     let store = open_store(config).await?;
     let existing = Existing::new(
         &store.list_tags().await?,
@@ -53,7 +29,25 @@ pub async fn run(
         every,
         allow_duplicates,
     };
-    let plan = plan(&bytes, format, &options, &existing)?;
+    let plan = if file == "-" {
+        // Standard input cannot seek, so it is read whole, up to the largest file.
+        let limit = u64::try_from(MAX_INPUT_BYTES).unwrap_or(u64::MAX);
+        let mut bytes = Vec::new();
+        std::io::stdin()
+            .lock()
+            .take(limit + 1)
+            .read_to_end(&mut bytes)
+            .context("reading standard input")?;
+        plan(&bytes, format, &options, &existing)?
+    } else {
+        // A file is read as it is needed: a large backup is never held in memory.
+        let opened = std::fs::File::open(file).with_context(|| format!("opening {file}"))?;
+        let len = opened
+            .metadata()
+            .with_context(|| format!("reading {file}"))?
+            .len();
+        plan_reader(opened, len, format, &options, &existing)?
+    };
     print!("{}", plan.report.render_text());
     if dry_run {
         println!("\ndry run: nothing was changed");

@@ -1,5 +1,6 @@
 //! How the web UI is set up by whoever runs the server.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// Whether the UI asks for a password.
@@ -25,6 +26,11 @@ pub struct WebConfig {
     /// The password is set by `VIGIL_ADMIN_PASSWORD`, which wins at every start, so changing it
     /// in the UI would be undone by the next one. The settings page then does not offer it.
     pub password_from_env: bool,
+    /// The largest file an import accepts, in bytes.
+    pub max_upload_bytes: u64,
+    /// Where an uploaded file is kept while it is read. It should be on the disk the data is on,
+    /// not in memory: a backup can be large.
+    pub upload_dir: PathBuf,
 }
 
 impl WebConfig {
@@ -38,6 +44,8 @@ impl WebConfig {
             version: env!("CARGO_PKG_VERSION"),
             failed_login_delay: Duration::from_secs(1),
             password_from_env: false,
+            max_upload_bytes: 256 * 1024 * 1024,
+            upload_dir: std::env::temp_dir(),
         }
     }
 

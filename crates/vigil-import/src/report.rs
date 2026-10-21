@@ -11,6 +11,7 @@ use crate::Format;
 /// What happened to one watch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum Status {
     /// Made as it was.
     Created,
@@ -23,6 +24,7 @@ pub enum Status {
 /// What kind of thing a note says.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum NoteKind {
     /// The option has no equivalent and was left out.
     Skipped,
@@ -34,6 +36,7 @@ pub enum NoteKind {
 
 /// One thing to know about a watch or about the import.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Note {
     /// What kind of note.
     pub kind: NoteKind,
@@ -70,6 +73,7 @@ impl Note {
 
 /// The report for one watch of the source.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ItemReport {
     /// Which watch: its name, or its address without a query string.
     pub source: String,
@@ -107,6 +111,7 @@ impl ItemReport {
 
 /// Counts for the whole import.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Totals {
     /// Watches in the source.
     pub found: usize,
@@ -124,6 +129,7 @@ pub struct Totals {
 
 /// Everything an import has to say.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Report {
     /// The format that was read.
     pub format: Format,
