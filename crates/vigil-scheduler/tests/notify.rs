@@ -214,3 +214,45 @@ async fn the_default_targets_of_a_tag_are_notified_too() -> TestResult {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn a_test_without_retries_gives_up_after_one_attempt() -> TestResult {
+    let s = setup().await?;
+    let target = add_target(&s, "phone", "vigil-test").await?;
+    ntfy_answers(&s, 500).await;
+
+    let once = s.notifier.test_once(&target).await;
+    assert_eq!(once.report.attempts, 1);
+    assert!(once.report.result.is_err(), "{once:?}");
+    assert!(!once.queued, "a test is never kept for later");
+
+    // The ordinary test retries, three times in this setup.
+    let retried = s.notifier.test(&target).await;
+    assert_eq!(retried.report.attempts, 4);
+
+    let requests = s.ntfy.received_requests().await.unwrap_or_default();
+    assert_eq!(requests.len(), 5);
+    // Both are in the delivery log, without a watch.
+    let attempts: Vec<i64> = sqlx::query_scalar(
+        "SELECT attempts FROM delivery_log WHERE watch_id IS NULL AND outcome = 'failed' \
+         ORDER BY id",
+    )
+    .fetch_all(s.store.pool())
+    .await?;
+    assert_eq!(attempts, [1, 4]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_test_without_retries_succeeds_like_a_test() -> TestResult {
+    let s = setup().await?;
+    let target = add_target(&s, "phone", "vigil-test").await?;
+    let report = s.notifier.test_once(&target).await;
+    assert_eq!(report.report.result, Ok(()));
+    assert_eq!(report.report.attempts, 1);
+    assert_eq!(
+        ntfy_bodies(&s).await?[0]["title"],
+        "Vigil test notification"
+    );
+    Ok(())
+}
