@@ -98,9 +98,19 @@ async fn vigil_serve_notifies_on_its_own() -> TestResult {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn vigil_serve_sends_what_the_last_run_left_behind() -> TestResult {
-    let dir = tempfile::tempdir()?;
+/// What [`with_a_saved_notification`] set up.
+struct Saved {
+    /// The watched page; kept so that it stays up.
+    _page: MockServer,
+    ntfy: MockServer,
+    store: Store,
+    row: i64,
+}
+
+/// A watch linked to an ntfy target, checked once and then due only in five minutes, so that
+/// a server started now finds no change of its own, plus a saved notification for it in the
+/// outbox: what a process that died in the middle of a delivery leaves behind.
+async fn with_a_saved_notification(dir: &Path) -> Result<Saved, Box<dyn std::error::Error>> {
     let page = MockServer::start().await;
     serve_page(&page, V1).await;
     let ntfy = MockServer::start().await;
@@ -109,14 +119,9 @@ async fn vigil_serve_sends_what_the_last_run_left_behind() -> TestResult {
         .mount(&ntfy)
         .await;
     let url = format!("ntfy://127.0.0.1:{}/alerts", ntfy.address().port());
-    assert!(
-        vigil(dir.path(), &["notify", "add", "phone", &url])
-            .await?
-            .ok
-    );
-    // Checked once and every five minutes: the server will not find a change of its own.
+    assert!(vigil(dir, &["notify", "add", "phone", &url]).await?.ok);
     let added = vigil(
-        dir.path(),
+        dir,
         &[
             "watch",
             "add",
@@ -135,24 +140,32 @@ async fn vigil_serve_sends_what_the_last_run_left_behind() -> TestResult {
         .nth(1)
         .ok_or("no id")?
         .to_owned();
-    assert!(vigil(dir.path(), &["check", &id]).await?.ok);
+    assert!(vigil(dir, &["check", &id]).await?.ok);
 
-    // What a process that died in the middle of a delivery leaves in the outbox.
-    let store = Store::open(&dir.path().join("data").join("vigil.db")).await?;
+    let store = Store::open(&dir.join("data").join("vigil.db")).await?;
     let watch = store.resolve_watch_id(&id).await?;
     let target = store.targets_for_watch(watch, false).await?.remove(0);
     let snapshot = store.list_snapshots(watch, 1).await?.remove(0).id;
     let mut event = vigil_notify::Event::sample();
     event.watch_name = "Left behind".into();
-    let pending = NewPending {
-        watch,
-        target: target.id,
-        snapshot,
-        payload: event.to_json()?,
-    };
-    store.enqueue_notification(&pending).await?;
+    let row = store
+        .enqueue_notification(&NewPending {
+            watch,
+            target: target.id,
+            snapshot,
+            payload: event.to_json()?,
+        })
+        .await?;
+    Ok(Saved {
+        _page: page,
+        ntfy,
+        store,
+        row,
+    })
+}
 
-    let _server = start_server(dir.path())?;
+/// Wait for the first request to the ntfy server and check it is the saved notification.
+async fn expect_the_saved_notification(ntfy: &MockServer) -> TestResult {
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         let received = ntfy.received_requests().await.unwrap_or_default();
@@ -160,7 +173,7 @@ async fn vigil_serve_sends_what_the_last_run_left_behind() -> TestResult {
             let body: serde_json::Value = serde_json::from_slice(&request.body)?;
             assert_eq!(body["title"], "Left behind changed");
             assert_eq!(received.len(), 1);
-            break;
+            return Ok(());
         }
         assert!(
             Instant::now() < deadline,
@@ -168,11 +181,36 @@ async fn vigil_serve_sends_what_the_last_run_left_behind() -> TestResult {
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    // Once it has been sent it is gone from the outbox.
+}
+
+async fn wait_for_an_empty_outbox(store: &Store) -> TestResult {
     let deadline = Instant::now() + Duration::from_secs(10);
     while !store.pending_notifications().await?.is_empty() {
         assert!(Instant::now() < deadline, "the outbox was not emptied");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn vigil_serve_sends_what_the_last_run_left_behind() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let saved = with_a_saved_notification(dir.path()).await?;
+    let _server = start_server(dir.path())?;
+    expect_the_saved_notification(&saved.ntfy).await?;
+    wait_for_an_empty_outbox(&saved.store).await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn vigil_serve_retries_a_notification_that_was_waiting() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let saved = with_a_saved_notification(dir.path()).await?;
+    // Its quick retries ran out in an earlier run, and the wait is over.
+    saved
+        .store
+        .defer_notification(saved.row, vigil_store::now_ms() - 1000, 1)
+        .await?;
+    let _server = start_server(dir.path())?;
+    expect_the_saved_notification(&saved.ntfy).await?;
+    wait_for_an_empty_outbox(&saved.store).await
 }

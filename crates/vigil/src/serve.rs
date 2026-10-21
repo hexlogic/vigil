@@ -19,6 +19,9 @@ use crate::config::Config;
 /// How long shutdown waits for notifications that are being delivered.
 const NOTIFY_GRACE: Duration = Duration::from_secs(30);
 
+/// How often notifications that are waiting for a later try are looked at.
+const RETRY_EVERY: Duration = Duration::from_secs(30);
+
 /// Run until Ctrl-C or SIGTERM: stop starting checks, let running ones finish, then exit.
 pub async fn run(config: Config) -> anyhow::Result<()> {
     let store = open_store(&config).await?;
@@ -44,6 +47,11 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         config.scheduler_settings(),
     );
     let cancel = CancellationToken::new();
+    let retries = tokio::spawn({
+        let notifier = Arc::clone(&notifier);
+        let stop = cancel.clone();
+        async move { notifier.run_retries(RETRY_EVERY, stop).await }
+    });
     let scheduler_task = tokio::spawn({
         let cancel = cancel.clone();
         async move { scheduler.run(cancel).await }
@@ -57,6 +65,9 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         });
     let served = supervise(server.into_future(), scheduler_task, &cancel).await;
     // Notifications still being delivered get a moment after the last check has finished.
+    if let Err(err) = retries.await {
+        tracing::error!(%err, "the retry task failed");
+    }
     notifier.shutdown(NOTIFY_GRACE).await;
     served?;
     tracing::info!("shut down cleanly");
