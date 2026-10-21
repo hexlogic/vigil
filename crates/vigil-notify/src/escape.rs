@@ -88,6 +88,10 @@ pub fn code_block(markup: Markup, text: &str) -> String {
 
 /// `url` as a link in `markup`. The result is markup, not text to escape again.
 pub fn link(markup: Markup, url: &str) -> String {
+    // Nothing to link to: an empty URL must not come out as a bare `<>`.
+    if url.is_empty() {
+        return String::new();
+    }
     match markup {
         Markup::Plain => url.to_owned(),
         // Telegram makes bare URLs clickable by itself.

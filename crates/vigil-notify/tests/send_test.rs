@@ -111,3 +111,33 @@ async fn a_target_that_does_not_work_reports_why() {
         Err("HTTP 403 Forbidden: no access".to_owned())
     );
 }
+
+#[tokio::test]
+async fn a_test_without_a_base_url_has_no_empty_links() {
+    // Discord and Slack wrap links in <>; with no address for Vigil there must be none.
+    for url in ["discord://1/tok", "slack://T/B/x", "tgram://1:a/2"] {
+        let server = accepting_server().await;
+        let channel = channel(url);
+        let report = send_test(&sender(&server), &channel, None, None, &quick()).await;
+        assert_eq!(report.result, Ok(()), "{url}");
+
+        let body = json_body(&only_request(&server).await);
+        let text = ["content", "text"]
+            .iter()
+            .find_map(|key| body[key].as_str())
+            .expect("message text");
+        assert!(!text.contains("<>"), "{url}: {text}");
+        assert!(
+            text.contains("test notification from Vigil"),
+            "{url}: {text}"
+        );
+        assert!(
+            text.starts_with(match url {
+                u if u.starts_with("discord") => "**Vigil test notification**",
+                u if u.starts_with("slack") => "*Vigil test notification*",
+                _ => "<b>Vigil test notification</b>",
+            }),
+            "{url}: {text}"
+        );
+    }
+}
