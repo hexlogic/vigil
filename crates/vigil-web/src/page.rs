@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use askama::Template;
 use axum::extract::FromRequestParts;
-use axum::http::StatusCode;
 use axum::http::request::Parts;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 
 use crate::AppState;
@@ -111,6 +111,24 @@ impl Ctx {
     pub(crate) fn no_auth(&self) -> bool {
         self.no_auth
     }
+
+    /// Whether there is a session to end, so that the layout offers to sign out.
+    pub(crate) fn auth_enabled(&self) -> bool {
+        !self.no_auth
+    }
+}
+
+impl Ctx {
+    /// The context for a request with these headers.
+    pub(crate) fn from_parts(state: &AppState, headers: &HeaderMap) -> Self {
+        Ctx {
+            translator: Translator::new(Arc::clone(&state.i18n), Lang::of_request(headers)),
+            base_path: Arc::from(state.web.base_path()),
+            version: state.web.version,
+            no_auth: state.web.auth == Auth::Disabled,
+            nav: Nav::None,
+        }
+    }
 }
 
 impl FromRequestParts<AppState> for Ctx {
@@ -120,13 +138,7 @@ impl FromRequestParts<AppState> for Ctx {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        Ok(Ctx {
-            translator: Translator::new(Arc::clone(&state.i18n), Lang::of_request(&parts.headers)),
-            base_path: Arc::from(state.web.base_path()),
-            version: state.web.version,
-            no_auth: state.web.auth == Auth::Disabled,
-            nav: Nav::None,
-        })
+        Ok(Ctx::from_parts(state, &parts.headers))
     }
 }
 

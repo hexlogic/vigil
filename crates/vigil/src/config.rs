@@ -60,6 +60,24 @@ impl Default for SchedulerSection {
     }
 }
 
+/// A value that must not end up in a log: it prints as `***`.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Secret(String);
+
+impl Secret {
+    /// The value itself.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Secret(***)")
+    }
+}
+
 /// Runtime configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
@@ -70,6 +88,11 @@ pub struct Config {
     /// The address Vigil is reached at, such as `https://vigil.example.com`. Notifications use
     /// it for links to diff pages; without it they have none.
     pub base_url: Option<String>,
+    /// The password for the web UI. Without it one is made up the first time the server runs
+    /// and shown once in the log; with it, this is the password whatever was set before.
+    pub admin_password: Option<Secret>,
+    /// Let anyone who can reach the server in without a password. For a trusted network only.
+    pub no_auth: bool,
     /// Log output format.
     pub log_format: LogFormat,
     /// Page fetching.
@@ -84,6 +107,8 @@ impl Default for Config {
             listen: SocketAddr::from(([0, 0, 0, 0], 5800)),
             data_dir: PathBuf::from("data"),
             base_url: None,
+            admin_password: None,
+            no_auth: false,
             log_format: LogFormat::Text,
             fetch: FetchSection::default(),
             scheduler: SchedulerSection::default(),
@@ -199,6 +224,30 @@ mod tests {
                 load(None)?.base_url.as_deref(),
                 Some("http://nas.lan:5800/vigil")
             );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn the_password_and_no_auth_come_from_the_environment_and_stay_out_of_logs() {
+        Jail::expect_with(|jail| {
+            let config = load(None)?;
+            assert_eq!(
+                (config.admin_password.clone(), config.no_auth),
+                (None, false)
+            );
+
+            jail.set_env("VIGIL_ADMIN_PASSWORD", "hunter2 and more");
+            jail.set_env("VIGIL_NO_AUTH", "true");
+            let config = load(None)?;
+            assert_eq!(
+                config.admin_password.as_ref().map(Secret::expose),
+                Some("hunter2 and more")
+            );
+            assert!(config.no_auth);
+            let printed = format!("{config:?}");
+            assert!(!printed.contains("hunter2"), "{printed}");
+            assert!(printed.contains("Secret(***)"), "{printed}");
             Ok(())
         });
     }

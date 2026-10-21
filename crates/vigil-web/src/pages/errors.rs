@@ -26,3 +26,28 @@ pub(crate) async fn not_found(ctx: Ctx) -> Response {
         },
     )
 }
+
+/// Why a request was refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Refusal {
+    /// It did not come from a page of this site.
+    Origin,
+    /// It was sent to an address that cannot be served without a password.
+    Host,
+}
+
+/// The answer to a request that was refused.
+pub(crate) fn forbidden(ctx: Ctx, why: Refusal) -> Response {
+    let (title_key, body_key) = match why {
+        Refusal::Origin => ("error.forbidden_title", "error.forbidden_body"),
+        Refusal::Host => ("error.host_title", "error.host_body"),
+    };
+    render_with(
+        StatusCode::FORBIDDEN,
+        &ErrorPage {
+            ctx,
+            title_key,
+            body_key,
+        },
+    )
+}

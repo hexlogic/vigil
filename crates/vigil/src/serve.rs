@@ -10,11 +10,11 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use vigil_fetch::Fetcher;
 use vigil_scheduler::{Checker, Scheduler};
-use vigil_web::{AppState, Auth, WebConfig, router};
+use vigil_web::{AppState, Auth, PasswordSource, WebConfig, ensure_admin_password, router};
 
 use crate::commands::notify::notifier;
 use crate::commands::open_store;
-use crate::config::Config;
+use crate::config::{Config, Secret};
 
 /// How long shutdown waits for notifications that are being delivered.
 const NOTIFY_GRACE: Duration = Duration::from_secs(30);
@@ -57,8 +57,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         async move { scheduler.run(cancel).await }
     });
 
-    // Sign-in arrives with the login page; until then the UI is open, and says so.
-    let web = WebConfig::new(Auth::Disabled, config.base_url.as_deref());
+    let auth = sign_in_setup(&config, &store).await?;
+    let web = WebConfig::new(auth, config.base_url.as_deref());
     let state = AppState::new(store, web).context("loading the web UI texts")?;
     let shutdown = cancel.clone();
     let server = axum::serve(listener, router(state)).with_graceful_shutdown(async move {
@@ -74,6 +74,37 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     served?;
     tracing::info!("shut down cleanly");
     Ok(())
+}
+
+/// Decide how people sign in to the web UI, and make sure there is a password to do it with.
+async fn sign_in_setup(config: &Config, store: &vigil_store::Store) -> anyhow::Result<Auth> {
+    if config.no_auth {
+        let exposed = !config.listen.ip().is_loopback();
+        tracing::warn!(
+            listen = %config.listen,
+            "SIGN-IN IS OFF: anyone who can reach this server can change your watches and \
+             notification targets{}",
+            if exposed { ", and it is not listening on a loopback address only" } else { "" }
+        );
+        return Ok(Auth::Disabled);
+    }
+    let from_env = config.admin_password.as_ref().map(Secret::expose);
+    match ensure_admin_password(store, from_env)
+        .await
+        .context("setting up the admin password")?
+    {
+        PasswordSource::Generated(password) => tracing::warn!(
+            %password,
+            "no admin password was set, so this one was made up; it is shown only now and kept \
+             only as a hash. Sign in with it, then change it in Settings, or set \
+             VIGIL_ADMIN_PASSWORD"
+        ),
+        PasswordSource::Environment => {
+            tracing::info!("the web UI password is the one in VIGIL_ADMIN_PASSWORD");
+        }
+        PasswordSource::Stored => tracing::info!("the web UI password is the one saved earlier"),
+    }
+    Ok(Auth::Password)
 }
 
 /// Drive the server to completion while watching the scheduler task.

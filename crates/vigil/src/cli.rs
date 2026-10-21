@@ -24,7 +24,12 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Start the HTTP server and the check scheduler.
-    Serve,
+    Serve {
+        /// Let anyone who can reach the server in, without a password. For a trusted network
+        /// only; also set by `no_auth = true` or `VIGIL_NO_AUTH=true`.
+        #[arg(long)]
+        no_auth: bool,
+    },
     /// Add, list or remove watches.
     Watch {
         /// What to do with watches.
@@ -69,7 +74,7 @@ pub enum Command {
 impl Command {
     /// Long-running commands log at info level to stdout; the others keep stdout for results.
     pub fn is_server(&self) -> bool {
-        matches!(self, Self::Serve)
+        matches!(self, Self::Serve { .. })
     }
 }
 

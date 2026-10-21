@@ -13,12 +13,15 @@
 <body>
 <a class="skip" href="#main">{{ ctx.t("layout.skip") }}</a>
 {% if ctx.no_auth() %}<div class="banner banner-warn" role="alert">{{ ctx.t("layout.no_auth_warning") }}</div>{% endif %}
+{% block header %}
 <header class="top">
 <a class="brand" href="{{ ctx.url("/") }}">Vigil</a>
 <nav aria-label="{{ ctx.t("layout.main_menu") }}">
 {% for item in ctx.menu() %}<a href="{{ item.url }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.label }}</a>
 {% endfor %}</nav>
+{% if ctx.auth_enabled() %}<form method="post" action="{{ ctx.url("/logout") }}"><button class="btn-link" type="submit">{{ ctx.t("nav.sign_out") }}</button></form>{% endif %}
 </header>
+{% endblock %}
 <main id="main">
 {% block content %}{% endblock %}
 </main>
