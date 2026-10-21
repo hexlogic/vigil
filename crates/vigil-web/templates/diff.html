@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t1("diff.title", "name", name) }}{% endblock %}
+{% block content %}
+<div class="page-head">
+<h1>{{ ctx.t1("diff.title", "name", name) }}</h1>
+<div class="actions">
+<a class="btn" href="{{ history_url }}">{{ ctx.t("detail.history") }}</a>
+<a class="btn" href="{{ watch_url }}">{{ ctx.t("history.back") }}</a>
+</div>
+</div>
+{% if too_few %}
+<p class="empty">{{ ctx.t("diff.too_few") }}</p>
+{% else %}
+<form method="get" action="{{ action }}" class="row">
+<div>
+<label for="from">{{ ctx.t("diff.from") }}</label>
+<select id="from" name="from" class="auto">{% for pick in picks %}<option value="{{ pick.id }}"{% if pick.from %} selected{% endif %}>{{ pick.label }}</option>{% endfor %}</select>
+</div>
+<div>
+<label for="to">{{ ctx.t("diff.to") }}</label>
+<select id="to" name="to" class="auto">{% for pick in picks %}<option value="{{ pick.id }}"{% if pick.to %} selected{% endif %}>{{ pick.label }}</option>{% endfor %}</select>
+</div>
+{% if side %}<input type="hidden" name="view" value="side">{% endif %}
+<div class="end"><button class="btn" type="submit">{{ ctx.t("diff.show") }}</button></div>
+</form>
+<div class="row mt">
+<span class="seg" role="group" aria-label="{{ ctx.t("diff.layout") }}">
+<a href="{{ inline_url }}"{% if !side %} aria-current="true"{% endif %}>{{ ctx.t("diff.inline") }}</a>
+<a href="{{ side_url }}"{% if side %} aria-current="true"{% endif %}>{{ ctx.t("diff.side") }}</a>
+</span>
+{% if let Some(summary) = summary %}<span class="muted">{{ summary }}</span>{% endif %}
+</div>
+<div class="mt">
+{% if same %}
+<p class="empty">{{ ctx.t("preview.same") }}</p>
+{% else if let Some(diff) = inline %}
+{% include "diff_inline.html" %}
+{% else if let Some(columns) = columns %}
+{% include "diff_side.html" %}
+{% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -104,6 +104,10 @@ pub fn router(state: AppState) -> Router {
             "/watch/{id}/edit",
             get(pages::edit_form).post(pages::update),
         )
+        .route("/watch/{id}", get(pages::show))
+        .route("/watch/{id}/history", get(pages::history))
+        .route("/watch/{id}/history/{snapshot}", get(pages::snapshot))
+        .route("/watch/{id}/diff", get(pages::diff))
         .route("/watch/{id}/row", get(pages::watch_row))
         .route("/watch/{id}/check", post(pages::check_watch))
         .route("/watch/{id}/pause", post(pages::pause_watch))

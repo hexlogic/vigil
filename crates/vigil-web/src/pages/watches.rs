@@ -50,7 +50,7 @@ pub(crate) struct TagChip {
 }
 
 impl Row {
-    fn new(ctx: &Ctx, watch: &Watch, tags: &[&Tag], now: i64) -> Self {
+    pub(super) fn new(ctx: &Ctx, watch: &Watch, tags: &[&Tag], now: i64) -> Self {
         let t = ctx.translator();
         let (status_text, status_class) = if watch.paused {
             (t.t("watches.status.paused"), "")
@@ -229,6 +229,7 @@ pub(crate) async fn check_watch(
     ctx: Ctx,
     headers: HeaderMap,
     Path(id): Path<String>,
+    body: String,
 ) -> Response {
     let Some(id) = parse_id(&id) else {
         return not_found(ctx).await;
@@ -244,7 +245,7 @@ pub(crate) async fn check_watch(
         .await
         .is_err();
     if !is_htmx(&headers) {
-        return Redirect::to(&ctx.url("/")).into_response();
+        return back(&state, &ctx, &body);
     }
     row_response(&state, ctx, &id.to_string(), still_checking).await
 }
@@ -255,8 +256,9 @@ pub(crate) async fn pause_watch(
     ctx: Ctx,
     headers: HeaderMap,
     id: Path<String>,
+    body: String,
 ) -> Response {
-    set_paused(state, ctx, headers, id, true).await
+    set_paused(state, ctx, headers, id, body, true).await
 }
 
 /// `POST /watch/{id}/resume`.
@@ -265,8 +267,9 @@ pub(crate) async fn resume_watch(
     ctx: Ctx,
     headers: HeaderMap,
     id: Path<String>,
+    body: String,
 ) -> Response {
-    set_paused(state, ctx, headers, id, false).await
+    set_paused(state, ctx, headers, id, body, false).await
 }
 
 async fn set_paused(
@@ -274,6 +277,7 @@ async fn set_paused(
     ctx: Ctx,
     headers: HeaderMap,
     Path(id): Path<String>,
+    body: String,
     paused: bool,
 ) -> Response {
     let Some(watch) = parse_id(&id) else {
@@ -290,7 +294,7 @@ async fn set_paused(
         tracing::warn!(%error, "the scheduler could not be told about the change");
     }
     if !is_htmx(&headers) {
-        return Redirect::to(&ctx.url("/")).into_response();
+        return back(&state, &ctx, &body);
     }
     row_response(&state, ctx, &id, false).await
 }
@@ -346,6 +350,15 @@ async fn row_response(state: &AppState, ctx: Ctx, id: &str, still_checking: bool
         Err(StoreError::NotFound(_)) => not_found(ctx).await,
         Err(error) => server_error(ctx, &error),
     }
+}
+
+/// Where a form that is not htmx's goes afterwards: the page named in its `return` field, if
+/// that is a place on this site, else the list.
+fn back(state: &AppState, ctx: &Ctx, body: &str) -> Response {
+    let fields = crate::form::Fields::parse(body);
+    let to = crate::auth::safe_next(&state.web.base_path(), fields.get("return"))
+        .unwrap_or_else(|| ctx.url("/"));
+    Redirect::to(&to).into_response()
 }
 
 /// A watch id from an address; `None` if it is not one.

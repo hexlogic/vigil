@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ row.name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+<h1>{{ row.name }}</h1>
+<span class="badge {{ row.status_class }}">{{ row.status_text }}</span>
+<div class="actions">
+<form method="post" action="{{ row.check_url }}"><input type="hidden" name="return" value="{{ back }}"><button class="btn" type="submit">{{ ctx.t("watches.action.check") }}</button></form>
+<form method="post" action="{{ row.pause_url }}"><input type="hidden" name="return" value="{{ back }}"><button class="btn" type="submit">{% if row.paused %}{{ ctx.t("watches.action.resume") }}{% else %}{{ ctx.t("watches.action.pause") }}{% endif %}</button></form>
+<a class="btn" href="{{ row.edit_url }}">{{ ctx.t("watches.action.edit") }}</a>
+</div>
+</div>
+{% if let Some(error) = row.error %}<p class="notice notice-error">{{ error }}</p>{% endif %}
+<div class="cols cols-2">
+<section class="panel">
+<h2>{{ ctx.t("detail.settings") }}</h2>
+<dl class="facts">
+<dt>{{ ctx.t("detail.address") }}</dt><dd><a href="{{ row.url }}" rel="noreferrer noopener" target="_blank">{{ row.url }}</a></dd>
+<dt>{{ ctx.t("detail.interval") }}</dt><dd class="mono">{{ row.every }}</dd>
+<dt>{{ ctx.t("detail.jitter") }}</dt><dd>{{ jitter }}</dd>
+<dt>{{ ctx.t("detail.reads_as") }}</dt><dd>{{ processor }}</dd>
+<dt>{{ ctx.t("detail.filters_label") }}</dt><dd>{{ filters }}</dd>
+<dt>{{ ctx.t("detail.keeps") }}</dt><dd>{{ retention }}</dd>
+<dt>{{ ctx.t("detail.tags") }}</dt><dd>{% if row.tags.is_empty() %}<span class="muted">{{ ctx.t("detail.none") }}</span>{% else %}<span class="tags">{% for tag in row.tags %}<span class="tag tag-{{ tag.class }}">{{ tag.name }}</span>{% endfor %}</span>{% endif %}</dd>
+<dt>{{ ctx.t("detail.notifies") }}</dt><dd>{% if targets.is_empty() %}<span class="muted">{{ ctx.t("detail.none") }}</span>{% else %}{% for target in targets %}{% if !loop.first %}, {% endif %}{{ target }}{% endfor %}{% endif %}</dd>
+<dt>{{ ctx.t("detail.template") }}</dt><dd>{% if custom_template %}{{ ctx.t("detail.template_own") }}{% else %}<span class="muted">{{ ctx.t("detail.template_default") }}</span>{% endif %}</dd>
+</dl>
+</section>
+<section class="panel">
+<h2>{{ ctx.t("detail.state") }}</h2>
+<dl class="facts">
+<dt>{{ ctx.t("watches.col_checked") }}</dt><dd>{% if row.checked.iso.is_empty() %}<span class="muted">{{ row.checked.text }}</span>{% else %}<time datetime="{{ row.checked.iso }}" title="{{ row.checked.title }}">{{ row.checked.text }}</time>{% endif %}</dd>
+<dt>{{ ctx.t("watches.col_changed") }}</dt><dd>{% if row.changed.iso.is_empty() %}<span class="muted">{{ ctx.t("watches.never_changed") }}</span>{% else %}<time datetime="{{ row.changed.iso }}" title="{{ row.changed.title }}">{{ row.changed.text }}</time>{% endif %}</dd>
+<dt>{{ ctx.t("detail.versions_label") }}</dt><dd>{{ ctx.plural("detail.versions", *snapshots) }}</dd>
+</dl>
+<p class="row mt">
+<a class="btn" href="{{ history_url }}">{{ ctx.t("detail.history") }}</a>
+{% if let Some(url) = latest_diff_url %}<a class="btn" href="{{ url }}">{{ ctx.t("detail.latest_diff") }}</a>{% endif %}
+</p>
+</section>
+</div>
+
+<h2>{{ ctx.t("detail.recent_checks") }}</h2>
+{% if checks.is_empty() %}
+<p class="muted">{{ ctx.t("detail.no_checks") }}</p>
+{% else %}
+<div class="table-wrap"><table>
+<thead><tr><th>{{ ctx.t("detail.col_time") }}</th><th>{{ ctx.t("detail.col_result") }}</th><th class="hide-narrow">{{ ctx.t("detail.col_took") }}</th></tr></thead>
+<tbody>
+{% for check in checks %}<tr>
+<td class="nowrap"><time datetime="{{ check.when.iso }}" title="{{ check.when.title }}">{{ check.when.text }}</time></td>
+<td><span class="badge {{ check.class }}">{{ check.outcome }}</span>{% if let Some(error) = check.error %}<span class="sub">{{ error }}</span>{% endif %}</td>
+<td class="hide-narrow nowrap mono">{{ check.duration }}</td>
+</tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+
+<h2>{{ ctx.t("detail.recent_deliveries") }}</h2>
+{% if deliveries.is_empty() %}
+<p class="muted">{{ ctx.t("detail.no_deliveries") }}</p>
+{% else %}
+<div class="table-wrap"><table>
+<thead><tr><th>{{ ctx.t("detail.col_time") }}</th><th>{{ ctx.t("detail.col_target") }}</th><th>{{ ctx.t("detail.col_result") }}</th><th class="hide-narrow">{{ ctx.t("detail.col_attempts") }}</th></tr></thead>
+<tbody>
+{% for delivery in deliveries %}<tr>
+<td class="nowrap"><time datetime="{{ delivery.when.iso }}" title="{{ delivery.when.title }}">{{ delivery.when.text }}</time></td>
+<td>{{ delivery.target }}</td>
+<td><span class="badge {{ delivery.class }}">{{ delivery.outcome }}</span>{% if let Some(error) = delivery.error %}<span class="sub">{{ error }}</span>{% endif %}</td>
+<td class="hide-narrow">{{ delivery.attempts }}</td>
+</tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t("diff.gone_title") }}{% endblock %}
+{% block content %}
+<div class="panel stack">
+<h1>{{ ctx.t("diff.gone_title") }}</h1>
+<p>{{ ctx.t1("diff.gone_body", "kept", kept) }}</p>
+<p><a class="btn" href="{{ history_url }}">{{ ctx.t("diff.gone_history") }}</a></p>
+</div>
+{% endblock %}
