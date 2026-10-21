@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t("tags.title") }}{% endblock %}
+{% block content %}
+<div class="page-head">
+<h1>{{ ctx.t("tags.title") }}</h1>
+<a class="btn btn-primary" href="{{ add_url }}">{{ ctx.t("tags.add") }}</a>
+</div>
+<p class="muted">{{ ctx.t("tags.intro") }}</p>
+{% if rows.is_empty() %}
+<p class="empty">{{ ctx.t("tags.empty") }}</p>
+{% else %}
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>{{ ctx.t("watches.col_name") }}</th>
+<th class="hide-narrow">{{ ctx.t("tags.col_defaults") }}</th>
+<th></th>
+</tr></thead>
+<tbody>
+{% for row in rows %}{% include "tag_row.html" %}{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,16 @@
+<tr id="tag-{{ row.id }}">
+<td class="name">
+<a href="{{ row.filter_url }}" class="tag tag-{{ row.class }}">{{ row.name }}</a>
+<span class="sub">{{ row.watches }}</span>
+</td>
+<td class="hide-narrow">
+<span class="sub">{% if let Some(interval) = row.interval %}{{ ctx.t1("tags.default_every", "every", interval) }}{% else %}{{ ctx.t("tags.no_default_every") }}{% endif %}</span>
+<span class="sub">{% if row.targets.is_empty() %}{{ ctx.t("tags.no_default_targets") }}{% else %}{{ ctx.t("tags.default_targets") }} {% for target in row.targets %}{% if !loop.first %}, {% endif %}{{ target }}{% endfor %}{% endif %}</span>
+</td>
+<td class="right nowrap">
+<span class="actions">
+<a class="btn btn-small" href="{{ row.edit_url }}">{{ ctx.t("watches.action.edit") }}</a>
+<button class="btn btn-small btn-danger" type="button" hx-get="{{ row.delete_url }}" hx-target="#tag-{{ row.id }}" hx-swap="outerHTML">{{ ctx.t("watches.action.delete") }}</button>
+</span>
+</td>
+</tr>
