@@ -66,6 +66,7 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `fastrand` | Cheap uniform random numbers for jitter; no need for a cryptographic RNG. |
 | `sqlx` (dev, scheduler) | Tests flip a watch to paused until the API has a pause operation. |
 | `humantime` | Parse `--every 5m` and print intervals and RFC 3339 timestamps without pulling in a date library. |
+| `humantime` (scheduler) | `parse_interval`, so the command line and the web form accept the same text (`30s`, `5m`, `1h 30m`) within the same bounds. Already used by the binary. |
 | `thiserror` (scheduler) | The `Stopped` error of the scheduler handle (CLAUDE.md: typed errors in library crates). Already in the tree. |
 | `tokio-util` (binary) | Share one `CancellationToken` between the HTTP server and the scheduler. |
 | `wiremock`, `tempfile` (dev, binary) | End-to-end tests that run the real binary against a mock server and a throwaway data directory. |

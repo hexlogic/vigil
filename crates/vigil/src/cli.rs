@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand};
 use vigil_core::Processor;
-use vigil_scheduler::backoff::MAX_INTERVAL;
+use vigil_scheduler::parse_interval;
 
 /// Self-hosted website change detection.
 #[derive(Debug, Parser)]
@@ -195,18 +195,6 @@ pub enum NotifyCommand {
         /// Target name, or its id or the last 6 or more characters of it.
         target: String,
     },
-}
-
-/// Parse an interval such as `5m`, rejecting anything under one second.
-fn parse_interval(text: &str) -> Result<Duration, String> {
-    let interval = humantime::parse_duration(text).map_err(|e| format!("{e} (try 30s, 5m, 1h)"))?;
-    if interval < Duration::from_secs(1) {
-        return Err("the interval must be at least 1s".into());
-    }
-    if interval > MAX_INTERVAL {
-        return Err("the interval must be at most 365 days".into());
-    }
-    Ok(interval)
 }
 
 #[cfg(test)]
