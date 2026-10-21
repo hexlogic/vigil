@@ -51,3 +51,17 @@ pub(crate) fn forbidden(ctx: Ctx, why: Refusal) -> Response {
         },
     )
 }
+
+/// The answer to a request that failed for a reason on our side. The details are logged, not
+/// shown.
+pub(crate) fn server_error(ctx: Ctx, error: &dyn std::fmt::Display) -> Response {
+    tracing::error!(%error, "a request failed");
+    render_with(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        &ErrorPage {
+            ctx,
+            title_key: "error.server_title",
+            body_key: "error.server_body",
+        },
+    )
+}

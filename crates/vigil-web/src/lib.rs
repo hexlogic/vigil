@@ -3,6 +3,7 @@
 mod assets;
 mod auth;
 mod config;
+mod fmt;
 mod i18n;
 mod page;
 mod pages;
@@ -20,6 +21,7 @@ use axum::routing::{get, post};
 use tower_http::compression::CompressionLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
+use vigil_scheduler::{Checker, Notifier, SchedulerHandle};
 use vigil_store::Store;
 
 pub use auth::{AuthError, PasswordSource, change_password, ensure_admin_password};
@@ -39,17 +41,34 @@ pub struct AppState {
     pub web: Arc<WebConfig>,
     /// The texts of the UI.
     pub i18n: Arc<I18n>,
+    /// Checks pages and previews watches.
+    pub checker: Checker,
+    /// Sends notifications; also used for the test button.
+    pub notifier: Arc<Notifier>,
+    /// Asks the running scheduler to check a watch or to look at the watch list.
+    pub scheduler: SchedulerHandle,
     /// Recent wrong passwords.
     limiter: Arc<auth::LoginLimiter>,
 }
 
 impl AppState {
-    /// State for a server with the given settings.
-    pub fn new(store: Store, web: WebConfig) -> Result<Self, LocaleError> {
+    /// State for a server with the given settings and services. The `checker`, `notifier` and
+    /// `scheduler` handle are the ones the running scheduler uses, so that a check asked for in
+    /// the UI is one the scheduler runs.
+    pub fn new(
+        store: Store,
+        web: WebConfig,
+        checker: Checker,
+        notifier: Arc<Notifier>,
+        scheduler: SchedulerHandle,
+    ) -> Result<Self, LocaleError> {
         Ok(Self {
             store,
             web: Arc::new(web),
             i18n: Arc::new(I18n::load()?),
+            checker,
+            notifier,
+            scheduler,
             limiter: Arc::default(),
         })
     }
@@ -67,8 +86,16 @@ pub fn router(state: AppState) -> Router {
         .route("/assets/{name}", get(assets::serve));
     // Everything else needs a session, unless sign-in is off.
     let protected = Router::new()
-        .route("/", get(pages::home))
+        .route("/", get(pages::watches))
         .route("/logout", post(pages::logout))
+        .route("/watch/{id}/row", get(pages::watch_row))
+        .route("/watch/{id}/check", post(pages::check_watch))
+        .route("/watch/{id}/pause", post(pages::pause_watch))
+        .route("/watch/{id}/resume", post(pages::resume_watch))
+        .route(
+            "/watch/{id}/delete",
+            get(pages::confirm_delete).post(pages::delete_watch),
+        )
         .route_layer(from_fn_with_state(state.clone(), auth::require_session));
     let ui = public
         .merge(protected)

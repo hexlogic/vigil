@@ -2,14 +2,20 @@
 
 #![allow(dead_code)]
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, Response, header};
 use http_body_util::BodyExt;
+use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
-use vigil_store::Store;
+use vigil_core::Schedule;
+use vigil_fetch::{FetchConfig, Fetcher};
+use vigil_notify::{Sender, SenderConfig};
+use vigil_scheduler::{Checker, Notifier, Scheduler, Settings};
+use vigil_store::{NewWatch, Store};
 use vigil_web::{AppState, Auth, WebConfig, ensure_admin_password, router};
 
 pub type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -17,12 +23,25 @@ pub type TestResult = Result<(), Box<dyn std::error::Error>>;
 /// The admin password of every test app.
 pub const PASSWORD: &str = "correct horse battery";
 
-/// A router on a throwaway database, with a browser that may be signed in.
+/// Stops the scheduler of a test app when the app is dropped.
+pub struct Stop(CancellationToken);
+
+impl Drop for Stop {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
+/// A router on a throwaway database, with a running scheduler and a browser that may be
+/// signed in.
 #[derive(Clone)]
 pub struct App {
-    pub _dir: std::sync::Arc<tempfile::TempDir>,
+    pub _dir: Arc<tempfile::TempDir>,
+    pub _stop: Arc<Stop>,
     pub router: Router,
     pub store: Store,
+    pub checker: Checker,
+    pub notifier: Arc<Notifier>,
     /// The session cookie the "browser" sends, if it is signed in.
     pub cookie: Option<String>,
     /// The path the UI is served under, and the origin pages of it are from.
@@ -50,21 +69,53 @@ pub async fn app_with(web: WebConfig) -> Result<App, Box<dyn std::error::Error>>
     Ok(app)
 }
 
-pub async fn anonymous_with(mut web: WebConfig) -> Result<App, Box<dyn std::error::Error>> {
+pub async fn anonymous_with(web: WebConfig) -> Result<App, Box<dyn std::error::Error>> {
+    let dir = tempfile::tempdir()?;
+    let store = Store::open(&dir.path().join("vigil.db")).await?;
+    ensure_admin_password(&store, Some(PASSWORD)).await?;
+    app_on(store, dir, web).await
+}
+
+/// An app on this database, with a running scheduler. Nobody is signed in.
+pub async fn app_on(
+    store: Store,
+    dir: tempfile::TempDir,
+    mut web: WebConfig,
+) -> Result<App, Box<dyn std::error::Error>> {
     // Waiting a second for every wrong password would only slow the tests down.
     web.failed_login_delay = Duration::ZERO;
     let base_path = web.base_path();
     let origin = web
         .origin()
         .unwrap_or_else(|| "http://localhost".to_owned());
-    let dir = tempfile::tempdir()?;
-    let store = Store::open(&dir.path().join("vigil.db")).await?;
-    ensure_admin_password(&store, Some(PASSWORD)).await?;
-    let router = router(AppState::new(store.clone(), web)?);
+
+    let checker = Checker::new(store.clone(), Fetcher::new(FetchConfig::default())?);
+    let notifier = Arc::new(
+        Notifier::new(store.clone(), Sender::new(SenderConfig::default())?)
+            .with_base_url(web.base_url.clone())
+            .collecting_reports(),
+    );
+    let checker = checker.with_notifier(Arc::clone(&notifier));
+    let scheduler = Scheduler::new(checker.clone(), Settings::default());
+    let handle = scheduler.handle();
+    let stop = CancellationToken::new();
+    let token = stop.clone();
+    tokio::spawn(async move { scheduler.run(token).await });
+
+    let router = router(AppState::new(
+        store.clone(),
+        web,
+        checker.clone(),
+        Arc::clone(&notifier),
+        handle,
+    )?);
     Ok(App {
-        _dir: std::sync::Arc::new(dir),
+        _dir: Arc::new(dir),
+        _stop: Arc::new(Stop(stop)),
         router,
         store,
+        checker,
+        notifier,
         cookie: None,
         base_path,
         origin,
@@ -78,6 +129,17 @@ impl App {
             cookie: None,
             ..self.clone()
         }
+    }
+
+    /// A watch of `url` that is checked every hour.
+    pub async fn add_watch(
+        &self,
+        name: &str,
+        url: &str,
+    ) -> Result<vigil_core::Watch, Box<dyn std::error::Error>> {
+        let mut new = NewWatch::new(url, Schedule::Interval(3600));
+        new.name = name.to_owned();
+        Ok(self.store.create_watch(new).await?)
     }
 
     /// Sign in and return the session cookie (`vigil_session=...`).
