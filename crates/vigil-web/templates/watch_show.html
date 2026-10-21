@@ -31,7 +31,7 @@
 <dl class="facts">
 <dt>{{ ctx.t("watches.col_checked") }}</dt><dd>{% if row.checked.iso.is_empty() %}<span class="muted">{{ row.checked.text }}</span>{% else %}<time datetime="{{ row.checked.iso }}" title="{{ row.checked.title }}">{{ row.checked.text }}</time>{% endif %}</dd>
 <dt>{{ ctx.t("watches.col_changed") }}</dt><dd>{% if row.changed.iso.is_empty() %}<span class="muted">{{ ctx.t("watches.never_changed") }}</span>{% else %}<time datetime="{{ row.changed.iso }}" title="{{ row.changed.title }}">{{ row.changed.text }}</time>{% endif %}</dd>
-<dt>{{ ctx.t("detail.versions_label") }}</dt><dd>{{ ctx.plural("detail.versions", *snapshots) }}</dd>
+<dt>{{ ctx.t("detail.versions_label") }}</dt><dd>{{ ctx.plural("detail.versions_total", *snapshots) }}</dd>
 </dl>
 <p class="row mt">
 <a class="btn" href="{{ history_url }}">{{ ctx.t("detail.history") }}</a>
