@@ -7,6 +7,7 @@ mod errors;
 mod history;
 mod login;
 mod preview;
+mod settings;
 mod tag_form;
 mod tags;
 mod target_form;
@@ -20,6 +21,7 @@ pub(crate) use errors::{Refusal, forbidden, not_found, server_error};
 pub(crate) use history::{history, snapshot};
 pub(crate) use login::{login_form, login_submit, logout};
 pub(crate) use preview::preview;
+pub(crate) use settings::{set_language, set_password, settings, sign_out_everywhere};
 pub(crate) use tag_form::{
     create as create_tag, edit_form as edit_tag_form, new_form as new_tag_form,
     update as update_tag,

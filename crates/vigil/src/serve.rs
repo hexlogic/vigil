@@ -26,10 +26,14 @@ const RETRY_EVERY: Duration = Duration::from_secs(30);
 pub async fn run(config: Config) -> anyhow::Result<()> {
     let store = open_store(&config).await?;
     // Before anything is started: a server that cannot say how people sign in must not run.
-    let web = WebConfig::new(
+    let mut web = WebConfig::new(
         sign_in_setup(&config, &store).await?,
         config.base_url.as_deref(),
     );
+    web.password_from_env = config
+        .admin_password
+        .as_ref()
+        .is_some_and(|password| !password.expose().is_empty());
 
     let listener = TcpListener::bind(config.listen)
         .await
