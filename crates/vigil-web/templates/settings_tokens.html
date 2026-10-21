@@ -1,0 +1,41 @@
+<section class="panel" id="tokens">
+<h2>{{ ctx.t("settings.tokens") }}</h2>
+{% if sign_in %}
+<p class="muted">{{ ctx.t("settings.tokens_hint") }} <a href="{{ tokens.docs_url }}">{{ ctx.t("settings.tokens_docs") }}</a></p>
+{% if let Some(made) = tokens.created %}
+<div class="notice notice-ok" role="status">
+<p>{{ ctx.t1("settings.token_created", "name", made.name) }}</p>
+<p><code class="mono token-value">{{ made.token }}</code></p>
+</div>
+{% endif %}
+{% if tokens.rows.is_empty() %}
+<p class="empty">{{ ctx.t("settings.tokens_empty") }}</p>
+{% else %}
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>{{ ctx.t("watches.col_name") }}</th>
+<th>{{ ctx.t("settings.col_token") }}</th>
+<th class="hide-narrow">{{ ctx.t("settings.col_created") }}</th>
+<th class="hide-narrow">{{ ctx.t("settings.col_used") }}</th>
+<th></th>
+</tr></thead>
+<tbody>
+{% for row in tokens.rows %}{% include "token_row.html" %}{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+<form method="post" action="{{ tokens.create_url }}" class="mt">
+<div class="field">
+<label for="token-name">{{ ctx.t("settings.token_name") }}</label>
+<input type="text" id="token-name" name="name" value="{{ tokens.typed }}" maxlength="50" autocomplete="off" required{% if tokens.error.is_some() %} aria-invalid="true"{% endif %}>
+{% if let Some(message) = tokens.error %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<p class="hint">{{ ctx.t("settings.token_name_hint") }}</p>
+</div>
+<button class="btn btn-primary" type="submit">{{ ctx.t("settings.token_create") }}</button>
+</form>
+{% else %}
+<p class="muted">{{ ctx.t("settings.tokens_open") }}</p>
+{% endif %}
+</section>

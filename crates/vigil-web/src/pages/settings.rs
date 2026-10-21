@@ -9,6 +9,7 @@ use axum::http::header::SET_COOKIE;
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 
+use super::api_tokens::TokensView;
 use super::server_error;
 use crate::AppState;
 use crate::auth::session::{clear_cookie, language_cookie};
@@ -30,7 +31,7 @@ struct LanguageOption {
 
 #[derive(Template)]
 #[template(path = "settings.html")]
-struct Settings {
+pub(crate) struct Settings {
     ctx: Ctx,
     /// What was just done, if anything: a key of a sentence.
     done: Option<&'static str>,
@@ -46,6 +47,7 @@ struct Settings {
     language_url: String,
     password_url: String,
     sign_out_url: String,
+    tokens: TokensView,
 }
 
 /// Query of the settings page.
@@ -55,11 +57,13 @@ pub(crate) struct SettingsQuery {
     done: String,
 }
 
-fn page(
+/// The page with these API tokens on it.
+pub(crate) fn page_with(
     state: &AppState,
     ctx: Ctx,
     done: Option<&'static str>,
     password_error: Option<String>,
+    tokens: TokensView,
 ) -> Settings {
     let current = ctx.translator().lang();
     Settings {
@@ -81,6 +85,7 @@ fn page(
         language_url: ctx.url("/settings/language"),
         password_url: ctx.url("/settings/password"),
         sign_out_url: ctx.url("/settings/sign-out-everywhere"),
+        tokens,
         ctx: ctx.nav(Nav::Settings),
     }
 }
@@ -95,9 +100,14 @@ pub(crate) async fn settings(
     let done = match query.done.as_str() {
         "language" => Some("settings.done.language"),
         "password" => Some("settings.done.password"),
+        "token_revoked" => Some("settings.done.token_revoked"),
         _ => None,
     };
-    render(&page(&state, ctx, done, None))
+    let tokens = match TokensView::load(&state, &ctx).await {
+        Ok(tokens) => tokens,
+        Err(error) => return server_error(ctx, &error),
+    };
+    render(&page_with(&state, ctx, done, None, tokens))
 }
 
 /// `POST /settings/language`.
@@ -130,6 +140,10 @@ pub(crate) async fn set_password(
         return StatusCode::NOT_FOUND.into_response();
     }
     let t = ctx.translator().clone();
+    let tokens = match TokensView::load(&state, &ctx).await {
+        Ok(tokens) => tokens,
+        Err(error) => return server_error(ctx, &error),
+    };
     let fields = Fields::parse(&body);
     let (current, new, again) = (
         fields.get("current"),
@@ -137,11 +151,14 @@ pub(crate) async fn set_password(
         fields.get("again"),
     );
 
-    let refuse = |status: StatusCode, key: &str, ctx: Ctx| {
-        render_with(status, &page(&state, ctx, None, Some(t.t(key))))
+    let refuse = |status: StatusCode, key: &str, ctx: Ctx, tokens: TokensView| {
+        render_with(
+            status,
+            &page_with(&state, ctx, None, Some(t.t(key)), tokens),
+        )
     };
     if let Some(wait) = state.limiter.wait(Instant::now()) {
-        let mut response = refuse(StatusCode::TOO_MANY_REQUESTS, "login.too_many", ctx);
+        let mut response = refuse(StatusCode::TOO_MANY_REQUESTS, "login.too_many", ctx, tokens);
         if let Ok(seconds) = wait.as_secs().max(1).to_string().parse() {
             response
                 .headers_mut()
@@ -158,6 +175,7 @@ pub(crate) async fn set_password(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "settings.err.current",
                 ctx,
+                tokens,
             );
         }
         Err(error) => return server_error(ctx, &error),
@@ -165,11 +183,12 @@ pub(crate) async fn set_password(
     if new.chars().count() < MIN_PASSWORD_LEN {
         return render_with(
             StatusCode::UNPROCESSABLE_ENTITY,
-            &page(
+            &page_with(
                 &state,
                 ctx,
                 None,
                 Some(t.t1("settings.err.short", "n", MIN_PASSWORD_LEN)),
+                tokens,
             ),
         );
     }
@@ -178,6 +197,7 @@ pub(crate) async fn set_password(
             StatusCode::UNPROCESSABLE_ENTITY,
             "settings.err.mismatch",
             ctx,
+            tokens,
         );
     }
     state.limiter.reset();

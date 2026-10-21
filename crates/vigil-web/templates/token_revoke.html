@@ -1,0 +1,11 @@
+<tr id="token-{{ row.id }}">
+<td colspan="5">
+<div class="row">
+<span class="grow">{{ ctx.t1("settings.revoke_confirm", "name", row.name) }}</span>
+<span class="actions">
+<button class="btn btn-small btn-danger" type="button" hx-post="{{ row.revoke_url }}" hx-target="#token-{{ row.id }}" hx-swap="outerHTML">{{ ctx.t("settings.revoke") }}</button>
+<button class="btn btn-small" type="button" hx-get="{{ row.row_url }}" hx-target="#token-{{ row.id }}" hx-swap="outerHTML">{{ ctx.t("watches.delete.no") }}</button>
+</span>
+</div>
+</td>
+</tr>

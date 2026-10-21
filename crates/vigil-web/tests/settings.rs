@@ -384,3 +384,131 @@ async fn settings_need_a_session_and_a_request_from_this_site() -> TestResult {
     assert_eq!(session_count(&app).await?, 1, "the session survived");
     Ok(())
 }
+
+#[tokio::test]
+async fn an_api_token_is_made_shown_once_listed_used_and_revoked() -> TestResult {
+    let app = app().await?;
+
+    let page = app.get("/settings").await?;
+    assert!(page.body().contains("API tokens"), "{}", page.body());
+    assert!(page.body().contains("There are no API tokens yet."));
+
+    let made = app
+        .post_form("/settings/tokens", "name=backup+script")
+        .await?;
+    assert_eq!(made.status(), StatusCode::OK, "{}", made.body());
+    // The token is on the page that answers, and only there.
+    let token = made
+        .body()
+        .split("token-value\">")
+        .nth(1)
+        .and_then(|rest| rest.split('<').next())
+        .ok_or("the new token is not shown")?
+        .to_owned();
+    assert!(token.starts_with("vigil_") && token.len() == 70, "{token}");
+    assert!(made.body().contains("shown only once"), "{}", made.body());
+    let listed = app.get("/settings").await?;
+    assert!(!listed.body().contains(&token));
+    assert!(listed.body().contains("backup script"));
+    assert!(listed.body().contains(&format!("{}…", &token[..10])));
+
+    // It is a working token, and what the database holds is not the token.
+    let (status, _) = app
+        .api(
+            axum::http::Method::GET,
+            "/api/v1/version",
+            Some(&token),
+            None,
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK);
+    let stored: Vec<Vec<u8>> = sqlx::query_scalar("SELECT token_hash FROM api_tokens")
+        .fetch_all(app.store.pool())
+        .await?;
+    assert_eq!(stored.len(), 1);
+    assert!(
+        !stored[0]
+            .windows(token.len())
+            .any(|w| w == token.as_bytes())
+    );
+    let used = app.get("/settings").await?;
+    assert!(
+        !used.body().contains("<span class=\"muted\">never</span>"),
+        "{}",
+        used.body()
+    );
+
+    // Revoking asks first, in place of the row.
+    let id = app.store.resolve_api_token("backup script").await?.id;
+    let ask = app.get(&format!("/settings/tokens/{id}/revoke")).await?;
+    assert_eq!(ask.status(), StatusCode::OK);
+    assert!(ask.body().contains("Revoke the token"), "{}", ask.body());
+    assert_eq!(app.store.list_api_tokens().await?.len(), 1);
+    let gone = app
+        .post_form(&format!("/settings/tokens/{id}/revoke"), "")
+        .await?;
+    assert_eq!(gone.status(), StatusCode::SEE_OTHER);
+    assert!(app.store.list_api_tokens().await?.is_empty());
+    let (status, _) = app
+        .api(
+            axum::http::Method::GET,
+            "/api/v1/version",
+            Some(&token),
+            None,
+        )
+        .await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_token_needs_a_name_that_is_new_and_not_too_long() -> TestResult {
+    let app = app().await?;
+    for (body, text) in [
+        ("name=", "Enter a name for the token."),
+        ("name=+++", "Enter a name for the token."),
+    ] {
+        let response = app.post_form("/settings/tokens", body).await?;
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(response.body().contains(text), "{}", response.body());
+    }
+    let long = format!("name={}", "x".repeat(51));
+    let response = app.post_form("/settings/tokens", &long).await?;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(response.body().contains("at most 50 characters"));
+
+    assert_eq!(
+        app.post_form("/settings/tokens", "name=ci").await?.status(),
+        StatusCode::OK
+    );
+    let again = app.post_form("/settings/tokens", "name=ci").await?;
+    assert_eq!(again.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(again.body().contains("exists already"), "{}", again.body());
+    assert!(again.body().contains("value=\"ci\""));
+    assert_eq!(app.store.list_api_tokens().await?.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn tokens_need_a_session_and_a_request_from_this_site_and_sign_in() -> TestResult {
+    let app = app().await?;
+    let out = app.signed_out();
+    let response = out.post_form("/settings/tokens", "name=x").await?;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert!(header_of(&response, "location").starts_with("/login"));
+    let foreign = app
+        .post_form_from("/settings/tokens", "name=x", "http://evil.example")
+        .await?;
+    assert_eq!(foreign.status(), StatusCode::FORBIDDEN);
+    assert!(app.store.list_api_tokens().await?.is_empty());
+
+    // With sign-in off the API takes no token, so the page says so and makes none.
+    let open = app_with(vigil_web::WebConfig::new(vigil_web::Auth::Disabled, None)).await?;
+    let page = open.get("/settings").await?;
+    assert!(page.body().contains("needs no token"), "{}", page.body());
+    assert_eq!(
+        open.post_form("/settings/tokens", "name=x").await?.status(),
+        StatusCode::NOT_FOUND
+    );
+    Ok(())
+}

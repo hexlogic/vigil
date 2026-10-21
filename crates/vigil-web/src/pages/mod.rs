@@ -1,5 +1,6 @@
 //! The pages of the UI, one module each.
 
+mod api_tokens;
 mod detail;
 mod diff;
 mod edit;
@@ -14,6 +15,7 @@ mod target_form;
 mod targets;
 mod watches;
 
+pub(crate) use api_tokens::{confirm_revoke_token, create_token, revoke_token, token_row};
 pub(crate) use detail::show;
 pub(crate) use diff::diff;
 pub(crate) use edit::{create, edit_form, new_form, steps, update};

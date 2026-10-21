@@ -109,6 +109,12 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", get(pages::settings))
         .route("/settings/language", post(pages::set_language))
         .route("/settings/password", post(pages::set_password))
+        .route("/settings/tokens", post(pages::create_token))
+        .route("/settings/tokens/{id}/row", get(pages::token_row))
+        .route(
+            "/settings/tokens/{id}/revoke",
+            get(pages::confirm_revoke_token).post(pages::revoke_token),
+        )
         .route(
             "/settings/sign-out-everywhere",
             post(pages::sign_out_everywhere),
