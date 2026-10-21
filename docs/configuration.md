@@ -12,7 +12,7 @@ See [`vigil.example.toml`](../vigil.example.toml) for a complete example.
 |---|---|---|---|
 | `listen` | `VIGIL_LISTEN` | `0.0.0.0:5800` | Address the HTTP server binds to. |
 | `data_dir` | `VIGIL_DATA_DIR` | `data` | Directory for the SQLite database (`vigil.db`). Created if missing. |
-| `base_url` | `VIGIL_BASE_URL` | unset | The address Vigil is reached at, such as `https://vigil.example.com` (an `http` or `https` URL, which may include a path). Notifications use it to link to the diff page of a change; without it they have no link. |
+| `base_url` | `VIGIL_BASE_URL` | unset | The address Vigil is reached at, such as `https://vigil.example.com` (an `http` or `https` URL, which may include a path but no query, fragment or user name). Notifications use it to link to the diff page of a change; without it they have no link. |
 | `log_format` | `VIGIL_LOG_FORMAT` | `text` | `text` or `json`. |
 | `fetch.timeout_secs` | `VIGIL_FETCH__TIMEOUT_SECS` | `30` | Request timeout for watches that do not set their own. |
 | `fetch.max_body_bytes` | `VIGIL_FETCH__MAX_BODY_BYTES` | `10485760` | Largest accepted response body, measured after decompression. Larger responses fail the check. |

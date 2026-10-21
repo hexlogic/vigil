@@ -145,11 +145,33 @@ impl Config {
             .as_deref()
             .filter(|url| !url.trim().is_empty())
         {
-            vigil_fetch::check_url(url.trim())
+            check_base_url(url.trim())
                 .map_err(|error| Box::new(figment::Error::from(format!("base_url: {error}"))))?;
         }
         Ok(self)
     }
+}
+
+/// `base_url` is put in front of `/watch/<id>/diff?...` in every notification, so it must be a
+/// plain address: an `http(s)` URL with no query, fragment or credentials (which would be
+/// sent to Telegram, Discord and Slack).
+fn check_base_url(url: &str) -> Result<(), String> {
+    vigil_fetch::check_url(url).map_err(|error| error.to_string())?;
+    let after_scheme = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let authority = after_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default();
+    if authority.contains('@') {
+        return Err("must not contain a user name or password".into());
+    }
+    if url.contains('?') {
+        return Err("must not have a query (?...)".into());
+    }
+    if url.contains('#') {
+        return Err("must not have a fragment (#...)".into());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -189,6 +211,19 @@ mod tests {
                 let error = load(None).expect_err("refused").to_string();
                 assert!(error.contains("base_url"), "{bad}: {error}");
             }
+            for bad in [
+                "https://vigil.example.com?x=1",
+                "https://vigil.example.com/vigil?x=1",
+                "https://user:pw@vigil.example.com",
+                "https://vigil.example.com/#top",
+            ] {
+                jail.set_env("VIGIL_BASE_URL", bad);
+                let error = load(None).expect_err("refused").to_string();
+                assert!(error.contains("base_url: must not"), "{bad}: {error}");
+            }
+            // A path is fine (behind a reverse proxy), and an @ in it is not a login.
+            jail.set_env("VIGIL_BASE_URL", "https://example.com/vigil@home/");
+            assert!(load(None).is_ok());
             // Blank means unset.
             jail.set_env("VIGIL_BASE_URL", "");
             assert!(load(None).is_ok());
