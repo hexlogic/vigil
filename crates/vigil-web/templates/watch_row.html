@@ -1,0 +1,23 @@
+<tr id="watch-{{ row.id }}"{% if row.paused %} class="paused"{% endif %}{% if row.still_checking %} hx-get="{{ row.row_url }}" hx-trigger="load delay:5s" hx-swap="outerHTML"{% endif %}>
+<td class="name">
+<a class="title" href="{{ row.show_url }}">{{ row.name }}</a>
+<span class="sub">{{ row.url }}</span>
+{% if !row.tags.is_empty() %}<span class="tags">{% for tag in row.tags %}<span class="tag tag-{{ tag.class }}">{{ tag.name }}</span>{% endfor %}</span>{% endif %}
+</td>
+<td>
+<span class="badge {{ row.status_class }}">{{ row.status_text }}</span>
+{% if row.still_checking %}<span class="sub">{{ ctx.t("watches.still_checking") }}</span>{% endif %}
+{% if let Some(error) = row.error %}<span class="sub">{{ error }}</span>{% endif %}
+</td>
+<td class="hide-narrow nowrap">{% if row.checked.iso.is_empty() %}<span class="muted">{{ row.checked.text }}</span>{% else %}<time datetime="{{ row.checked.iso }}" title="{{ row.checked.title }}">{{ row.checked.text }}</time>{% endif %}</td>
+<td class="hide-narrow nowrap">{% if row.changed.iso.is_empty() %}<span class="muted">{{ ctx.t("watches.never_changed") }}</span>{% else %}<time datetime="{{ row.changed.iso }}" title="{{ row.changed.title }}">{{ row.changed.text }}</time>{% endif %}</td>
+<td class="hide-narrow nowrap mono">{{ row.every }}</td>
+<td class="right nowrap">
+<span class="actions">
+<button class="btn btn-small" type="button" hx-post="{{ row.check_url }}" hx-target="#watch-{{ row.id }}" hx-swap="outerHTML" hx-disabled-elt="this"><span class="spinner htmx-indicator" aria-hidden="true"></span> {{ ctx.t("watches.action.check") }}</button>
+<button class="btn btn-small" type="button" hx-post="{{ row.pause_url }}" hx-target="#watch-{{ row.id }}" hx-swap="outerHTML">{% if row.paused %}{{ ctx.t("watches.action.resume") }}{% else %}{{ ctx.t("watches.action.pause") }}{% endif %}</button>
+<a class="btn btn-small" href="{{ row.edit_url }}">{{ ctx.t("watches.action.edit") }}</a>
+<button class="btn btn-small btn-danger" type="button" hx-get="{{ row.delete_url }}" hx-target="#watch-{{ row.id }}" hx-swap="outerHTML">{{ ctx.t("watches.action.delete") }}</button>
+</span>
+</td>
+</tr>

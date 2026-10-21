@@ -77,6 +77,9 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `serde` (derive; web) | Reads sign-in and (later) other form bodies. Already in the tree. |
 | `tokio` (rt, time; web) | Hashing and checking passwords run with `spawn_blocking`, and a wrong password waits a second. |
 | `sqlx` (dev, web) | Tests look at the sessions table. |
+| `humantime` (web) | Shows an interval the way it is typed (`5m`, `1h 30m`) and times as RFC 3339 for the tooltip. Already used by the binary and the scheduler. |
+| `vigil-core`, `vigil-scheduler` (web) | Watches, the scheduler handle, the checker and the notifier. |
+| `vigil-fetch`, `vigil-notify`, `tokio-util`, `wiremock` (dev, web) | Tests build the same checker, notifier and scheduler the binary does, and serve watched pages from a mock server. |
 | `thiserror` (web) | `LocaleError` (CLAUDE.md). Already in the tree. |
 | `tower-http` (compression-gzip, compression-br, set-header, timeout) | Compress pages and assets; add the security headers; cut off a request that hangs. `compression-br` brings the pure-Rust `brotli` crate. |
 | `vigil-core` (dev, web) | Tests build watches. |
@@ -350,3 +353,11 @@ Cross-site request forgery is handled without tokens. A request that is not `GET
 Without sign-in there is a second hole, DNS rebinding: a page at `attacker.example` whose name is switched to your LAN address could then read and change everything as a same-origin page. So with sign-in off, requests are answered only when addressed to an IP address, `localhost`, or the `base_url` host. With a password this cannot happen: the attacker's origin has no session cookie. `/healthz` is exempt from both checks (orchestrators call it by service name). The sign-in page sends the visitor back to `next` only if it is a path on this site under the base path (never `//host`, a scheme, a backslash or a control character), and an htmx request that is refused is answered with `HX-Redirect` to the sign-in page of the page it was made from.
 
 The base-path home address with a final slash redirects to the one without. It was first served directly, outside the session check, because routes added next to `nest` are not under its layers: a test found it. Every route of the UI is added to the router that has the layers.
+
+## The watch list
+
+The list is a table of rows; each row is a fragment (`GET /watch/{id}/row`) that its buttons replace in place with htmx, so the page keeps its place and scroll. Check now, pause, resume and delete are `POST`s that answer with the new row (delete answers with nothing, and first shows a confirmation row in its place: the page policy and the plan's "no browser dialogs" rule out `hx-confirm`). Without htmx they redirect to the list, so a form post still works.
+
+Check now goes through the scheduler handle, so it obeys the global and per-host limits and joins a check that is already running. The request waits up to 60 seconds for the check to end; if it takes longer, the answer is the row with a note, and the row asks for itself again after five seconds. A paused watch can be checked by hand and stays paused. Pause, resume and delete tell the scheduler to reload at once, so they take effect now and not at the next 30 second resync.
+
+Watches are listed by name, case-insensitively, with tags as chips; `?tag=<id>` narrows the list to a tag, and a value that is not a tag shows everything. `AppState` now carries the checker, the notifier and the scheduler handle that `vigil serve` runs, so what the UI starts is what the scheduler runs. Times are shown as "5 minutes ago" with the exact time in a tooltip; the intervals are shown as typed (`1h 30m`), in English units in every language, since that is what the form accepts.

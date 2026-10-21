@@ -61,6 +61,11 @@ impl Ctx {
         self
     }
 
+    /// The translator, for code that formats text without a template.
+    pub(crate) fn translator(&self) -> &Translator {
+        &self.translator
+    }
+
     /// The language code, for the `lang` attribute.
     pub(crate) fn lang_code(&self) -> &'static str {
         self.translator.lang().code()

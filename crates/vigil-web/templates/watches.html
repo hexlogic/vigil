@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t("watches.title") }}{% endblock %}
+{% block content %}
+<div class="page-head">
+<h1>{{ ctx.t("watches.title") }}</h1>
+<span class="muted">{{ ctx.plural("watches.count", *total) }}</span>
+</div>
+{% if !tags.is_empty() %}
+<nav class="row small" aria-label="{{ ctx.t("watches.filter_label") }}">
+<a class="tag tag-gray"{% if !filtered %} aria-current="true"{% endif %} href="{{ ctx.url("/") }}">{{ ctx.t("watches.filter_all") }}</a>
+{% for tag in tags %}<a class="tag tag-{{ tag.class }}"{% if tag.current %} aria-current="true"{% endif %} href="{{ tag.url }}">{{ tag.name }}</a>{% endfor %}
+</nav>
+{% endif %}
+{% if rows.is_empty() %}
+<p class="empty">{% if total == 0 %}{{ ctx.t("watches.empty") }}{% else %}{{ ctx.t("watches.empty_tag") }}{% endif %}</p>
+{% else %}
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>{{ ctx.t("watches.col_name") }}</th>
+<th>{{ ctx.t("watches.col_status") }}</th>
+<th class="hide-narrow">{{ ctx.t("watches.col_checked") }}</th>
+<th class="hide-narrow">{{ ctx.t("watches.col_changed") }}</th>
+<th class="hide-narrow">{{ ctx.t("watches.col_every") }}</th>
+<th></th>
+</tr></thead>
+<tbody>
+{% for row in rows %}{% include "watch_row.html" %}{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

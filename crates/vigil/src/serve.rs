@@ -25,6 +25,11 @@ const RETRY_EVERY: Duration = Duration::from_secs(30);
 /// Run until Ctrl-C or SIGTERM: stop starting checks, let running ones finish, then exit.
 pub async fn run(config: Config) -> anyhow::Result<()> {
     let store = open_store(&config).await?;
+    // Before anything is started: a server that cannot say how people sign in must not run.
+    let web = WebConfig::new(
+        sign_in_setup(&config, &store).await?,
+        config.base_url.as_deref(),
+    );
 
     let listener = TcpListener::bind(config.listen)
         .await
@@ -42,10 +47,9 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     if resumed > 0 {
         tracing::info!(resumed, "sending notifications left over from the last run");
     }
-    let scheduler = Scheduler::new(
-        Checker::new(store.clone(), fetcher).with_notifier(Arc::clone(&notifier)),
-        config.scheduler_settings(),
-    );
+    let checker = Checker::new(store.clone(), fetcher).with_notifier(Arc::clone(&notifier));
+    let scheduler = Scheduler::new(checker.clone(), config.scheduler_settings());
+    let scheduler_handle = scheduler.handle();
     let cancel = CancellationToken::new();
     let retries = tokio::spawn({
         let notifier = Arc::clone(&notifier);
@@ -57,9 +61,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         async move { scheduler.run(cancel).await }
     });
 
-    let auth = sign_in_setup(&config, &store).await?;
-    let web = WebConfig::new(auth, config.base_url.as_deref());
-    let state = AppState::new(store, web).context("loading the web UI texts")?;
+    let state = AppState::new(store, web, checker, Arc::clone(&notifier), scheduler_handle)
+        .context("loading the web UI texts")?;
     let shutdown = cancel.clone();
     let server = axum::serve(listener, router(state)).with_graceful_shutdown(async move {
         shutdown_signal().await;

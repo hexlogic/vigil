@@ -509,18 +509,7 @@ async fn a_password_is_made_up_once_and_kept() -> TestResult {
     );
 
     // The generated password works for signing in.
-    let router = vigil_web::router(vigil_web::AppState::new(
-        store.clone(),
-        WebConfig::new(Auth::Password, None),
-    )?);
-    let app = App {
-        _dir: std::sync::Arc::new(dir),
-        router,
-        store,
-        cookie: None,
-        base_path: String::new(),
-        origin: "http://localhost".to_owned(),
-    };
+    let app = common::app_on(store, dir, WebConfig::new(Auth::Password, None)).await?;
     let response = app
         .post_form("/login", &format!("password={password}"))
         .await?;
