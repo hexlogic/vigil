@@ -7,6 +7,8 @@ mod errors;
 mod history;
 mod login;
 mod preview;
+mod target_form;
+mod targets;
 mod watches;
 
 pub(crate) use detail::show;
@@ -16,6 +18,14 @@ pub(crate) use errors::{Refusal, forbidden, not_found, server_error};
 pub(crate) use history::{history, snapshot};
 pub(crate) use login::{login_form, login_submit, logout};
 pub(crate) use preview::preview;
+pub(crate) use target_form::{
+    create as create_target, edit_form as edit_target_form, new_form as new_target_form,
+    update as update_target,
+};
+pub(crate) use targets::{
+    confirm_delete_target, delete_target, disable_target, enable_target, target_row, targets,
+    test_target,
+};
 pub(crate) use watches::{
     check_watch, confirm_delete, delete_watch, parse_id, pause_watch, resume_watch, watch_row,
     watches,

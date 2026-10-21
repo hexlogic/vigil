@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t(title_key) }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ ctx.t(title_key) }}</h1></div>
+<form method="post" action="{{ action }}">
+<div class="field">
+<label for="name">{{ ctx.t("targets.name") }}</label>
+<input type="text" id="name" name="name" value="{{ draft.name }}" required autocomplete="off"{% if problems.name.is_some() %} aria-invalid="true"{% endif %}>
+{% if let Some(message) = problems.name %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<p class="hint">{{ ctx.t("targets.name_hint") }}</p>
+</div>
+<div class="field">
+<label for="url">{{ ctx.t("targets.url") }}</label>
+<input type="text" id="url" name="url" value="" autocomplete="off" spellcheck="false" class="mono"{% if editing %} placeholder="{{ current }}"{% else %} placeholder="ntfys://ntfy.sh/my-topic" required{% endif %}{% if problems.url.is_some() %} aria-invalid="true"{% endif %}>
+{% if let Some(message) = problems.url %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<p class="hint">{% if editing %}{{ ctx.t("targets.url_keep") }}{% else %}{{ ctx.t("targets.url_hint") }}{% endif %}</p>
+</div>
+<div class="field">
+<label for="template">{{ ctx.t("targets.template") }}</label>
+<textarea id="template" name="template" rows="3" spellcheck="false"{% if problems.template.is_some() %} aria-invalid="true"{% endif %}>{{ draft.template }}</textarea>
+{% if let Some(message) = problems.template %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<p class="hint">{{ ctx.t("targets.template_hint") }}</p>
+</div>
+<div class="row">
+<button class="btn btn-primary" type="submit">{% if editing %}{{ ctx.t("form.save") }}{% else %}{{ ctx.t("targets.add") }}{% endif %}</button>
+<a class="btn" href="{{ cancel_url }}">{{ ctx.t("form.cancel") }}</a>
+</div>
+</form>
+{% endblock %}

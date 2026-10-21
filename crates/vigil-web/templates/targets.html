@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t("targets.title") }}{% endblock %}
+{% block content %}
+<div class="page-head">
+<h1>{{ ctx.t("targets.title") }}</h1>
+<a class="btn btn-primary" href="{{ add_url }}">{{ ctx.t("targets.add") }}</a>
+</div>
+<p class="muted">{{ ctx.t("targets.intro") }}</p>
+{% if rows.is_empty() %}
+<p class="empty">{{ ctx.t("targets.empty") }}</p>
+{% else %}
+<div class="table-wrap">
+<table>
+<thead><tr>
+<th>{{ ctx.t("watches.col_name") }}</th>
+<th class="hide-narrow">{{ ctx.t("targets.col_address") }}</th>
+<th>{{ ctx.t("watches.col_status") }}</th>
+<th></th>
+</tr></thead>
+<tbody>
+{% for row in rows %}{% include "target_row.html" %}{% endfor %}
+</tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

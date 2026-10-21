@@ -73,7 +73,7 @@
 </div>
 <div class="field">
 <label>{{ ctx.t("form.targets") }}</label>
-{% if targets.is_empty() %}<p class="muted">{{ ctx.t("form.no_targets") }} <a href="{{ ctx.url("/notifications") }}">{{ ctx.t("form.add_target") }}</a></p>{% endif %}
+{% if targets.is_empty() %}<p class="muted">{{ ctx.t("form.no_targets") }} <a href="{{ ctx.url("/notifications/new") }}">{{ ctx.t("form.add_target") }}</a></p>{% endif %}
 {% for target in targets %}<label class="check"><input type="checkbox" name="target" value="{{ target.id }}"{% if target.checked %} checked{% endif %}>{{ target.name }}{% if !target.kind.is_empty() %} <span class="muted small">{{ target.kind }}</span>{% endif %}</label>{% endfor %}
 {% if let Some(message) = problems.targets %}<p class="error" role="alert">{{ message }}</p>{% endif %}
 </div>

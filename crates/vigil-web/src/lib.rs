@@ -104,6 +104,23 @@ pub fn router(state: AppState) -> Router {
             "/watch/{id}/edit",
             get(pages::edit_form).post(pages::update),
         )
+        .route("/notifications", get(pages::targets))
+        .route(
+            "/notifications/new",
+            get(pages::new_target_form).post(pages::create_target),
+        )
+        .route(
+            "/notifications/{id}/edit",
+            get(pages::edit_target_form).post(pages::update_target),
+        )
+        .route("/notifications/{id}/row", get(pages::target_row))
+        .route("/notifications/{id}/test", post(pages::test_target))
+        .route("/notifications/{id}/enable", post(pages::enable_target))
+        .route("/notifications/{id}/disable", post(pages::disable_target))
+        .route(
+            "/notifications/{id}/delete",
+            get(pages::confirm_delete_target).post(pages::delete_target),
+        )
         .route("/watch/{id}", get(pages::show))
         .route("/watch/{id}/history", get(pages::history))
         .route("/watch/{id}/history/{snapshot}", get(pages::snapshot))

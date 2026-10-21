@@ -144,6 +144,7 @@ label { display: block; font-weight: 600; margin-bottom: .2rem; }
 .field { margin-bottom: 1rem; }
 .hint { color: var(--muted); font-size: .85rem; margin-top: .2rem; }
 .error { color: var(--err); font-size: .9rem; margin-top: .2rem; }
+.ok { color: var(--ok); }
 input[type="text"], input[type="url"], input[type="password"], input[type="number"], select, textarea {
   width: 100%; font: inherit; color: var(--text); background: var(--surface);
   border: 1px solid var(--border-strong); border-radius: var(--radius); padding: .4rem .55rem;

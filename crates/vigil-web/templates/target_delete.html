@@ -1,0 +1,11 @@
+<tr id="target-{{ row.id }}">
+<td colspan="4">
+<div class="row">
+<span class="grow">{{ ctx.t1("targets.delete_confirm", "name", row.name) }} {{ row.watches }}.</span>
+<span class="actions">
+<button class="btn btn-small btn-danger" type="button" hx-post="{{ row.delete_url }}" hx-target="#target-{{ row.id }}" hx-swap="outerHTML">{{ ctx.t("watches.delete.yes") }}</button>
+<button class="btn btn-small" type="button" hx-get="{{ row.row_url }}" hx-target="#target-{{ row.id }}" hx-swap="outerHTML">{{ ctx.t("watches.delete.no") }}</button>
+</span>
+</div>
+</td>
+</tr>
