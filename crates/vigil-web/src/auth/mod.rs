@@ -8,7 +8,8 @@ pub(crate) mod session;
 
 pub(crate) use limiter::LoginLimiter;
 pub(crate) use middleware::{
-    SessionKey, check_origin, current_session, login_url, require_session, safe_next,
+    SessionKey, check_origin, current_session, host_is_trusted, login_url, origin_matches,
+    require_session, safe_next,
 };
 pub(crate) use password::verify_admin_password;
 pub use password::{AuthError, PasswordSource, change_password, ensure_admin_password};

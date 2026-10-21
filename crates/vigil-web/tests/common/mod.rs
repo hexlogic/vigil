@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::body::Body;
-use axum::http::{Request, Response, header};
+use axum::http::{Method, Request, Response, header};
 use http_body_util::BodyExt;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
@@ -198,6 +198,41 @@ impl App {
     /// `GET path`.
     pub async fn get(&self, path: &str) -> Result<Response<String>, Box<dyn std::error::Error>> {
         self.send(Request::get(path).body(Body::empty())?).await
+    }
+
+    /// A new API token, as a script would be given it.
+    pub async fn api_token(&self, name: &str) -> Result<String, Box<dyn std::error::Error>> {
+        let made = vigil_web::generate_token()?;
+        self.store
+            .create_api_token(name, &made.hash, &made.prefix)
+            .await?;
+        Ok(made.token)
+    }
+
+    /// A call to the API: no cookie, the token if there is one, a JSON body if there is one.
+    /// It is sent as a command-line client would, with neither `Origin` nor `Sec-Fetch-Site`.
+    pub async fn api(
+        &self,
+        method: Method,
+        path: &str,
+        token: Option<&str>,
+        body: Option<&serde_json::Value>,
+    ) -> Result<(axum::http::StatusCode, serde_json::Value), Box<dyn std::error::Error>> {
+        let mut request = Request::builder().method(method).uri(path);
+        if let Some(token) = token {
+            request = request.header("x-api-key", token);
+        }
+        let request = match body {
+            Some(body) => request
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_string()))?,
+            None => request.body(Body::empty())?,
+        };
+        let response = self.signed_out().send(request).await?;
+        let status = response.status();
+        let json = serde_json::from_str(response.body())
+            .map_err(|e| format!("not JSON ({e}): {} {:?}", status, response.body()))?;
+        Ok((status, json))
     }
 
     /// `GET path` asking for `language`.

@@ -15,6 +15,7 @@ use crate::pattern::{Pattern, PatternError};
 /// Which kinds of change should notify. All are on by default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NotifyOn {
     /// Notify when lines were only added.
     pub added: bool,
@@ -37,6 +38,7 @@ impl Default for NotifyOn {
 /// Which lines `trigger_text` and `block_text` look at.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum Scope {
     /// Only lines the change added. This is the default.
     #[default]
@@ -55,6 +57,7 @@ impl Scope {
 /// A watch's notification conditions, as stored. `{}` means "notify about every change".
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Conditions {
     /// Notify only if a line in `scope` matches one of these patterns (substring or
     /// `/regex/flags`). Empty means no restriction.

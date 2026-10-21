@@ -1,5 +1,6 @@
 //! axum application: REST API and web UI.
 
+mod api;
 mod assets;
 mod auth;
 mod config;
@@ -27,6 +28,7 @@ use tower_http::trace::TraceLayer;
 use vigil_scheduler::{Checker, Notifier, SchedulerHandle};
 use vigil_store::Store;
 
+pub use api::{GeneratedToken, generate_token};
 pub use auth::{AuthError, PasswordSource, change_password, ensure_admin_password};
 pub use config::{Auth, WebConfig};
 pub use i18n::{I18n, Lang, LocaleError, Translator};
@@ -158,11 +160,16 @@ pub fn router(state: AppState) -> Router {
     let ui = public
         .merge(protected)
         .fallback(pages::not_found)
-        .layer(from_fn_with_state(state.clone(), auth::check_origin));
+        .layer(from_fn_with_state(state.clone(), auth::check_origin))
+        .layer(timeout())
+        .with_state(state.clone());
+    // The API has its own checks (a token, not a cookie), so it is outside the UI's. Whatever
+    // is not an API path is the UI's.
+    let site = api::router(&state, timeout()).fallback_service(ui);
     let base_path = state.web.base_path();
-    let app = Router::new().route("/healthz", get(healthz));
+    let app = Router::new().route("/healthz", get(healthz).layer(timeout()));
     let app = if base_path.is_empty() {
-        app.merge(ui)
+        app.merge(site)
     } else {
         // axum nests `/` at the prefix alone; people also type the address with a slash. That
         // is sent on to the real page, so that it passes the same checks as every other.
@@ -171,16 +178,18 @@ pub fn router(state: AppState) -> Router {
             &format!("{base_path}/"),
             get(move || async move { Redirect::permanent(&canonical) }),
         )
-        .nest(&base_path, ui)
+        .nest(&base_path, site)
     };
     security::add(app)
         .layer(CompressionLayer::new())
-        .layer(TimeoutLayer::with_status_code(
-            StatusCode::REQUEST_TIMEOUT,
-            REQUEST_TIMEOUT,
-        ))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// Cuts off a request that hangs. It is applied to the UI and to the API separately, because
+/// an outer layer cannot be loosened for one route inside it, and the import takes longer.
+fn timeout() -> TimeoutLayer {
+    TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, REQUEST_TIMEOUT)
 }
 
 /// Liveness/readiness probe: `200 ok` when the database answers, `503` otherwise.

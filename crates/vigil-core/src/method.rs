@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// The method a watch's request is made with. Serialised in capitals, as `"POST"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum Method {
     /// Read the page. This is the default.
     #[default]

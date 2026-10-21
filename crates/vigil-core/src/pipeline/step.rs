@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 /// is a stable contract: the API and importers use it, so variants are only ever added.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum Step {
     /// Select parts of an HTML page with a CSS selector, before the page is turned into text.
     /// Only works with the `text` processor, and the page is parsed as HTML whatever its
@@ -110,6 +111,7 @@ pub enum Step {
 ///
 /// `include` keeps only the selected elements; `remove` deletes them and keeps the rest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum SelectMode {
     /// Keep only the selected elements.
