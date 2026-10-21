@@ -12,7 +12,7 @@ use std::process::ExitCode;
 use anyhow::{Context, ensure};
 use clap::Parser;
 
-use crate::cli::{Cli, Command, WatchCommand};
+use crate::cli::{Cli, Command, NotifyCommand, WatchCommand};
 use crate::config::Config;
 
 #[tokio::main]
@@ -46,6 +46,22 @@ async fn main() -> anyhow::Result<ExitCode> {
             }
             Ok(ExitCode::SUCCESS)
         }
+        Command::Notify { command } => match command {
+            NotifyCommand::Add {
+                name,
+                url,
+                template,
+            } => commands::notify::add(&config, &name, &url, template.as_deref())
+                .await
+                .map(|()| ExitCode::SUCCESS),
+            NotifyCommand::List => commands::notify::list(&config)
+                .await
+                .map(|()| ExitCode::SUCCESS),
+            NotifyCommand::Remove { target } => commands::notify::remove(&config, &target)
+                .await
+                .map(|()| ExitCode::SUCCESS),
+            NotifyCommand::Test { target } => commands::notify::test(&config, &target).await,
+        },
         Command::Check { id } => commands::check::run(&config, &id).await,
         Command::Diff { id } => commands::diff::run(&config, &id)
             .await

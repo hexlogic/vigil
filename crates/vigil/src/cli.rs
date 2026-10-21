@@ -31,6 +31,12 @@ pub enum Command {
         #[command(subcommand)]
         command: WatchCommand,
     },
+    /// Add, list, remove or test notification targets.
+    Notify {
+        /// What to do with notification targets.
+        #[command(subcommand)]
+        command: NotifyCommand,
+    },
     /// Check a watch now and report what changed.
     Check {
         /// Watch id, or the last 6 or more characters of it.
@@ -127,6 +133,40 @@ pub enum WatchCommand {
     Remove {
         /// Watch id, or the last 6 or more characters of it.
         id: String,
+    },
+}
+
+/// `vigil notify` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum NotifyCommand {
+    /// Add a place to send notifications to.
+    ///
+    /// The URL says where: ntfy://ntfy.sh/TOPIC, tgram://BOT_TOKEN/CHAT_ID,
+    /// discord://WEBHOOK_ID/WEBHOOK_TOKEN, slack://T000/B000/XXXX,
+    /// mailto://USER:PASSWORD@smtp.example.com?to=you@example.com, json://host/path,
+    /// form://host/path or gotify://host/TOKEN. Add an s for HTTPS (ntfys://, jsons://, ...);
+    /// mailtos:// uses TLS from the start. Link a target to a watch with `vigil watch edit
+    /// --notify NAME`.
+    Add {
+        /// A name for the target, such as "phone".
+        name: String,
+        /// The notification URL, which usually holds credentials.
+        url: String,
+        /// Message template for this target, as text or @FILE.
+        #[arg(long, value_name = "TEXT|@FILE")]
+        template: Option<String>,
+    },
+    /// List notification targets, with their credentials hidden.
+    List,
+    /// Delete a target; watches stop notifying it.
+    Remove {
+        /// Target name, or its id or the last 6 or more characters of it.
+        target: String,
+    },
+    /// Send a test notification to a target.
+    Test {
+        /// Target name, or its id or the last 6 or more characters of it.
+        target: String,
     },
 }
 

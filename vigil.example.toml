@@ -2,6 +2,7 @@
 
 listen = "0.0.0.0:5800"
 data_dir = "data"
+# base_url = "https://vigil.example.com" # where Vigil is reached; notifications link to diff pages with it
 log_format = "text" # "text" or "json"
 
 [fetch]

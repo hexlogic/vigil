@@ -25,6 +25,7 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 vigil-core = { version = "0.1.0", path = "../vigil-core" }
 vigil-fetch = { version = "0.1.0", path = "../vigil-fetch" }
+vigil-notify = { version = "0.1.0", path = "../vigil-notify" }
 vigil-scheduler = { version = "0.1.0", path = "../vigil-scheduler" }
 vigil-store = { version = "0.1.0", path = "../vigil-store" }
 vigil-web = { version = "0.1.0", path = "../vigil-web" }

@@ -12,6 +12,7 @@ See [`vigil.example.toml`](../vigil.example.toml) for a complete example.
 |---|---|---|---|
 | `listen` | `VIGIL_LISTEN` | `0.0.0.0:5800` | Address the HTTP server binds to. |
 | `data_dir` | `VIGIL_DATA_DIR` | `data` | Directory for the SQLite database (`vigil.db`). Created if missing. |
+| `base_url` | `VIGIL_BASE_URL` | unset | The address Vigil is reached at, such as `https://vigil.example.com` (an `http` or `https` URL, which may include a path). Notifications use it to link to the diff page of a change; without it they have no link. |
 | `log_format` | `VIGIL_LOG_FORMAT` | `text` | `text` or `json`. |
 | `fetch.timeout_secs` | `VIGIL_FETCH__TIMEOUT_SECS` | `30` | Request timeout for watches that do not set their own. |
 | `fetch.max_body_bytes` | `VIGIL_FETCH__MAX_BODY_BYTES` | `10485760` | Largest accepted response body, measured after decompression. Larger responses fail the check. |
@@ -32,6 +33,10 @@ Log verbosity is controlled by `RUST_LOG`. The default is `info` (stdout) for `v
 | `vigil preview <id> [content options]` | Fetch a watch and show what a check would store: the text, a diff against the newest snapshot and whether it would notify. Saves nothing. With content options, tries them in place of the watch's own. Exits non-zero if the page or the settings do not work. |
 | `vigil watch list` | Show all watches with their id, interval, last check, last change and status (`pending`, `ok`, `paused` or `error xN`). |
 | `vigil watch remove <id>` | Delete a watch with its snapshots and history. |
+| `vigil notify add <name> <url> [--template <TEXT\|@FILE>]` | Add a notification target: a name for a notification URL such as `ntfy://ntfy.sh/my-topic` or `tgram://BOT_TOKEN/CHAT_ID`. The URL and the template are checked first; errors never repeat the URL, which usually holds credentials. Prints a warning when the URL would send a credential over plain HTTP to another machine. |
+| `vigil notify list` | Show the targets with their credentials replaced by `***`, whether they are enabled and how many watches use them. |
+| `vigil notify remove <target>` | Delete a target. A `<target>` is its name, its id or the last six or more characters of it. |
+| `vigil notify test <target>` | Send a test notification and say whether it arrived. Not retried; exits non-zero if it failed. |
 | `vigil check <id>` | Check a watch now. Prints `baseline stored`, `unchanged` or `changed, +N -M lines` (with `no notification: <reason>` when the watch's conditions hold the change back); exits non-zero if the page could not be checked. |
 | `vigil diff <id>` | Show the difference between the two newest snapshots as a unified diff, in color on a terminal (`NO_COLOR` turns it off). |
 

@@ -67,6 +67,9 @@ pub struct Config {
     pub listen: SocketAddr,
     /// Directory holding the SQLite database.
     pub data_dir: PathBuf,
+    /// The address Vigil is reached at, such as `https://vigil.example.com`. Notifications use
+    /// it for links to diff pages; without it they have none.
+    pub base_url: Option<String>,
     /// Log output format.
     pub log_format: LogFormat,
     /// Page fetching.
@@ -80,6 +83,7 @@ impl Default for Config {
         Self {
             listen: SocketAddr::from(([0, 0, 0, 0], 5800)),
             data_dir: PathBuf::from("data"),
+            base_url: None,
             log_format: LogFormat::Text,
             fetch: FetchSection::default(),
             scheduler: SchedulerSection::default(),
@@ -129,8 +133,22 @@ impl Config {
         }
         figment
             .merge(Env::prefixed("VIGIL_").ignore(&["config"]).split("__"))
-            .extract()
+            .extract::<Self>()
             .map_err(Box::new)
+            .and_then(Self::checked)
+    }
+
+    /// Refuse settings that cannot work.
+    fn checked(self) -> Result<Self, Box<figment::Error>> {
+        if let Some(url) = self
+            .base_url
+            .as_deref()
+            .filter(|url| !url.trim().is_empty())
+        {
+            vigil_fetch::check_url(url.trim())
+                .map_err(|error| Box::new(figment::Error::from(format!("base_url: {error}"))))?;
+        }
+        Ok(self)
     }
 }
 
@@ -143,6 +161,39 @@ mod tests {
 
     fn load(path: Option<&Path>) -> Result<Config, figment::Error> {
         Config::load(path).map_err(|err| *err)
+    }
+
+    #[test]
+    fn base_url_comes_from_the_file_or_the_environment() {
+        Jail::expect_with(|jail| {
+            assert_eq!(load(None)?.base_url, None);
+            jail.create_file("vigil.toml", "base_url = \"https://vigil.example.com\"")?;
+            assert_eq!(
+                load(None)?.base_url.as_deref(),
+                Some("https://vigil.example.com")
+            );
+            jail.set_env("VIGIL_BASE_URL", "http://nas.lan:5800/vigil");
+            assert_eq!(
+                load(None)?.base_url.as_deref(),
+                Some("http://nas.lan:5800/vigil")
+            );
+            Ok(())
+        });
+    }
+
+    #[test]
+    fn a_base_url_that_is_not_http_is_refused() {
+        Jail::expect_with(|jail| {
+            for bad in ["vigil.example.com", "ftp://example.com", "file:///tmp"] {
+                jail.set_env("VIGIL_BASE_URL", bad);
+                let error = load(None).expect_err("refused").to_string();
+                assert!(error.contains("base_url"), "{bad}: {error}");
+            }
+            // Blank means unset.
+            jail.set_env("VIGIL_BASE_URL", "");
+            assert!(load(None).is_ok());
+            Ok(())
+        });
     }
 
     #[test]

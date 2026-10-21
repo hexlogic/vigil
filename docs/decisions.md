@@ -256,7 +256,7 @@ The tests run `lettre` against a small SMTP responder in `crates/vigil-notify/te
 
 ## Test notifications
 
-PLAN.md Phase 3 asks for a test endpoint, but there is no API or login yet (auth arrives with the web UI, the API in Phase 5), and an unauthenticated endpoint that makes the server send to arbitrary configured targets is not something to ship. A test notification is `vigil notify test <target>` on the command line, backed by `send_test()` in `vigil-notify`; the HTTP endpoint and the UI button follow once there is auth. A test notification is titled "Vigil test notification" and says it is a test, tries the target's own template (so a broken template shows up there, not on the first real change), links to Vigil when `base_url` is set, and is retried like any other delivery. Its result is recorded in the delivery log with no watch.
+PLAN.md Phase 3 asks for a test endpoint, but there is no API or login yet (auth arrives with the web UI, the API in Phase 5), and an unauthenticated endpoint that makes the server send to arbitrary configured targets is not something to ship. A test notification is `vigil notify test <target>` on the command line, backed by `send_test()` in `vigil-notify`; the HTTP endpoint and the UI button follow once there is auth. A test notification is titled "Vigil test notification" and says it is a test, tries the target's own template (so a broken template shows up there, not on the first real change), links to Vigil when `base_url` is set, and is retried like any other delivery by the library. Its result is recorded in the delivery log with no watch.
 
 ## Notification dispatch
 
@@ -265,3 +265,9 @@ A check that finds a change the watch's conditions want a notification for (`Ver
 The watch's template wins over the target's `default_template`, which wins over the built-in one. The diff page link is `<base_url>/watch/<watch id>/diff?from=<previous snapshot>&to=<new snapshot>`, a path the web UI will serve; with no `base_url` the link is left out. `diff_full` is a unified diff with 3 lines of context.
 
 `vigil check` waits for its deliveries (`close_and_wait`, no time limit: the user is looking at the terminal). `vigil serve` gives them 30 seconds after the scheduler has stopped (`shutdown`): waiting to retry is abandoned at once (the log says "shutting down") and attempts already on the wire get the grace period. A target whose stored URL no longer parses (the parser was made stricter, or the row was edited by hand) is logged as failed with 0 attempts and a message that does not repeat the URL.
+
+## Notification commands and `base_url`
+
+`vigil notify add|list|remove|test` manage targets from the command line, as the web UI and API do not exist yet. `add` parses the URL and checks the template before storing anything, prints the redacted form, and warns on stderr when a credential would travel over plain HTTP to another machine (`Channel::sends_credentials_in_cleartext`); `list` never prints a stored URL unredacted. The URL is an argument, so it is visible in the shell history and the process list while the command runs; that is accepted for a single-user tool, and a prompt or file input can be added if it matters. `notify test` does not retry (someone is waiting at the terminal) and exits 1 when the notification failed.
+
+`base_url` is an optional top-level setting (`VIGIL_BASE_URL`), checked at load to be an `http` or `https` URL; an empty value means unset. It is the one place Vigil is told its own address, which it cannot know behind a reverse proxy.
