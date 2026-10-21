@@ -113,3 +113,55 @@ fn extracts_are_one_pattern_with_the_groups_the_source_would_return() {
     assert_eq!(mixed.pipeline.len(), 1);
     assert_eq!(mixed.notes.len(), 1);
 }
+
+#[test]
+fn flags_that_are_all_dropped_leave_a_working_case_sensitive_expression() {
+    // Written flags replace the case-insensitive default, as in the source, so `g` alone
+    // leaves the expression case-sensitive. The empty flags group `(?)` would not build.
+    let g = map_filters(&Filters {
+        extract: vec!["/price: (\\d+)/g".into()],
+        ..Filters::default()
+    });
+    assert_eq!(
+        g.pipeline,
+        [Step::RegexExtract {
+            pattern: "price: (\\d+)".into(),
+            group: 1,
+            required: false
+        }]
+    );
+    assert!(g.notes.is_empty(), "{:?}", g.notes);
+
+    // A flag that Vigil does not have is said, and the rest still builds.
+    let u = map_filters(&Filters {
+        extract: vec!["/x/u".into()],
+        ..Filters::default()
+    });
+    assert_eq!(
+        u.pipeline,
+        [Step::RegexExtract {
+            pattern: "x".into(),
+            group: 0,
+            required: false
+        }]
+    );
+    assert_eq!(u.notes.len(), 1, "{:?}", u.notes);
+    assert!(u.notes[0].message.contains("flag"), "{:?}", u.notes);
+
+    let lines = map_filters(&Filters {
+        extract_lines: vec!["/Sold/g".into()],
+        ..Filters::default()
+    });
+    assert_eq!(
+        lines.pipeline,
+        [Step::RegexExtract {
+            pattern: "(?m)^.*(?:(?:Sold)).*$".into(),
+            group: 0,
+            required: false
+        }]
+    );
+    assert!(lines.notes.is_empty(), "{:?}", lines.notes);
+
+    // The same rule for the patterns of the conditions and of the ignored lines.
+    assert_eq!(pat("/Sold/g"), (Some("/Sold/".to_owned()), 0));
+}

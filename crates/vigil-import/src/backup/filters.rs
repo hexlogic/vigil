@@ -99,7 +99,8 @@ pub(super) fn written(entry: &str) -> Written<'_> {
 
 /// The flags Vigil's patterns and regexes have: `i`, `m`, `s` and `x`. The source reads a
 /// regular expression without flags case-insensitively, so then `i` is added. Flags of the
-/// source that mean nothing here (`g`) are dropped quietly; the others are noted.
+/// source that mean nothing here (`g`) are dropped quietly; the others are noted. Written
+/// flags replace that default even when all of them are dropped, so the result can be empty.
 pub(super) fn flags_of(flags: &str, notes: &mut Vec<Note>, option: &str) -> String {
     if flags.is_empty() {
         return "i".to_owned();
@@ -141,11 +142,16 @@ pub(super) fn pattern(entry: &str, option: &str, notes: &mut Vec<Note>) -> Optio
     }
 }
 
-/// An entry of `extract_text` as a raw regular expression with its flags written inline.
+/// An entry of `extract_text` or `extract_lines_containing` as a raw regular expression with
+/// its flags written inline. Flags that were written replace the default `i` even when all of
+/// them are dropped, so then the expression has no flags group: `(?)` does not build.
 pub(super) fn extract_regex(entry: &str, option: &str, notes: &mut Vec<Note>) -> String {
     let w = written(entry);
     match w.flags {
-        Some(flags) => format!("(?{}){}", flags_of(flags, notes, option), w.body),
+        Some(flags) => match flags_of(flags, notes, option) {
+            kept if kept.is_empty() => w.body.to_owned(),
+            kept => format!("(?{kept}){}", w.body),
+        },
         None => format!("(?i){}", regex::escape(w.body)),
     }
 }

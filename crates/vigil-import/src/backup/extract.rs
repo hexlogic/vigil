@@ -2,7 +2,7 @@
 
 use vigil_core::Step;
 
-use super::filters::{dedupe, extract_regex, flags_of, groups, written};
+use super::filters::{dedupe, extract_regex, groups};
 use crate::report::Note;
 
 /// `extract_text`: each match, or its capture group, on a line of its own.
@@ -58,15 +58,7 @@ pub(super) fn extract_step(entries: &[String], notes: &mut Vec<Note>) -> Option<
 pub(super) fn lines_step(entries: &[String], notes: &mut Vec<Note>) -> Option<Step> {
     let mut alternatives = Vec::new();
     for entry in dedupe(entries) {
-        let w = written(&entry);
-        let regex = match w.flags {
-            Some(flags) => format!(
-                "(?{}){}",
-                flags_of(flags, notes, "extract_lines_containing"),
-                w.body
-            ),
-            None => format!("(?i){}", regex::escape(w.body)),
-        };
+        let regex = extract_regex(&entry, "extract_lines_containing", notes);
         match groups(&regex) {
             Ok(_) => alternatives.push(format!("(?:{regex})")),
             Err(why) => notes.push(Note::skipped(
