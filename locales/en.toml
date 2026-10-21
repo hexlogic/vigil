@@ -1,0 +1,31 @@
+# UI text. Every string a person reads in the web UI lives here, not in a template or in Rust.
+# Placeholders are written {name}. A count with several forms has one key per plural form:
+# key.one, key.other (English); uk.toml also needs key.few and key.many.
+
+[layout]
+skip = "Skip to content"
+main_menu = "Main"
+no_auth_warning = "Sign-in is off. Anyone who can reach this address can change your watches and notification targets."
+version = "Vigil {version}"
+
+[nav]
+watches = "Watches"
+notifications = "Notifications"
+tags = "Tags"
+settings = "Settings"
+sign_out = "Sign out"
+
+[error]
+not_found_title = "Page not found"
+not_found_body = "There is nothing at this address."
+forbidden_title = "Request refused"
+forbidden_body = "This request did not come from this site, so it was not carried out. Reload the page and try again."
+server_title = "Something went wrong"
+server_body = "The request could not be completed. The details are in the server log."
+back_to_watches = "Back to the watches"
+
+[watches]
+title = "Watches"
+empty = "No watches yet."
+count.one = "{n} watch"
+count.other = "{n} watches"

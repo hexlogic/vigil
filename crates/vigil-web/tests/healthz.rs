@@ -5,16 +5,17 @@ use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 use vigil_store::Store;
-use vigil_web::{AppState, router};
+use vigil_web::{AppState, Auth, WebConfig, router};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 async fn app() -> Result<(tempfile::TempDir, axum::Router, Store), Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir()?;
     let store = Store::open(&dir.path().join("vigil.db")).await?;
-    let app = router(AppState {
-        store: store.clone(),
-    });
+    let app = router(AppState::new(
+        store.clone(),
+        WebConfig::new(Auth::Password, None),
+    )?);
     Ok((dir, app, store))
 }
 

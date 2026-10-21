@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t(title_key) }}{% endblock %}
+{% block content %}
+<div class="panel stack">
+<h1>{{ ctx.t(title_key) }}</h1>
+<p>{{ ctx.t(body_key) }}</p>
+<p><a class="btn" href="{{ ctx.url("/") }}">{{ ctx.t("error.back_to_watches") }}</a></p>
+</div>
+{% endblock %}

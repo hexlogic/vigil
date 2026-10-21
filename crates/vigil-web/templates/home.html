@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t("watches.title") }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ ctx.t("watches.title") }}</h1></div>
+{% if count == 0 %}
+<p class="empty">{{ ctx.t("watches.empty") }}</p>
+{% else %}
+<p>{{ ctx.plural("watches.count", *count) }}</p>
+{% endif %}
+{% endblock %}
