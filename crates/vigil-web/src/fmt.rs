@@ -42,6 +42,21 @@ pub(crate) fn when(t: &Translator, at: Option<i64>, now: i64) -> TimeView {
     TimeView { text, iso, title }
 }
 
+/// A size in bytes, as people read it: `812 B`, `12.3 KiB`, `4.0 MiB`.
+pub(crate) fn bytes(n: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KiB", "MiB", "GiB"];
+    if n < 1024 {
+        return format!("{n} B");
+    }
+    let mut size = n as f64;
+    let mut unit = 0;
+    while size >= 1024.0 && unit + 1 < UNITS.len() {
+        size /= 1024.0;
+        unit += 1;
+    }
+    format!("{size:.1} {}", UNITS[unit])
+}
+
 /// An interval as it is typed: `30s`, `5m`, `1h 30m`.
 pub(crate) fn every(seconds: u64) -> String {
     humantime::format_duration(Duration::from_secs(seconds)).to_string()
@@ -101,6 +116,17 @@ mod tests {
         assert_eq!(at(2 * 3600), "2 години тому");
         assert_eq!(at(21 * 86_400), "21 день тому");
         assert_eq!(when(&uk, None, NOW).text, "ніколи");
+    }
+
+    #[test]
+    fn sizes_read_in_the_largest_fitting_unit() {
+        assert_eq!(bytes(0), "0 B");
+        assert_eq!(bytes(1023), "1023 B");
+        assert_eq!(bytes(1024), "1.0 KiB");
+        assert_eq!(bytes(12_595), "12.3 KiB");
+        assert_eq!(bytes(4 * 1024 * 1024), "4.0 MiB");
+        assert_eq!(bytes(3 * 1024 * 1024 * 1024), "3.0 GiB");
+        assert_eq!(bytes(u64::MAX), "17179869184.0 GiB");
     }
 
     #[test]

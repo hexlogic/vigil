@@ -1,0 +1,35 @@
+{% if idle %}
+<p class="muted">{{ ctx.t("preview.need_address") }}</p>
+{% else if !problems.is_empty() %}
+<div class="notice notice-warn">
+<p>{{ ctx.t("preview.fix_first") }}</p>
+<ul>{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul>
+</div>
+{% else if let Some(message) = fetch_error %}
+<div class="notice notice-error" role="alert">
+<p>{{ ctx.t("preview.fetch_failed") }}</p>
+<p class="mono small">{{ message }}</p>
+<p><button class="btn btn-small" type="button" hx-post="{{ refetch_url }}" hx-include="#watch-form" hx-target="#preview" hx-swap="innerHTML">{{ ctx.t("preview.refetch") }}</button></p>
+</div>
+{% else if let Some(message) = failure %}
+<div class="notice notice-error" role="alert">
+<p>{{ ctx.t("preview.process_failed") }}</p>
+<p class="mono small">{{ message }}</p>
+</div>
+{% else if let Some(outcome) = outcome %}
+<p class="small muted">{{ outcome.facts }}<br>{{ outcome.timing }}
+<button class="btn-link" type="button" hx-post="{{ refetch_url }}" hx-include="#watch-form" hx-target="#preview" hx-swap="innerHTML">{{ ctx.t("preview.refetch") }}</button></p>
+<h3>{{ ctx.t("preview.result") }} <span class="muted small">{{ outcome.lines }}</span></h3>
+{% if outcome.text.is_empty() %}
+<p class="muted">{{ ctx.t("preview.empty") }}</p>
+{% else %}
+<pre class="output">{{ outcome.text }}</pre>
+{% endif %}
+{% if let Some(shown) = outcome.shown %}<p class="hint">{{ shown }}</p>{% endif %}
+<h3>{{ ctx.t("preview.compare") }}</h3>
+{% if let Some(note) = outcome.compare.note %}<p class="muted">{{ note }}</p>{% endif %}
+{% if let Some(diff) = outcome.compare.diff %}{% include "diff_inline.html" %}{% endif %}
+{% if let Some(verdict) = outcome.compare.verdict %}
+<p class="notice {% if verdict.0 %}notice-ok{% else %}notice-warn{% endif %}">{% if verdict.0 %}{{ ctx.t("preview.would_notify") }}{% else %}{{ ctx.t("preview.would_not_notify") }}{% endif %} <span class="muted">({{ verdict.1 }})</span></p>
+{% endif %}
+{% endif %}

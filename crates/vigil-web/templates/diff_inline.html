@@ -1,0 +1,8 @@
+<div class="diff">
+{% for item in diff.items %}
+{% if let Some(gap) = item.gap %}<div class="gap">{{ gap }}</div>{% endif %}
+{% if let Some(line) = item.line %}<div class="dl {{ line.class }}"><span class="n">{{ line.old }}</span><span class="n">{{ line.new }}</span><span class="sg"><span aria-hidden="true">{{ line.sign }}</span>{% if !line.sign_word.is_empty() %}<span class="sr-only">{{ line.sign_word }}</span>{% endif %}</span><span>{% for span in line.spans %}{% if span.marked %}<mark>{{ span.text }}</mark>{% else %}{{ span.text }}{% endif %}{% endfor %}</span></div>{% endif %}
+{% endfor %}
+{% if let Some(gap) = diff.tail_gap %}<div class="gap">{{ gap }}</div>{% endif %}
+</div>
+{% if diff.truncated %}<p class="hint">{{ ctx.t("diff.truncated") }}</p>{% endif %}

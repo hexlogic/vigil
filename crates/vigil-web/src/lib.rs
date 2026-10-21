@@ -3,11 +3,13 @@
 mod assets;
 mod auth;
 mod config;
+mod diff_html;
 mod fmt;
 mod form;
 mod i18n;
 mod page;
 mod pages;
+mod preview_cache;
 mod security;
 
 use std::sync::Arc;
@@ -52,6 +54,8 @@ pub struct AppState {
     limiter: Arc<auth::LoginLimiter>,
     /// Takes turns for the processing slot of each form.
     slots: Arc<form::SlotLocks>,
+    /// The page each open form last fetched for its preview.
+    previews: Arc<preview_cache::PreviewCache>,
 }
 
 impl AppState {
@@ -74,6 +78,7 @@ impl AppState {
             scheduler,
             limiter: Arc::default(),
             slots: Arc::default(),
+            previews: Arc::default(),
         })
     }
 }
@@ -94,6 +99,7 @@ pub fn router(state: AppState) -> Router {
         .route("/logout", post(pages::logout))
         .route("/watch/new", get(pages::new_form).post(pages::create))
         .route("/watch/steps", post(pages::steps))
+        .route("/watch/preview", post(pages::preview))
         .route(
             "/watch/{id}/edit",
             get(pages::edit_form).post(pages::update),

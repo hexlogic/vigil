@@ -3,11 +3,13 @@
 mod edit;
 mod errors;
 mod login;
+mod preview;
 mod watches;
 
 pub(crate) use edit::{create, edit_form, new_form, steps, update};
 pub(crate) use errors::{Refusal, forbidden, not_found, server_error};
 pub(crate) use login::{login_form, login_submit, logout};
+pub(crate) use preview::preview;
 pub(crate) use watches::{
     check_watch, confirm_delete, delete_watch, parse_id, pause_watch, resume_watch, watch_row,
     watches,

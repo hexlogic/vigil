@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use askama::Template;
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 use uuid::Uuid;
@@ -58,6 +58,8 @@ struct FormPage {
     tags: Vec<Choice>,
     targets: Vec<Choice>,
     editing: bool,
+    /// The watch being edited, for the preview to compare with; empty for a new one.
+    watch_id: String,
 }
 
 #[derive(Template)]
@@ -126,12 +128,12 @@ fn target_choices(targets: &[NotificationTarget], draft: &Draft) -> Vec<Choice> 
 }
 
 /// Everything the form can choose from.
-struct Options {
-    tags: Vec<Tag>,
-    targets: Vec<NotificationTarget>,
+pub(super) struct Options {
+    pub(super) tags: Vec<Tag>,
+    pub(super) targets: Vec<NotificationTarget>,
 }
 
-async fn options(state: &AppState) -> Result<Options, StoreError> {
+pub(super) async fn options(state: &AppState) -> Result<Options, StoreError> {
     Ok(Options {
         tags: state.store.list_tags().await?,
         targets: state.store.list_targets().await?,
@@ -144,14 +146,15 @@ fn page(
     draft: Draft,
     problems: Problems,
     action: String,
-    editing: bool,
+    editing: Option<WatchId>,
 ) -> FormPage {
     FormPage {
-        title_key: if editing {
+        title_key: if editing.is_some() {
             "form.edit_title"
         } else {
             "form.add_title"
         },
+        watch_id: editing.map(|id| id.to_string()).unwrap_or_default(),
         cancel_url: ctx.url("/"),
         steps: step_views(&ctx, &draft, &problems),
         kinds: kind_options(&ctx),
@@ -161,7 +164,7 @@ fn page(
         action,
         draft,
         problems,
-        editing,
+        editing: editing.is_some(),
     }
 }
 
@@ -179,7 +182,7 @@ pub(crate) async fn new_form(State(state): State<AppState>, ctx: Ctx) -> Respons
         draft,
         Problems::default(),
         action,
-        false,
+        None,
     ))
 }
 
@@ -196,7 +199,7 @@ pub(crate) async fn create(State(state): State<AppState>, ctx: Ctx, body: String
             let action = ctx.url("/watch/new");
             return render_with(
                 StatusCode::UNPROCESSABLE_ENTITY,
-                &page(ctx, &options, draft, *problems, action, false),
+                &page(ctx, &options, draft, *problems, action, None),
             );
         }
     };
@@ -247,7 +250,7 @@ pub(crate) async fn edit_form(
         draft,
         Problems::default(),
         action,
-        true,
+        Some(id),
     ))
 }
 
@@ -277,7 +280,7 @@ pub(crate) async fn update(
             let action = ctx.url(&format!("/watch/{id}/edit"));
             return render_with(
                 StatusCode::UNPROCESSABLE_ENTITY,
-                &page(ctx, &options, draft, *problems, action, true),
+                &page(ctx, &options, draft, *problems, action, Some(id)),
             );
         }
     };
@@ -370,5 +373,10 @@ pub(crate) async fn steps(ctx: Ctx, Query(query): Query<StepQuery>, body: String
     };
     draft.apply(&op);
     let steps = step_views(&ctx, &draft, &Problems::default());
-    render(&StepsFragment { ctx, steps })
+    let mut response = render(&StepsFragment { ctx, steps });
+    // The preview listens for this, since the filters changed without an input event.
+    response
+        .headers_mut()
+        .insert("hx-trigger", HeaderValue::from_static("stepschanged"));
+    response
 }
