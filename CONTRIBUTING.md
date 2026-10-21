@@ -16,7 +16,7 @@ All three must pass; CI runs the same commands on Linux and macOS.
 ## Rules of thumb
 
 - Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`), one logical change per commit.
-- New pipeline steps, notification channels and API endpoints come with tests.
+- New pipeline steps, notification channels and API endpoints come with tests; [docs/extending.md](docs/extending.md) says where they go.
 - No `unwrap()`/`expect()` outside tests and startup code.
 - New dependencies need a one-line reason in `docs/decisions.md`; prefer pure-Rust crates.
 - Never edit an applied SQL migration; add a new one.

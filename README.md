@@ -3,7 +3,7 @@
 A lightweight, self-hosted website change detection service written in Rust.
 One static binary, SQLite, low memory.
 
-> **Status:** early development (Phase 2: pipeline). The command line works, including extraction steps (CSS, XPath, JSONPath, jq, regex), JSON and feed processors, and notification conditions; the web UI and notification channels are not built yet.
+> **Status:** early development (Phase 3: notifications). The command line works, including extraction steps (CSS, XPath, JSONPath, jq, regex), JSON and feed processors, notification conditions and notifications to ntfy, Telegram, Discord, Slack, email, webhooks and Gotify; the web UI is not built yet.
 
 ## Quick start
 
@@ -17,12 +17,18 @@ cargo run -- diff <id>      # after the page has changed once
 cargo run -- watch add https://example.com --pipeline '[{"type": "css", "selector": "h1"}]'
 cargo run -- preview <id>
 
+# get notified
+cargo run -- notify add phone ntfy://ntfy.sh/my-secret-topic
+cargo run -- notify test phone
+cargo run -- watch edit <id> --notify phone
+
 cargo run -- serve          # check on schedule; GET /healthz -> ok
 ```
 
 Configuration is read from `vigil.toml` (optional) and `VIGIL_*` environment
 variables; see [docs/configuration.md](docs/configuration.md). Steps and conditions
-are described in [docs/pipeline.md](docs/pipeline.md).
+are described in [docs/pipeline.md](docs/pipeline.md), notification channels and
+message templates in [docs/notifications.md](docs/notifications.md).
 
 ## Layout
 
