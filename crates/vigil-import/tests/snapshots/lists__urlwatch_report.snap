@@ -1,0 +1,114 @@
+---
+source: crates/vigil-import/tests/lists.rs
+expression: plan.report
+---
+{
+  "format": "urlwatch",
+  "notes": [
+    {
+      "kind": "info",
+      "option": "interval",
+      "message": "urlwatch has no interval per job, so every watch is checked every 1h"
+    },
+    {
+      "kind": "info",
+      "option": "notifications",
+      "message": "urlwatch keeps its notification settings outside urls.yaml, so no notification targets were imported"
+    }
+  ],
+  "items": [
+    {
+      "source": "Widget price",
+      "status": "created",
+      "notes": []
+    },
+    {
+      "source": "News headlines",
+      "status": "created",
+      "notes": []
+    },
+    {
+      "source": "Search API",
+      "status": "partial",
+      "notes": [
+        {
+          "kind": "approximated",
+          "option": "jq",
+          "message": "the result is a JSON list here, where urlwatch printed one JSON value per line"
+        }
+      ]
+    },
+    {
+      "source": "Stock JSON",
+      "status": "partial",
+      "notes": [
+        {
+          "kind": "skipped",
+          "option": "shellpipe",
+          "message": "the shellpipe filter has no equivalent and was left out"
+        },
+        {
+          "kind": "info",
+          "option": "data",
+          "message": "the job has data and no method, so it is requested with POST, as urlwatch does"
+        },
+        {
+          "kind": "skipped",
+          "option": "http_proxy",
+          "message": "a proxy for this job has no equivalent yet"
+        },
+        {
+          "kind": "skipped",
+          "option": "ssl_no_verify",
+          "message": "turning off certificate checks has no equivalent"
+        },
+        {
+          "kind": "skipped",
+          "option": "max_tries",
+          "message": "ignoring the first failures has no equivalent; failures back off instead"
+        }
+      ]
+    },
+    {
+      "source": "Disk usage",
+      "status": "skipped",
+      "notes": [
+        {
+          "kind": "skipped",
+          "option": "kind",
+          "message": "a job that runs a command has no equivalent"
+        }
+      ]
+    },
+    {
+      "source": "Dynamic page",
+      "status": "skipped",
+      "notes": [
+        {
+          "kind": "skipped",
+          "option": "kind",
+          "message": "a job that drives a browser has no equivalent"
+        }
+      ]
+    },
+    {
+      "source": "ftp://files.example/readme",
+      "status": "skipped",
+      "notes": [
+        {
+          "kind": "skipped",
+          "option": "url",
+          "message": "only http and https addresses can be watched"
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "found": 7,
+    "created": 4,
+    "partial": 2,
+    "skipped": 3,
+    "tags_created": 2,
+    "targets_created": 0
+  }
+}

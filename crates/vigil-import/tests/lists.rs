@@ -158,3 +158,46 @@ fn nothing_in_a_report_repeats_a_query_string_or_a_credential() -> TestResult {
     }
     Ok(())
 }
+
+const URLWATCH: &[u8] = include_bytes!("fixtures/urls.yaml");
+
+#[test]
+fn a_urlwatch_job_file_becomes_watches_and_a_report() -> TestResult {
+    let plan = plan(URLWATCH, None, &Options::default(), &Existing::default())?;
+    assert_eq!(plan.report.format, Format::Urlwatch);
+    insta::assert_json_snapshot!("urlwatch_report", plan.report);
+    insta::assert_debug_snapshot!("urlwatch_batch", plan.batch);
+    let shown = serde_json::to_string(&plan.report)?;
+    for secret in ["SECRET", "proxy.example"] {
+        assert!(!shown.contains(secret), "the report repeats {secret}");
+    }
+    Ok(())
+}
+
+#[test]
+fn yaml_that_is_not_yaml_is_an_error() {
+    assert!(matches!(
+        plan(
+            b"url: [unclosed",
+            Some(Format::Urlwatch),
+            &Options::default(),
+            &Existing::default()
+        ),
+        Err(ImportError::Invalid {
+            format: Format::Urlwatch,
+            ..
+        })
+    ));
+}
+
+const DISTILL: &[u8] = include_bytes!("fixtures/export.json");
+
+#[test]
+fn a_distill_export_becomes_watches_and_a_report() -> TestResult {
+    let plan = plan(DISTILL, None, &Options::default(), &Existing::default())?;
+    assert_eq!(plan.report.format, Format::Distill);
+    insta::assert_json_snapshot!("distill_report", plan.report);
+    insta::assert_debug_snapshot!("distill_batch", plan.batch);
+    assert!(!serde_json::to_string(&plan.report)?.contains("SECRET"));
+    Ok(())
+}

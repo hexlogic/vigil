@@ -1,0 +1,17 @@
+{
+  "data": [
+    {
+      "uri": "https://shop.example/widget?utm=SECRET",
+      "name": "Widget",
+      "tags": ["shops", "price"],
+      "config": "{\"selections\":[{\"frames\":[{\"includes\":[{\"type\":\"css\",\"expr\":\"#price\"},{\"type\":\"css\",\"expr\":\".stock\"}],\"excludes\":[{\"type\":\"css\",\"expr\":\".ad\"}]}]}]}"
+    },
+    {
+      "uri": "https://news.example/",
+      "name": "News",
+      "config": "{\"selections\":[{\"frames\":[{\"includes\":[{\"type\":\"xpath\",\"expr\":\"//h1\"},{\"type\":\"js\",\"expr\":\"document.title\"}]}]}]}"
+    },
+    { "uri": "https://plain.example/", "config": "not json" },
+    { "uri": "chrome://settings", "name": "Not a page" }
+  ]
+}
