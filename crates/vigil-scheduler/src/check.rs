@@ -7,7 +7,7 @@ use vigil_core::{CompiledConditions, LineDiff, Verdict, Watch, WatchId};
 use vigil_fetch::{FetchOutcome, FetchRequest, Fetcher, host_key};
 use vigil_store::{CheckSuccess, Content, RecordOutcome, SnapshotId, Store, StoreError, now_ms};
 
-use crate::backoff::{MAX_INTERVAL, default_jitter};
+use crate::backoff::{MAX_INTERVAL, MIN_INTERVAL, default_jitter};
 use crate::describe::describe;
 use crate::notify::{Change, Notifier};
 use crate::render::{render, validate};
@@ -15,10 +15,6 @@ use crate::scheduler::{Backend, Job, RunOutcome};
 
 /// How long processing one response may take before the check fails.
 const RENDER_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Shortest interval the scheduler accepts, so a zero interval cannot spin. The longest is
-/// [`MAX_INTERVAL`].
-const MIN_INTERVAL: Duration = Duration::from_secs(1);
 
 /// What one check found.
 #[derive(Debug, Clone, PartialEq, Eq)]

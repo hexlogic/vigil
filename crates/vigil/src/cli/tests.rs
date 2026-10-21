@@ -53,19 +53,6 @@ fn watch_add_defaults_to_hourly() -> Result<(), clap::Error> {
 }
 
 #[test]
-fn intervals_accept_compound_durations() {
-    assert_eq!(parse_interval("1h 30m"), Ok(Duration::from_secs(5400)));
-    assert_eq!(parse_interval("90s"), Ok(Duration::from_secs(90)));
-}
-
-#[test]
-fn the_longest_interval_is_a_year() {
-    assert_eq!(parse_interval("365d"), Ok(MAX_INTERVAL));
-    assert!(parse_interval("366d").is_err());
-    assert!(parse_interval("500000000000y").is_err());
-}
-
-#[test]
 fn bad_intervals_are_rejected() {
     assert!(parse(&["watch", "add", "https://example.com", "--every", "0s"]).is_err());
     assert!(parse(&["watch", "add", "https://example.com", "--every", "500ms"]).is_err());

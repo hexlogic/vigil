@@ -3749,6 +3749,7 @@ name = "vigil-scheduler"
 version = "0.1.0"
 dependencies = [
  "fastrand",
+ "humantime",
  "serde_json",
  "sqlx",
  "tempfile",
