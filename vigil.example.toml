@@ -4,6 +4,8 @@ listen = "0.0.0.0:5800"
 data_dir = "data"
 # base_url = "https://vigil.example.com" # where Vigil is reached; notifications link to diff pages with it
 log_format = "text" # "text" or "json"
+# admin_password = "..."  # prefer the VIGIL_ADMIN_PASSWORD environment variable; unset: one is made up and logged once
+# no_auth = true          # skip the sign-in; trusted networks only (see docs/configuration.md)
 
 [fetch]
 timeout_secs = 30
