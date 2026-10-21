@@ -34,9 +34,9 @@ pub async fn run(config: &Config, id: &str, content: &ContentArgs) -> anyhow::Re
             );
             Ok(ExitCode::SUCCESS)
         }
-        Err(message) => {
+        Err(error) => {
             eprintln!(
-                "{}: preview failed ({}ms): {message}",
+                "{}: preview failed ({}ms): {error}",
                 watch.url,
                 report.duration.as_millis()
             );

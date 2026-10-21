@@ -8,13 +8,14 @@
 //! of not being able to interrupt it.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use tokio::sync::oneshot;
 use vigil_core::{Pipeline, Watch, WatchId};
 
 use crate::describe::describe;
+use crate::preview::PreviewError;
 
 /// Stack of the processing thread. Parsing and printing nested documents recurse, so this is
 /// larger than the platform default. It is address space, not memory in use.
@@ -46,7 +47,7 @@ impl Slots {
         }
     }
 
-    fn acquire(&'static self, watch: WatchId) -> Result<Slot, String> {
+    pub(crate) fn acquire(&'static self, watch: WatchId) -> Result<Slot, String> {
         let mut live = self.live.lock().unwrap_or_else(PoisonError::into_inner);
         if live.contains(&watch) {
             return Err("an earlier processing of this watch is still running".to_owned());
@@ -63,7 +64,7 @@ impl Slots {
 }
 
 /// A claimed slot, released when dropped.
-struct Slot {
+pub(crate) struct Slot {
     slots: &'static Slots,
     watch: WatchId,
 }
@@ -83,14 +84,15 @@ impl Drop for Slot {
 ///
 /// A panic or a missed deadline becomes an error message; nothing here can take the caller
 /// down. A watch whose earlier thread is still alive gets an error without starting one.
-pub(crate) async fn run_with_limit<F>(
+pub(crate) async fn run_with_limit<F, E>(
     slots: &'static Slots,
     watch: WatchId,
     limit: Duration,
     work: F,
-) -> Result<String, String>
+) -> Result<String, E>
 where
-    F: FnOnce() -> Result<String, String> + Send + 'static,
+    F: FnOnce() -> Result<String, E> + Send + 'static,
+    E: From<String> + Send + 'static,
 {
     let slot = slots.acquire(watch)?;
     let (send, receive) = oneshot::channel();
@@ -99,52 +101,68 @@ where
         .stack_size(STACK_BYTES)
         .spawn(move || {
             let result = catch_unwind(AssertUnwindSafe(work))
-                .unwrap_or_else(|_| Err("processing panicked".to_owned()));
+                .unwrap_or_else(|_| Err("processing panicked".to_owned().into()));
             // Free the slot before the caller wakes, so its next request is not refused.
             drop(slot);
             // The receiver is gone when the deadline passed; nothing to tell then.
             let _ = send.send(result);
         });
     if let Err(error) = spawned {
-        return Err(format!("could not start processing: {error}"));
+        return Err(format!("could not start processing: {error}").into());
     }
     match tokio::time::timeout(limit, receive).await {
         Ok(Ok(result)) => result,
-        Ok(Err(_)) => Err("processing stopped unexpectedly".to_owned()),
-        Err(_) => Err(format!("processing timed out after {}s", limit.as_secs())),
+        Ok(Err(_)) => Err("processing stopped unexpectedly".to_owned().into()),
+        Err(_) => Err(format!("processing timed out after {}s", limit.as_secs()).into()),
+    }
+}
+
+/// An error from the pipeline, with the step it came from.
+fn failure(error: &vigil_core::PipelineError) -> PreviewError {
+    PreviewError {
+        step: error.step(),
+        message: describe(error),
     }
 }
 
 /// Build the watch's pipeline and run it on `body`, on its own thread and under `limit`.
 ///
 /// The pipeline is built on that thread too: a jq program or a selector is compiled from
-/// user input, and nothing it contains has to be `Send`.
+/// user input, and nothing it contains has to be `Send`. `slot` names the thread's claim on
+/// the process-wide limit of one thread per watch: a check passes its watch's id, while a
+/// preview of a watch being edited passes a key of its own, so that a preview that is
+/// still running can never make the scheduled check of the same watch fail.
 pub(crate) async fn render(
+    slot: WatchId,
     watch: &Watch,
-    body: Vec<u8>,
+    body: Arc<Vec<u8>>,
     content_type: Option<String>,
     limit: Duration,
-) -> Result<String, String> {
+) -> Result<String, PreviewError> {
     let (processor, steps) = (watch.processor, watch.pipeline.clone());
-    run_with_limit(&SLOTS, watch.id, limit, move || {
-        let pipeline = Pipeline::new(processor, &steps).map_err(|e| describe(&e))?;
+    run_with_limit(&SLOTS, slot, limit, move || {
+        let pipeline = Pipeline::new(processor, &steps).map_err(|e| failure(&e))?;
         pipeline
             .render(&body, content_type.as_deref())
-            .map_err(|e| describe(&e))
+            .map_err(|e| failure(&e))
     })
     .await
 }
 
 /// Check that the watch's steps build, before anything is fetched: a stored pipeline that no
 /// longer compiles (a hand-edited row, a step from another version) should not cost the
-/// target site a request on every attempt. Also refuses, for the same reason, a watch whose
-/// earlier processing thread is still running.
-pub(crate) async fn validate(watch: &Watch, limit: Duration) -> Result<(), String> {
+/// target site a request on every attempt. Also refuses, for the same reason, a slot whose
+/// earlier processing thread is still running. `slot` is as for [`render`].
+pub(crate) async fn validate(
+    slot: WatchId,
+    watch: &Watch,
+    limit: Duration,
+) -> Result<(), PreviewError> {
     let (processor, steps) = (watch.processor, watch.pipeline.clone());
-    run_with_limit(&SLOTS, watch.id, limit, move || {
+    run_with_limit(&SLOTS, slot, limit, move || {
         Pipeline::new(processor, &steps)
             .map(|_| String::new())
-            .map_err(|e| describe(&e))
+            .map_err(|e| failure(&e))
     })
     .await
     .map(|_| ())
@@ -156,9 +174,22 @@ mod tests {
 
     use vigil_core::WatchId;
 
-    use super::{Slots, run_with_limit};
+    use super::Slots;
 
     const LIMIT: Duration = Duration::from_secs(5);
+
+    /// [`super::run_with_limit`] with plain messages as errors.
+    async fn run_with_limit<F>(
+        slots: &'static Slots,
+        watch: WatchId,
+        limit: Duration,
+        work: F,
+    ) -> Result<String, String>
+    where
+        F: FnOnce() -> Result<String, String> + Send + 'static,
+    {
+        super::run_with_limit(slots, watch, limit, work).await
+    }
 
     fn watch(n: u32) -> WatchId {
         format!("00000000-0000-7000-8000-{n:012}")
