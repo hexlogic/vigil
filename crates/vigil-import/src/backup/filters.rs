@@ -226,6 +226,13 @@ pub(super) fn map_filters(filters: &Filters) -> Mapped {
                 format!("{html} CSS or XPath filter(s) were left out: the page is JSON"),
             ));
         }
+        let removed = dedupe_refs(&filters.subtractive).len();
+        if removed > 0 {
+            notes.push(Note::skipped(
+                "subtractive_selectors",
+                format!("{removed} selector(s) to remove were left out: the page is JSON"),
+            ));
+        }
         if chained > 1 {
             notes.push(Note::approximated(
                 "include_filters",

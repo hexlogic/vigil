@@ -165,3 +165,48 @@ fn flags_that_are_all_dropped_leave_a_working_case_sensitive_expression() {
     // The same rule for the patterns of the conditions and of the ignored lines.
     assert_eq!(pat("/Sold/g"), (Some("/Sold/".to_owned()), 0));
 }
+
+#[test]
+fn selectors_to_remove_are_reported_when_the_page_is_json() {
+    // Global selectors are added to every watch, so a JSON watch gets them too.
+    let json = map_filters(&Filters {
+        include: vec!["json:$.price".into()],
+        subtractive: vec![".cookie-banner".into(), "xpath://footer".into(), " ".into()],
+        ..Filters::default()
+    });
+    assert_eq!(json.processor, Processor::Json);
+    assert_eq!(
+        json.pipeline,
+        [Step::JsonPath {
+            expr: "$.price".into(),
+            required: false
+        }]
+    );
+    assert_eq!(json.notes.len(), 1, "{:?}", json.notes);
+    assert_eq!(json.notes[0].option, "subtractive_selectors");
+    assert!(
+        json.notes[0].message.contains("2 selector"),
+        "{:?}",
+        json.notes
+    );
+
+    // The same selectors on a page that is HTML are used, and there is nothing to report.
+    let html = map_filters(&Filters {
+        subtractive: vec![".cookie-banner".into()],
+        ..Filters::default()
+    });
+    assert!(html.notes.is_empty(), "{:?}", html.notes);
+
+    // A JSON page that has none says nothing.
+    let none = map_filters(&Filters {
+        json_hint: true,
+        ..Filters::default()
+    });
+    assert!(
+        none.notes
+            .iter()
+            .all(|n| n.option != "subtractive_selectors"),
+        "{:?}",
+        none.notes
+    );
+}

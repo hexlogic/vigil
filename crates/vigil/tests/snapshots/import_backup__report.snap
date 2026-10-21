@@ -3,7 +3,7 @@ source: crates/vigil/tests/import_backup.rs
 expression: report
 ---
 format: backup
-found 22 watch(es): 21 will be made (8 with notes), 1 skipped; 2 tag(s) and 4 notification target(s) will be made
+found 22 watch(es): 21 will be made (11 with notes), 1 skipped; 2 tag(s) and 4 notification target(s) will be made
   info         layout: the archive also holds a copy of the older single-file datastore; only the per-watch files were read
   info         global settings: settings that applied to every watch in the source were copied into each watch: the default interval, the random delay, the timeout, headers, the number of versions kept, text to ignore, elements to remove, notification addresses (for watches with none of their own)
   info         default_ua: the source's default User-Agent was copied to each watch, so that sites see the same client
@@ -25,11 +25,14 @@ Headline (leading slash) [will be made]
 Css and xpath together [will be made, with notes]
   skipped      include_filters: XPath filters were left out because the watch also has CSS filters, and the two cannot be combined
 
-Listing (jsonpath) [will be made]
+Listing (jsonpath) [will be made, with notes]
+  skipped      subtractive_selectors: 1 selector(s) to remove were left out: the page is JSON
 
-Listing (jq) [will be made]
+Listing (jq) [will be made, with notes]
+  skipped      subtractive_selectors: 1 selector(s) to remove were left out: the page is JSON
 
-Search (post, jqraw) [will be made]
+Search (post, jqraw) [will be made, with notes]
+  skipped      subtractive_selectors: 1 selector(s) to remove were left out: the page is JSON
 
 Ignored lines [will be made, with notes]
   skipped      ignore_text: a pattern was left out because it does not work here: invalid regex "/(?<=a)b/i": look-around, including look-ahead and look-behind, is not supported
