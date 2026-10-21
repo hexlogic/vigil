@@ -240,3 +240,82 @@ async fn a_batch_that_cannot_be_applied_changes_nothing() -> TestResult {
     assert!(store.list_targets().await?.is_empty());
     Ok(())
 }
+
+#[tokio::test]
+async fn an_existing_tag_keeps_its_targets_and_the_batchs_are_not_made() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    store
+        .create_tag(&NewTag {
+            name: "News".into(),
+            color: "red".into(),
+            default_interval_secs: None,
+        })
+        .await?;
+    let mut news = watch("https://news.example/");
+    news.tags = vec!["news".into()];
+    let batch = ImportBatch {
+        tags: vec![ImportTag {
+            name: "news".into(),
+            default_interval_secs: None,
+            target_urls: vec!["tgram://bot/chat".into()],
+        }],
+        targets: vec![ImportTarget {
+            url: "tgram://bot/chat".into(),
+            name: "telegram".into(),
+        }],
+        watches: vec![news],
+        allow_duplicates: false,
+    };
+    let outcome = store.apply_import(&batch).await?;
+    assert_eq!((outcome.tags_created, outcome.targets_created), (0, 0));
+    assert!(store.list_targets().await?.is_empty());
+    assert_eq!(store.list_tags().await?.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_tag_and_a_target_that_only_a_skipped_watch_uses_are_not_made() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    // The watch became a duplicate after the plan was made.
+    store
+        .create_watch(NewWatch::new("https://a.example/", Schedule::Interval(60)))
+        .await?;
+    let mut skipped = watch("https://a.example/");
+    skipped.tags = vec!["shops".into()];
+    skipped.target_urls = vec!["ntfy://h/t".into()];
+    let mut made = watch("https://b.example/");
+    made.tags = vec!["news".into()];
+    made.target_urls = vec!["ntfy://h/other".into()];
+    let tag = |name: &str, target: &str| ImportTag {
+        name: name.into(),
+        default_interval_secs: None,
+        target_urls: vec![target.into()],
+    };
+    let target = |url: &str, name: &str| ImportTarget {
+        url: url.into(),
+        name: name.into(),
+    };
+    let batch = ImportBatch {
+        tags: vec![tag("shops", "ntfy://h/t"), tag("news", "ntfy://h/other")],
+        targets: vec![target("ntfy://h/t", "one"), target("ntfy://h/other", "two")],
+        watches: vec![skipped, made],
+        allow_duplicates: false,
+    };
+    let outcome = store.apply_import(&batch).await?;
+    assert_eq!((outcome.tags_created, outcome.targets_created), (1, 1));
+    let tags: Vec<_> = store
+        .list_tags()
+        .await?
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    assert_eq!(tags, ["news"]);
+    let urls: Vec<_> = store
+        .list_targets()
+        .await?
+        .into_iter()
+        .map(|t| t.url)
+        .collect();
+    assert_eq!(urls, ["ntfy://h/other"]);
+    Ok(())
+}

@@ -279,3 +279,38 @@ fn a_muted_watch_is_left_off_an_existing_tag_that_has_targets() -> TestResult {
     assert!(!notes.iter().any(|n| n.message.contains("\"Quiet\"")));
     Ok(())
 }
+
+#[test]
+fn the_targets_of_a_tag_that_exists_are_not_made() -> TestResult {
+    let backup = serde_json::json!({
+        "watching": {ID_LOW: {"url": "https://news.example/", "title": "news", "tags": ["t1"]}},
+        "settings": {"application": {"tags": {
+            "t1": {"title": "News", "notification_urls": ["ntfy://ntfy.example/news"]},
+        }}}
+    });
+    let news = vigil_store::Tag {
+        id: uuid::Uuid::now_v7(),
+        name: "News".to_owned(),
+        color: "gray".to_owned(),
+        default_interval_secs: None,
+        created_at: 0,
+    };
+    let existing = Existing::new(&[news], &Default::default(), &[], &[]);
+    let plan = plan(
+        backup.to_string().as_bytes(),
+        None,
+        &Options::default(),
+        &existing,
+    )?;
+    // The tag is used, and keeps the targets it has; the source's would be left unused.
+    assert_eq!(tags_of(&plan, "https://news.example/")?, ["News"]);
+    assert!(plan.batch.targets.is_empty());
+    assert_eq!(plan.report.totals.targets_created, 0);
+    assert_eq!(plan.report.totals.tags_created, 0);
+
+    // A tag that does not exist yet brings its targets.
+    let fresh = read(backup.to_string().as_bytes())?;
+    assert_eq!(fresh.batch.targets.len(), 1);
+    assert_eq!(fresh.report.totals.targets_created, 1);
+    Ok(())
+}

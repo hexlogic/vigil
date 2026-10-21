@@ -134,12 +134,60 @@ impl Store {
     /// Make everything in `batch`, all or nothing.
     ///
     /// Tags are matched by name ([`match_name`]), targets by address, and new ones are made.
-    /// A watch whose address is already watched is skipped unless the batch allows duplicates.
-    /// A watch made here has no snapshots: its first check is its baseline and never notifies.
+    /// A watch whose address is already watched is skipped unless the batch allows duplicates;
+    /// two watches of the batch with the same address are both made. A watch made here has no
+    /// snapshots: its first check is its baseline and never notifies.
+    ///
+    /// What is made is decided first, from what the store holds now, and only what a watch
+    /// that is made uses is made: a tag or a target that only a skipped watch, or an existing
+    /// tag (which keeps its own targets), would have used is left alone. The batch may be
+    /// older than the store.
     pub async fn apply_import(&self, batch: &ImportBatch) -> Result<ImportOutcome, StoreError> {
         let mut tx = self.pool.begin().await?;
         let mut outcome = ImportOutcome::default();
 
+        let watched: HashSet<String> = names(&mut tx, "SELECT id, url AS key FROM watches")
+            .await?
+            .into_iter()
+            .map(|(_, url)| url)
+            .collect();
+        let made: Vec<bool> = batch
+            .watches
+            .iter()
+            .map(|watch| batch.allow_duplicates || !watched.contains(&watch.settings.url))
+            .collect();
+        let made_watches = || {
+            batch
+                .watches
+                .iter()
+                .zip(&made)
+                .filter_map(|(watch, made)| made.then_some(watch))
+        };
+
+        // The tags a watch that is made uses: an existing one of that name, or a new one.
+        let used: HashSet<&str> = made_watches()
+            .flat_map(|watch| watch.tags.iter().map(String::as_str))
+            .collect();
+        let existing_tags = names(&mut tx, "SELECT id, name AS key FROM tags").await?;
+        let mut tags: HashMap<String, Uuid> = HashMap::new();
+        let mut new_tags = Vec::new();
+        for tag in batch.tags.iter().filter(|t| used.contains(t.name.as_str())) {
+            let found = match_name(existing_tags.iter().map(|(_, n)| n.as_str()), &tag.name)
+                .and_then(|name| existing_tags.iter().find(|(_, n)| n == name));
+            match found {
+                Some((id, _)) => {
+                    tags.insert(tag.name.clone(), *id);
+                }
+                None => new_tags.push(tag),
+            }
+        }
+
+        // The targets a watch that is made, or a tag that is made, notifies.
+        let wanted: HashSet<&str> = made_watches()
+            .flat_map(|watch| watch.target_urls.iter())
+            .chain(new_tags.iter().flat_map(|tag| tag.target_urls.iter()))
+            .map(String::as_str)
+            .collect();
         let mut targets: HashMap<String, Uuid> =
             names(&mut tx, "SELECT id, url AS key FROM notification_targets")
                 .await?
@@ -152,7 +200,11 @@ impl Store {
                 .into_iter()
                 .map(|(_, name)| name)
                 .collect();
-        for target in &batch.targets {
+        for target in batch
+            .targets
+            .iter()
+            .filter(|t| wanted.contains(t.url.as_str()))
+        {
             if targets.contains_key(&target.url) {
                 continue;
             }
@@ -181,15 +233,7 @@ impl Store {
             Ok(ids)
         };
 
-        let existing_tags = names(&mut tx, "SELECT id, name AS key FROM tags").await?;
-        let mut tags: HashMap<String, Uuid> = HashMap::new();
-        for tag in &batch.tags {
-            let found = match_name(existing_tags.iter().map(|(_, n)| n.as_str()), &tag.name)
-                .and_then(|name| existing_tags.iter().find(|(_, n)| n == name));
-            if let Some((id, _)) = found {
-                tags.insert(tag.name.clone(), *id);
-                continue;
-            }
+        for tag in new_tags {
             let id = Uuid::now_v7();
             let new = NewTag {
                 name: tag.name.clone(),
@@ -210,13 +254,8 @@ impl Store {
             outcome.tags_created += 1;
         }
 
-        let watched: HashSet<String> = names(&mut tx, "SELECT id, url AS key FROM watches")
-            .await?
-            .into_iter()
-            .map(|(_, url)| url)
-            .collect();
-        for watch in &batch.watches {
-            if !batch.allow_duplicates && watched.contains(&watch.settings.url) {
+        for (watch, made) in batch.watches.iter().zip(&made) {
+            if !made {
                 outcome.watches.push(None);
                 continue;
             }

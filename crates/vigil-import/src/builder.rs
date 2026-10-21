@@ -155,8 +155,12 @@ impl<'a> Builder<'a> {
         let Some(tag) = self.tag_defs.get(name).cloned() else {
             return;
         };
-        for url in &tag.target_urls {
-            self.use_target(url);
+        // An existing tag keeps its own targets, so the source's are not made for it.
+        let exists = match_name(self.existing.tags.iter().map(String::as_str), name).is_some();
+        if !exists {
+            for url in &tag.target_urls {
+                self.use_target(url);
+            }
         }
         self.batch.tags.push(tag);
     }
