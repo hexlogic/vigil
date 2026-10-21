@@ -1,0 +1,210 @@
+---
+source: crates/vigil-import/tests/lists.rs
+expression: plan.batch
+---
+ImportBatch {
+    tags: [
+        ImportTag {
+            name: "news",
+            default_interval_secs: None,
+            target_urls: [],
+        },
+        ImportTag {
+            name: "company",
+            default_interval_secs: None,
+            target_urls: [],
+        },
+        ImportTag {
+            name: "shops",
+            default_interval_secs: None,
+            target_urls: [],
+        },
+        ImportTag {
+            name: "ok",
+            default_interval_secs: None,
+            target_urls: [],
+        },
+    ],
+    targets: [],
+    watches: [
+        ImportWatch {
+            settings: NewWatch {
+                name: "https://example.com/pricing",
+                url: "https://example.com/pricing",
+                fetch: FetchSettings {
+                    timeout_secs: None,
+                    user_agent: None,
+                    headers: {},
+                    method: Get,
+                    body: None,
+                },
+                schedule: Interval(
+                    3600,
+                ),
+                jitter_secs: 0,
+                processor: Text,
+                pipeline: [],
+                conditions: Conditions {
+                    trigger_text: [],
+                    block_text: [],
+                    notify_on: NotifyOn {
+                        added: true,
+                        removed: true,
+                        changed: true,
+                    },
+                    scope: Added,
+                },
+                snapshot_retention: 100,
+            },
+            paused: false,
+            tags: [],
+            target_urls: [],
+            template: None,
+        },
+        ImportWatch {
+            settings: NewWatch {
+                name: "https://example.com/blog?utm=x",
+                url: "https://example.com/blog?utm=x",
+                fetch: FetchSettings {
+                    timeout_secs: None,
+                    user_agent: None,
+                    headers: {},
+                    method: Get,
+                    body: None,
+                },
+                schedule: Interval(
+                    3600,
+                ),
+                jitter_secs: 0,
+                processor: Text,
+                pipeline: [],
+                conditions: Conditions {
+                    trigger_text: [],
+                    block_text: [],
+                    notify_on: NotifyOn {
+                        added: true,
+                        removed: true,
+                        changed: true,
+                    },
+                    scope: Added,
+                },
+                snapshot_retention: 100,
+            },
+            paused: false,
+            tags: [
+                "news",
+                "company",
+            ],
+            target_urls: [],
+            template: None,
+        },
+        ImportWatch {
+            settings: NewWatch {
+                name: "https://shop.example/widget?token=SECRET#top",
+                url: "https://shop.example/widget?token=SECRET#top",
+                fetch: FetchSettings {
+                    timeout_secs: None,
+                    user_agent: None,
+                    headers: {},
+                    method: Get,
+                    body: None,
+                },
+                schedule: Interval(
+                    3600,
+                ),
+                jitter_secs: 0,
+                processor: Text,
+                pipeline: [],
+                conditions: Conditions {
+                    trigger_text: [],
+                    block_text: [],
+                    notify_on: NotifyOn {
+                        added: true,
+                        removed: true,
+                        changed: true,
+                    },
+                    scope: Added,
+                },
+                snapshot_retention: 100,
+            },
+            paused: false,
+            tags: [
+                "shops",
+                "news",
+            ],
+            target_urls: [],
+            template: None,
+        },
+        ImportWatch {
+            settings: NewWatch {
+                name: "https://example.com/pricing",
+                url: "https://example.com/pricing",
+                fetch: FetchSettings {
+                    timeout_secs: None,
+                    user_agent: None,
+                    headers: {},
+                    method: Get,
+                    body: None,
+                },
+                schedule: Interval(
+                    3600,
+                ),
+                jitter_secs: 0,
+                processor: Text,
+                pipeline: [],
+                conditions: Conditions {
+                    trigger_text: [],
+                    block_text: [],
+                    notify_on: NotifyOn {
+                        added: true,
+                        removed: true,
+                        changed: true,
+                    },
+                    scope: Added,
+                },
+                snapshot_retention: 100,
+            },
+            paused: false,
+            tags: [],
+            target_urls: [],
+            template: None,
+        },
+        ImportWatch {
+            settings: NewWatch {
+                name: "https://long.example/",
+                url: "https://long.example/",
+                fetch: FetchSettings {
+                    timeout_secs: None,
+                    user_agent: None,
+                    headers: {},
+                    method: Get,
+                    body: None,
+                },
+                schedule: Interval(
+                    3600,
+                ),
+                jitter_secs: 0,
+                processor: Text,
+                pipeline: [],
+                conditions: Conditions {
+                    trigger_text: [],
+                    block_text: [],
+                    notify_on: NotifyOn {
+                        added: true,
+                        removed: true,
+                        changed: true,
+                    },
+                    scope: Added,
+                },
+                snapshot_retention: 100,
+            },
+            paused: false,
+            tags: [
+                "ok",
+            ],
+            target_urls: [],
+            template: None,
+        },
+    ],
+    allow_duplicates: false,
+}

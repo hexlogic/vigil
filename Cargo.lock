@@ -1589,6 +1589,7 @@ checksum = "b67d3d2e287e4b86c10b3f3b641033d1f89b74bdb39d05f34952e2b9a6fe21cd"
 dependencies = [
  "console",
  "once_cell",
+ "serde",
  "similar 2.7.0",
  "tempfile",
 ]
@@ -3925,6 +3926,22 @@ dependencies = [
  "thiserror",
  "tokio",
  "wiremock",
+]
+
+[[package]]
+name = "vigil-import"
+version = "0.1.0"
+dependencies = [
+ "insta",
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+ "vigil-core",
+ "vigil-fetch",
+ "vigil-notify",
+ "vigil-store",
 ]
 
 [[package]]
