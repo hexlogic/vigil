@@ -89,6 +89,7 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `tokio-util` (notify) | `CancellationToken`, so shutdown can stop a retry sleep. Already in the tree through axum. |
 | `tracing` (notify) | Logs failed attempts, without credentials. |
 | `wiremock` (dev, notify) | A mock server for each HTTP channel. |
+| `serde` (derive; notify) | Saves an `Event` as JSON in the notification outbox. Already in the tree. |
 | `tokio-util` (`rt`; scheduler) | `TaskTracker`, to wait for the background notification deliveries at shutdown. |
 | `serde_json` (dev, scheduler) | Reads the notification bodies the mock ntfy server receives. |
 

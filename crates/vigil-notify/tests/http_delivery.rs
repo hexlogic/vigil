@@ -78,6 +78,10 @@ async fn a_server_that_stays_down_gets_four_attempts() {
 
     let report = run(&server, &ntfy_url(&server), &quick()).await;
     assert_eq!(report.attempts, 4);
+    assert!(
+        !report.interrupted,
+        "running out of retries is not an interruption"
+    );
     let error = report.result.expect_err("failed");
     assert!(error.starts_with("HTTP 503"), "{error}");
     assert_eq!(
@@ -174,6 +178,7 @@ async fn cancelling_stops_the_wait_between_attempts() {
         started.elapsed()
     );
     assert_eq!(report.attempts, 1);
+    assert!(report.interrupted, "a cut-short delivery says so");
     let error = report.result.expect_err("failed");
     assert!(
         error.contains("HTTP 500") && error.contains("shutting down"),

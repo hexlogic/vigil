@@ -2,8 +2,11 @@
 
 use std::time::{Duration, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
+
 /// What happened to a watch, as the variables a message template can use.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Event {
     /// The watch id.
     pub watch_id: String,
@@ -17,7 +20,9 @@ pub struct Event {
     pub removed: Vec<String>,
     /// The change as a unified diff.
     pub diff: String,
-    /// The page text after the change.
+    /// The page text after the change. Not part of the saved form: it is the largest value and
+    /// the snapshot is still in the store.
+    #[serde(skip)]
     pub snapshot: String,
     /// The added lines that matched the watch's trigger patterns.
     pub triggered: Vec<String>,
@@ -41,6 +46,17 @@ pub(crate) fn default_title(watch_name: &str, is_test: bool) -> String {
 }
 
 impl Event {
+    /// The event as JSON, to save a notification until it has been delivered. The page text
+    /// ([`snapshot`](Self::snapshot)) is left out.
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    /// An event saved with [`to_json`](Self::to_json). Fields it does not have are empty.
+    pub fn from_json(text: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(text)
+    }
+
     /// When the check ran, as an RFC 3339 UTC timestamp.
     pub fn checked_at_rfc3339(&self) -> String {
         let millis = u64::try_from(self.checked_at_ms).unwrap_or(0);

@@ -176,16 +176,14 @@ async fn a_target_with_a_bad_stored_url_fails_cleanly() -> TestResult {
 }
 
 #[tokio::test]
-async fn shutdown_stops_waiting_to_retry() -> TestResult {
+async fn a_notification_cut_short_by_shutdown_is_sent_after_a_restart() -> TestResult {
     let s = setup_with(quick_retries(Duration::from_secs(60))).await?;
     let watch = watch_with_target(&s, |_| {}).await?;
-    s.ntfy.reset().await;
-    Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(500))
-        .mount(&s.ntfy)
-        .await;
+    ntfy_answers(&s, 500).await;
 
-    change(&s, &watch).await?;
+    let CheckResult::Changed { current, .. } = change(&s, &watch).await? else {
+        return Err("expected a change".into());
+    };
     wait_until("the first attempt", async || {
         s.ntfy
             .received_requests()
@@ -201,15 +199,63 @@ async fn shutdown_stops_waiting_to_retry() -> TestResult {
         started.elapsed()
     );
 
+    // Neither sent nor failed for good: it waits in the outbox.
+    assert!(s.store.list_deliveries(watch.id, 10).await?.is_empty());
+    assert_eq!(outbox_len(&s.store).await?, 1);
+
+    // The next start finds it, with the same message and link, and sends it.
+    ntfy_answers(&s, 200).await;
+    let restarted = restarted_notifier(&s)?;
+    assert_eq!(restarted.resume().await, 1);
+    let reports = restarted.close_and_wait().await;
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].report.result, Ok(()));
+
+    let bodies = ntfy_bodies(&s).await?;
+    assert_eq!(bodies.len(), 1);
+    let message = bodies[0]["message"].as_str().ok_or("no message")?;
+    assert!(
+        message.contains("Widget: $12") && message.contains("Widget: $10"),
+        "{message}"
+    );
+    assert!(
+        bodies[0]["click"]
+            .as_str()
+            .is_some_and(|c| c.contains(&format!("&to={current}"))),
+        "{:?}",
+        bodies[0]["click"]
+    );
+    let log = s.store.list_deliveries(watch.id, 10).await?;
+    assert_eq!((log.len(), log[0].outcome), (1, DeliveryOutcome::Sent));
+    assert_eq!(outbox_len(&s.store).await?, 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_finished_delivery_leaves_the_outbox() -> TestResult {
+    // Sent.
+    let s = setup().await?;
+    let watch = watch_with_target(&s, |_| {}).await?;
+    change(&s, &watch).await?;
+    s.notifier.close_and_wait().await;
+    assert_eq!(outbox_len(&s.store).await?, 0);
+
+    // Refused for good.
+    let s = setup().await?;
+    let watch = watch_with_target(&s, |_| {}).await?;
+    ntfy_answers(&s, 401).await;
+    change(&s, &watch).await?;
+    s.notifier.close_and_wait().await;
+    assert_eq!(outbox_len(&s.store).await?, 0);
     let log = s.store.list_deliveries(watch.id, 10).await?;
     assert_eq!(log[0].outcome, DeliveryOutcome::Failed);
-    assert!(
-        log[0]
-            .error
-            .as_deref()
-            .is_some_and(|e| e.contains("shutting down")),
-        "{:?}",
-        log[0].error
-    );
+
+    // Out of retries.
+    let s = setup().await?;
+    let watch = watch_with_target(&s, |_| {}).await?;
+    ntfy_answers(&s, 503).await;
+    change(&s, &watch).await?;
+    s.notifier.close_and_wait().await;
+    assert_eq!(outbox_len(&s.store).await?, 0);
     Ok(())
 }

@@ -266,3 +266,29 @@ fn a_template_that_renders_nothing_falls_back_to_the_built_in_one() {
         assert!(note.contains("empty message"), "{note}");
     }
 }
+
+#[test]
+fn an_event_survives_being_saved_without_the_page_text() {
+    let event = Event::sample();
+    let json = event.to_json().expect("json");
+    assert!(
+        !json.contains("Example product page\\nWidget"),
+        "the snapshot is not saved: {json}"
+    );
+    let back = Event::from_json(&json).expect("event");
+    assert_eq!(
+        back,
+        Event {
+            snapshot: String::new(),
+            ..event
+        }
+    );
+}
+
+#[test]
+fn a_saved_event_from_an_older_version_still_loads() {
+    let back = Event::from_json(r#"{"watch_name": "Old", "added": ["x"]}"#).expect("event");
+    assert_eq!((back.watch_name.as_str(), back.added.len()), ("Old", 1));
+    assert!(back.diff_url.is_empty() && !back.is_test);
+    assert!(Event::from_json("not json").is_err());
+}

@@ -2,6 +2,7 @@
 
 pub mod backoff;
 mod check;
+mod delivery;
 mod describe;
 pub mod limits;
 mod notify;
