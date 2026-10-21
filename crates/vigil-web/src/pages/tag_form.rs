@@ -15,7 +15,7 @@ use crate::form::Fields;
 use crate::page::{Ctx, Nav, render, render_with};
 
 /// Longest name of a tag.
-const NAME_LEN: usize = 50;
+pub(crate) const NAME_LEN: usize = 50;
 
 /// What was typed.
 struct Draft {

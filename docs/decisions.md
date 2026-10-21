@@ -398,6 +398,12 @@ A request is checked as a check would build it: the address with the fetcher's o
 
 A difference holds the added and removed lines, their counts, and a unified diff with three lines of context. An answer is bounded like the diff page is: at most 5000 added and 5000 removed lines and a million characters of unified diff, cut at a line, with `truncated: true`; the counts always cover the whole difference. A version is read whole (up to the 16 MiB a step may produce): the API is for programs, and cutting the text there would only make them ask again.
 
+## Tags and notification targets in the API
+
+Tags and targets are listed by name without regard to case, as watches are. A tag is `{id, name, color, default_interval_secs, targets, watches, created_at}`. The web form shows a colour outside the palette as gray because the page policy allows no free colour; the API refuses one with a `422` instead, because a program should learn that its colour was not used. `PUT` replaces the whole tag (a colour that is left out is gray, targets that are left out are none), the tag keeps its watches, and deleting it takes it off them.
+
+A target's address usually holds credentials, so it is written and never read back: answers carry `Channel::redacted` (`ntfy://ntfy.example/***`), the kind and whether it would send a secret over plain HTTP, and an error about a bad address says what is wrong without repeating it. Because it cannot be read back, `PUT` may leave `url` out to keep the stored one, and leaves `enabled` alone unless it is given; the rest of `PUT` replaces. There is no enable or disable endpoint: `enabled` is part of the target. `POST /notifications/{id}/test` sends one test message with no retries and answers `200` with `ok` and, when it did not arrive, the channel's own error (which holds no credentials): the test ran either way. A disabled target can be tested.
+
 ## The watch list
 
 The list is a table of rows; each row is a fragment (`GET /watch/{id}/row`) that its buttons replace in place with htmx, so the page keeps its place and scroll. Check now, pause, resume and delete are `POST`s that answer with the new row (delete answers with nothing, and first shows a confirmation row in its place: the page policy and the plan's "no browser dialogs" rule out `hx-confirm`). Without htmx they redirect to the list, so a form post still works.
