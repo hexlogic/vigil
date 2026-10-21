@@ -36,6 +36,27 @@ pub(crate) struct Inline {
     pub(crate) truncated: bool,
 }
 
+/// One side of a side-by-side row.
+pub(crate) struct Cell {
+    pub(crate) class: &'static str,
+    pub(crate) number: String,
+    pub(crate) spans: Vec<SpanView>,
+}
+
+/// One row of the side-by-side layout: a note, or two cells (either may be absent).
+pub(crate) struct SideRow {
+    pub(crate) gap: Option<String>,
+    pub(crate) left: Option<Cell>,
+    pub(crate) right: Option<Cell>,
+}
+
+/// The side-by-side layout.
+pub(crate) struct SideBySide {
+    pub(crate) rows: Vec<SideRow>,
+    pub(crate) tail_gap: Option<String>,
+    pub(crate) truncated: bool,
+}
+
 fn spans(line: &Line) -> Vec<SpanView> {
     line.spans
         .iter()
@@ -105,6 +126,43 @@ pub(crate) fn inline(t: &Translator, view: &DiffView) -> Inline {
     }
 }
 
+/// The side-by-side layout: the old text on the left, the new on the right, a replaced line
+/// facing the line that replaced it.
+pub(crate) fn side_by_side(t: &Translator, view: &DiffView) -> SideBySide {
+    let cell = |line: &Line, class: &'static str, number: Option<usize>| Cell {
+        class,
+        number: self::number(number),
+        spans: spans(line),
+    };
+    let mut rows = Vec::new();
+    for hunk in &view.hunks {
+        if let Some(note) = gap(t, hunk.skipped_before) {
+            rows.push(SideRow {
+                gap: Some(note),
+                left: None,
+                right: None,
+            });
+        }
+        for block in &hunk.blocks {
+            let same = matches!(block, Block::Same(_));
+            for (left, right) in block.rows() {
+                rows.push(SideRow {
+                    gap: None,
+                    left: left
+                        .map(|line| cell(line, if same { "" } else { "del" }, line.old_number)),
+                    right: right
+                        .map(|line| cell(line, if same { "" } else { "add" }, line.new_number)),
+                });
+            }
+        }
+    }
+    SideBySide {
+        rows,
+        tail_gap: gap(t, view.skipped_after),
+        truncated: view.truncated,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -168,5 +226,33 @@ mod tests {
         let new = old.replace("9\n", "nine\n");
         let inline = inline(&translator(), &DiffView::between(&old, &new, 1));
         assert_eq!(summary(&inline)[0], "~ 7 unchanged lines");
+    }
+
+    #[test]
+    fn the_side_by_side_layout_faces_a_replaced_line_with_its_replacement() {
+        let view = DiffView::between("a\nold1\nold2\nz\n", "a\nnew1\nz\n", 1);
+        let layout = side_by_side(&translator(), &view);
+        let rows: Vec<(Option<String>, Option<String>)> = layout
+            .rows
+            .iter()
+            .map(|row| {
+                let show = |cell: &Option<Cell>| {
+                    cell.as_ref().map(|c| {
+                        let text: String = c.spans.iter().map(|s| s.text.as_str()).collect();
+                        format!("{}{}:{text}", c.class, c.number)
+                    })
+                };
+                (show(&row.left), show(&row.right))
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (Some("1:a".into()), Some("1:a".into())),
+                (Some("del2:old1".into()), Some("add2:new1".into())),
+                (Some("del3:old2".into()), None),
+                (Some("4:z".into()), Some("3:z".into())),
+            ]
+        );
     }
 }

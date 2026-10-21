@@ -38,8 +38,20 @@ pub(crate) fn when(t: &Translator, at: Option<i64>, now: i64) -> TimeView {
     };
     let moment = UNIX_EPOCH + Duration::from_millis(u64::try_from(at).unwrap_or(0));
     let iso = humantime::format_rfc3339_seconds(moment).to_string();
-    let title = iso.replace('T', " ").replace('Z', " UTC");
-    TimeView { text, iso, title }
+    TimeView {
+        text,
+        iso,
+        title: exact(at),
+    }
+}
+
+/// A moment (unix milliseconds) to read: `2027-01-15 08:00:00 UTC`.
+pub(crate) fn exact(at: i64) -> String {
+    let moment = UNIX_EPOCH + Duration::from_millis(u64::try_from(at).unwrap_or(0));
+    humantime::format_rfc3339_seconds(moment)
+        .to_string()
+        .replace('T', " ")
+        .replace('Z', " UTC")
 }
 
 /// A size in bytes, as people read it: `812 B`, `12.3 KiB`, `4.0 MiB`.
@@ -116,6 +128,12 @@ mod tests {
         assert_eq!(at(2 * 3600), "2 години тому");
         assert_eq!(at(21 * 86_400), "21 день тому");
         assert_eq!(when(&uk, None, NOW).text, "ніколи");
+    }
+
+    #[test]
+    fn an_exact_moment_is_readable() {
+        assert_eq!(exact(1_800_000_000_000), "2027-01-15 08:00:00 UTC");
+        assert_eq!(exact(0), "1970-01-01 00:00:00 UTC");
     }
 
     #[test]

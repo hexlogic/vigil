@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t1("history.title", "name", name) }}{% endblock %}
+{% block content %}
+<div class="page-head">
+<h1>{{ ctx.t1("history.title", "name", name) }}</h1>
+<a class="btn" href="{{ watch_url }}">{{ ctx.t("history.back") }}</a>
+</div>
+<p class="muted">{{ kept }}</p>
+{% if versions.is_empty() %}
+<p class="empty">{{ ctx.t("history.empty") }}</p>
+{% else %}
+<div class="table-wrap"><table>
+<thead><tr><th>{{ ctx.t("detail.col_time") }}</th><th>{{ ctx.t("history.col_size") }}</th><th class="hide-narrow">{{ ctx.t("history.col_type") }}</th><th></th></tr></thead>
+<tbody>
+{% for version in versions %}<tr>
+<td class="nowrap"><time datetime="{{ version.when.iso }}" title="{{ version.when.title }}">{{ version.when.text }}</time>{% if version.newest %} <span class="badge badge-ok">{{ ctx.t("history.newest") }}</span>{% endif %}</td>
+<td class="nowrap">{{ version.size }}</td>
+<td class="hide-narrow"><span class="small muted">{{ version.status }}{% if !version.content_type.is_empty() %} · {{ version.content_type }}{% endif %}</span></td>
+<td class="right nowrap"><a class="btn btn-small" href="{{ version.view_url }}">{{ ctx.t("history.view") }}</a>{% if let Some(url) = version.diff_url %} <a class="btn btn-small" href="{{ url }}">{{ ctx.t("history.diff_previous") }}</a>{% endif %}</td>
+</tr>{% endfor %}
+</tbody></table></div>
+{% endif %}
+{% endblock %}

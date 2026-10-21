@@ -1,13 +1,19 @@
 //! The pages of the UI, one module each.
 
+mod detail;
+mod diff;
 mod edit;
 mod errors;
+mod history;
 mod login;
 mod preview;
 mod watches;
 
+pub(crate) use detail::show;
+pub(crate) use diff::diff;
 pub(crate) use edit::{create, edit_form, new_form, steps, update};
 pub(crate) use errors::{Refusal, forbidden, not_found, server_error};
+pub(crate) use history::{history, snapshot};
 pub(crate) use login::{login_form, login_submit, logout};
 pub(crate) use preview::preview;
 pub(crate) use watches::{

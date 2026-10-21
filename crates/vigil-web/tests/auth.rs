@@ -21,8 +21,14 @@ async fn a_page_needs_a_session_and_the_login_brings_the_visitor_back() -> TestR
     assert_eq!(location(&response), "/login");
 
     let nested = app.get("/watch/1?tab=x").await?;
-    // An unknown address is not behind the login: it is just not found.
-    assert_eq!(nested.status(), StatusCode::NOT_FOUND);
+    assert_eq!(nested.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&nested), "/login?next=%2Fwatch%2F1%3Ftab%3Dx");
+
+    // An address nothing is served at is not behind the login: it is just not found.
+    assert_eq!(
+        app.get("/no/such/place").await?.status(),
+        StatusCode::NOT_FOUND
+    );
     Ok(())
 }
 

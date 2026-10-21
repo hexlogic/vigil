@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t1("snapshot.title", "name", name) }}{% endblock %}
+{% block content %}
+<div class="page-head">
+<h1>{{ ctx.t1("snapshot.title", "name", name) }}</h1>
+<div class="actions">
+{% if let Some(url) = diff_url %}<a class="btn" href="{{ url }}">{{ ctx.t("history.diff_previous") }}</a>{% endif %}
+<a class="btn" href="{{ history_url }}">{{ ctx.t("snapshot.back") }}</a>
+</div>
+</div>
+<p class="muted"><time datetime="{{ when.iso }}" title="{{ when.title }}">{{ when.text }}</time>{% if !facts.is_empty() %} · {{ facts }}{% endif %}</p>
+{% if text.is_empty() %}
+<p class="muted">{{ ctx.t("preview.empty") }}</p>
+{% else %}
+<pre class="output">{{ text }}</pre>
+{% endif %}
+{% if let Some(shown) = shown %}<p class="hint">{{ shown }}</p>{% endif %}
+{% endblock %}

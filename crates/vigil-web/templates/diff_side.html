@@ -1,0 +1,12 @@
+<div class="diff">
+<div class="sbs">
+{% for row in columns.rows %}
+{% if let Some(gap) = row.gap %}<div class="gap">{{ gap }}</div>{% else %}
+{% if let Some(cell) = row.left %}<div class="cell {{ cell.class }}"><span class="n">{{ cell.number }}</span><span>{% for span in cell.spans %}{% if span.marked %}<mark>{{ span.text }}</mark>{% else %}{{ span.text }}{% endif %}{% endfor %}</span></div>{% else %}<div class="cell empty-side"><span class="n"></span><span></span></div>{% endif %}
+{% if let Some(cell) = row.right %}<div class="cell {{ cell.class }}"><span class="n">{{ cell.number }}</span><span>{% for span in cell.spans %}{% if span.marked %}<mark>{{ span.text }}</mark>{% else %}{{ span.text }}{% endif %}{% endfor %}</span></div>{% else %}<div class="cell empty-side"><span class="n"></span><span></span></div>{% endif %}
+{% endif %}
+{% endfor %}
+{% if let Some(gap) = columns.tail_gap %}<div class="gap">{{ gap }}</div>{% endif %}
+</div>
+</div>
+{% if columns.truncated %}<p class="hint">{{ ctx.t("diff.truncated") }}</p>{% endif %}
