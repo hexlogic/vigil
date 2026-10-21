@@ -3,11 +3,12 @@
 use std::collections::{BTreeSet, HashMap};
 
 use serde_json::Value;
-use vigil_core::{Conditions, FetchSettings, Method, NotifyOn, Schedule, Scope};
+use vigil_core::{Conditions, NotifyOn, Schedule, Scope};
 use vigil_fetch::check_url;
 use vigil_store::{ImportTag, ImportTarget, ImportWatch, NewWatch};
 
 use super::filters::{Filters, map_filters, pattern};
+use super::request::request;
 use super::settings::{Globals, flag, is_known, seconds, strings, text};
 use super::template::translate;
 use crate::builder::{Builder, check_target, target_name};
@@ -18,9 +19,6 @@ use crate::urls::TAG_NAME_LEN;
 /// The shortest and longest interval a watch can have, in seconds.
 const MIN_SECS: u64 = 1;
 const MAX_SECS: u64 = 365 * 24 * 3600;
-
-/// How the importer treats the timeout of a source whose default is not Vigil's.
-const VIGIL_TIMEOUT_SECS: u64 = 30;
 
 /// What became of one watch.
 pub(super) enum Mapped {
@@ -43,10 +41,6 @@ fn merged(watch: &Value, tags: &[&Value], key: &str, extra: &[String]) -> Vec<St
     }
     out.extend(extra.iter().cloned());
     out
-}
-
-fn uses_browser(backend: &str) -> bool {
-    backend.starts_with("html_webdriver") || backend.starts_with("extra_browser")
 }
 
 /// Which kinds of change notify. The source asks for lines that were added, removed or
@@ -244,75 +238,7 @@ pub(super) fn map_watch(
         ));
     }
 
-    // The request.
-    let mut fetch = FetchSettings::default();
-    let method = text(watch.get("method")).unwrap_or("GET");
-    match method.parse::<Method>() {
-        Ok(method) => fetch.method = method,
-        Err(_) => notes.push(Note::skipped(
-            "method",
-            "this request method is not supported; GET is used",
-        )),
-    }
-    if let Some(body) = text(watch.get("body")) {
-        if fetch.method == Method::Get {
-            notes.push(Note::skipped(
-                "body",
-                "a request body was left out because the method is GET",
-            ));
-        } else {
-            fetch.body = Some(body.to_owned());
-        }
-    }
-    let mut headers = globals.headers.clone();
-    if let Some(own) = watch.get("headers").and_then(Value::as_object) {
-        for (name, value) in own {
-            if let Some(value) = value.as_str() {
-                headers.insert(name.clone(), value.to_owned());
-            }
-        }
-    }
-    for (name, value) in headers {
-        if crate::backup::header_is_valid(&name, &value) {
-            fetch.headers.insert(name, value);
-        } else {
-            // Only the name: values often hold tokens.
-            notes.push(Note::skipped(
-                "headers",
-                format!("the header {name:?} cannot be sent and was left out"),
-            ));
-        }
-    }
-    fetch.user_agent = globals.user_agent.clone().filter(|_| {
-        !fetch
-            .headers
-            .keys()
-            .any(|k| k.eq_ignore_ascii_case("user-agent"))
-    });
-    fetch.timeout_secs = globals
-        .timeout
-        .filter(|t| *t != VIGIL_TIMEOUT_SECS && (1..=3600).contains(t));
-    if text(watch.get("proxy")).is_some() {
-        notes.push(Note::skipped(
-            "proxy",
-            "a proxy for this watch has no equivalent yet",
-        ));
-    }
-    if uses_browser(backend) {
-        notes.push(Note::approximated("fetch_backend", "the watch used a browser; it is fetched over plain HTTP, so pages that need scripts will look different"));
-    }
-    if text(watch.get("webdriver_js_execute_code")).is_some() {
-        notes.push(Note::skipped(
-            "webdriver_js_execute_code",
-            "running scripts in the page has no equivalent",
-        ));
-    }
-    if flag(watch.get("ignore_status_codes"), false) {
-        notes.push(Note::skipped(
-            "ignore_status_codes",
-            "pages that answer with an error status are still reported as errors",
-        ));
-    }
+    let fetch = request(watch, globals, backend, &mut notes);
     let mut paused = flag(watch.get("paused"), false) || globals.all_paused;
     let steps = watch
         .get("browser_steps")

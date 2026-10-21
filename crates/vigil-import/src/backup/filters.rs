@@ -10,6 +10,7 @@ use regex::RegexBuilder;
 use vigil_core::pattern::Pattern;
 use vigil_core::{Processor, SelectMode, Step};
 
+use super::extract::{extract_step, lines_step};
 use crate::report::Note;
 use crate::steps::{reason, validated};
 
@@ -71,14 +72,14 @@ fn classify(entry: &str) -> Include {
 }
 
 /// A pattern as the source writes it: `/regex/flags`, or plain text.
-struct Written<'a> {
+pub(super) struct Written<'a> {
     /// The regular expression, or the text.
-    body: &'a str,
+    pub(super) body: &'a str,
     /// The flags after the closing slash; `None` for plain text.
-    flags: Option<&'a str>,
+    pub(super) flags: Option<&'a str>,
 }
 
-fn written(entry: &str) -> Written<'_> {
+pub(super) fn written(entry: &str) -> Written<'_> {
     let entry = entry.trim();
     if let Some(close) = entry.rfind('/')
         && entry.starts_with('/')
@@ -99,7 +100,7 @@ fn written(entry: &str) -> Written<'_> {
 /// The flags Vigil's patterns and regexes have: `i`, `m`, `s` and `x`. The source reads a
 /// regular expression without flags case-insensitively, so then `i` is added. Flags of the
 /// source that mean nothing here (`g`) are dropped quietly; the others are noted.
-fn flags_of(flags: &str, notes: &mut Vec<Note>, option: &str) -> String {
+pub(super) fn flags_of(flags: &str, notes: &mut Vec<Note>, option: &str) -> String {
     if flags.is_empty() {
         return "i".to_owned();
     }
@@ -141,7 +142,7 @@ pub(super) fn pattern(entry: &str, option: &str, notes: &mut Vec<Note>) -> Optio
 }
 
 /// An entry of `extract_text` as a raw regular expression with its flags written inline.
-fn extract_regex(entry: &str, option: &str, notes: &mut Vec<Note>) -> String {
+pub(super) fn extract_regex(entry: &str, option: &str, notes: &mut Vec<Note>) -> String {
     let w = written(entry);
     match w.flags {
         Some(flags) => format!("(?{}){}", flags_of(flags, notes, option), w.body),
@@ -150,7 +151,7 @@ fn extract_regex(entry: &str, option: &str, notes: &mut Vec<Note>) -> String {
 }
 
 /// Number of capture groups of a regular expression, or the reason it does not build.
-fn groups(regex: &str) -> Result<usize, String> {
+pub(super) fn groups(regex: &str) -> Result<usize, String> {
     RegexBuilder::new(regex)
         .size_limit(1 << 20)
         .build()
@@ -158,7 +159,7 @@ fn groups(regex: &str) -> Result<usize, String> {
         .map_err(|error| reason(&error.to_string()))
 }
 
-fn dedupe(list: &[String]) -> Vec<String> {
+pub(super) fn dedupe(list: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for item in list.iter().map(|s| s.trim()).filter(|s| !s.is_empty()) {
         if !out.iter().any(|seen| seen == item) {
@@ -342,201 +343,5 @@ fn dedupe_refs(list: &[String]) -> Vec<&String> {
     out
 }
 
-/// `extract_text`: each match, or its capture group, on a line of its own.
-fn extract_step(entries: &[String], notes: &mut Vec<Note>) -> Option<Step> {
-    let mut built: Vec<(String, usize)> = Vec::new();
-    for entry in dedupe(entries) {
-        let regex = extract_regex(&entry, "extract_text", notes);
-        match groups(&regex) {
-            Ok(count) => built.push((regex, count)),
-            Err(why) => notes.push(Note::skipped(
-                "extract_text",
-                format!("a pattern was left out because it does not work here: {why}"),
-            )),
-        }
-    }
-    let (first, rest) = built.split_first()?;
-    if rest.is_empty() {
-        if first.1 > 1 {
-            notes.push(Note::approximated(
-                "extract_text",
-                "the pattern has several capture groups and only the first is kept",
-            ));
-        }
-        return Some(Step::RegexExtract {
-            pattern: first.0.clone(),
-            group: usize::from(first.1 > 0),
-            required: false,
-        });
-    }
-    if built.iter().all(|(_, count)| *count == 0) {
-        let joined: Vec<String> = built.iter().map(|(r, _)| format!("(?:{r})")).collect();
-        return Some(Step::RegexExtract {
-            pattern: joined.join("|"),
-            group: 0,
-            required: false,
-        });
-    }
-    notes.push(Note::skipped(
-        "extract_text",
-        format!(
-            "{} pattern(s) were left out: several patterns can only be combined when none has a capture group",
-            rest.len()
-        ),
-    ));
-    Some(Step::RegexExtract {
-        pattern: first.0.clone(),
-        group: usize::from(first.1 > 0),
-        required: false,
-    })
-}
-
-/// `extract_lines_containing`: keep the lines that contain any of the entries.
-fn lines_step(entries: &[String], notes: &mut Vec<Note>) -> Option<Step> {
-    let mut alternatives = Vec::new();
-    for entry in dedupe(entries) {
-        let w = written(&entry);
-        let regex = match w.flags {
-            Some(flags) => format!(
-                "(?{}){}",
-                flags_of(flags, notes, "extract_lines_containing"),
-                w.body
-            ),
-            None => format!("(?i){}", regex::escape(w.body)),
-        };
-        match groups(&regex) {
-            Ok(_) => alternatives.push(format!("(?:{regex})")),
-            Err(why) => notes.push(Note::skipped(
-                "extract_lines_containing",
-                format!("a pattern was left out because it does not work here: {why}"),
-            )),
-        }
-    }
-    if alternatives.is_empty() {
-        return None;
-    }
-    Some(Step::RegexExtract {
-        pattern: format!("(?m)^.*(?:{}).*$", alternatives.join("|")),
-        group: 0,
-        required: false,
-    })
-}
-
 #[cfg(test)]
-mod tests {
-    use super::{Filters, map_filters, pattern};
-    use vigil_core::{Processor, SelectMode, Step};
-
-    fn pat(entry: &str) -> (Option<String>, usize) {
-        let mut notes = Vec::new();
-        (pattern(entry, "ignore_text", &mut notes), notes.len())
-    }
-
-    #[test]
-    fn a_regular_expression_without_flags_is_case_insensitive_as_in_the_source() {
-        assert_eq!(pat("/price: \\d+/").0.as_deref(), Some("/price: \\d+/i"));
-        assert_eq!(pat("/Sold Out/s").0.as_deref(), Some("/Sold Out/s"));
-        assert_eq!(pat("/x/gi").0.as_deref(), Some("/x/i"));
-        assert_eq!(pat("plain text").0.as_deref(), Some("plain text"));
-        // A flag that Vigil does not have is dropped, and said.
-        assert_eq!(pat("/x/a"), (Some("/x/".to_owned()), 1));
-        // A Python-only construct does not build here: the pattern is dropped, and said.
-        assert_eq!(pat("/(?<=a)b/"), (None, 1));
-    }
-
-    #[test]
-    fn includes_are_told_apart_by_their_first_characters() {
-        let filters = Filters {
-            include: vec![".price".into(), "div.x".into()],
-            subtractive: vec![".ad".into(), "xpath://footer".into()],
-            ..Filters::default()
-        };
-        let mapped = map_filters(&filters);
-        assert_eq!(mapped.processor, Processor::Text);
-        assert_eq!(
-            mapped.pipeline,
-            [
-                Step::Css {
-                    selector: ".price, div.x".into(),
-                    mode: SelectMode::Include,
-                    required: false
-                },
-                Step::Css {
-                    selector: ".ad".into(),
-                    mode: SelectMode::Remove,
-                    required: false
-                },
-                Step::XPath {
-                    expr: "//footer".into(),
-                    mode: SelectMode::Remove,
-                    required: false
-                },
-            ]
-        );
-        assert_eq!(mapped.notes.len(), 1, "{:?}", mapped.notes);
-
-        let json = map_filters(&Filters {
-            include: vec!["jqraw:.data[].title".into()],
-            ..Filters::default()
-        });
-        assert_eq!(json.processor, Processor::Json);
-        assert_eq!(
-            json.pipeline,
-            [Step::Jq {
-                program: ".data[].title".into(),
-                raw: true
-            }]
-        );
-        assert!(json.notes.is_empty());
-    }
-
-    #[test]
-    fn a_filter_that_does_not_build_is_dropped_alone() {
-        let mapped = map_filters(&Filters {
-            include: vec!["a[".into()],
-            trim: true,
-            ..Filters::default()
-        });
-        assert_eq!(mapped.pipeline, [Step::Trim {}]);
-        assert_eq!(mapped.notes.len(), 1);
-        assert!(
-            mapped.notes[0].message.contains("left out"),
-            "{:?}",
-            mapped.notes
-        );
-    }
-
-    #[test]
-    fn extracts_are_one_pattern_with_the_groups_the_source_would_return() {
-        let one = map_filters(&Filters {
-            extract: vec!["/Price: (\\d+)/".into()],
-            ..Filters::default()
-        });
-        assert_eq!(
-            one.pipeline,
-            [Step::RegexExtract {
-                pattern: "(?i)Price: (\\d+)".into(),
-                group: 1,
-                required: false
-            }]
-        );
-        let plain = map_filters(&Filters {
-            extract: vec!["a.b".into(), "/c+/".into()],
-            ..Filters::default()
-        });
-        assert_eq!(
-            plain.pipeline,
-            [Step::RegexExtract {
-                pattern: "(?:(?i)a\\.b)|(?:(?i)c+)".into(),
-                group: 0,
-                required: false
-            }]
-        );
-        let mixed = map_filters(&Filters {
-            extract: vec!["/(a)/".into(), "/b/".into()],
-            ..Filters::default()
-        });
-        assert_eq!(mixed.pipeline.len(), 1);
-        assert_eq!(mixed.notes.len(), 1);
-    }
-}
+mod tests;

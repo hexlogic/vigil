@@ -10,12 +10,14 @@ use vigil_import::report::{ItemReport, Note, NoteKind, Status};
 use vigil_import::{Existing, Format, ImportError, Options, plan, plan_reader};
 use vigil_scheduler::{IntervalError, parse_interval};
 
+mod receive;
+
+use self::receive::{Problem, Received, Typed, receive};
 use super::server_error;
 use crate::AppState;
 use crate::fmt;
 use crate::form::{Fields, new_draft_id};
 use crate::page::{Ctx, Nav, render, render_with};
-use crate::upload::{Upload, UploadError};
 
 /// The interval of sources that have none, when the form does not say.
 const DEFAULT_EVERY: &str = "1h";
@@ -104,15 +106,6 @@ fn form_page(state: &AppState, ctx: Ctx, error: Option<String>, typed: &Typed) -
     }
 }
 
-/// What was typed in the form.
-#[derive(Default)]
-struct Typed {
-    urls: String,
-    format: String,
-    every: String,
-    allow_duplicates: bool,
-}
-
 /// `GET /import`.
 pub(crate) async fn import_form(State(state): State<AppState>, ctx: Ctx) -> Response {
     let typed = Typed {
@@ -153,85 +146,6 @@ fn item_of(ctx: &Ctx, item: &ItemReport) -> ItemView {
         status_label: ctx.t(key),
         notes: notes_of(ctx, &item.notes),
     }
-}
-
-/// The fields of the form, and the file or pasted text it holds.
-struct Received {
-    typed: Typed,
-    file: Option<crate::upload::Spooled>,
-}
-
-enum Problem {
-    Message(String),
-    TooLarge,
-    Server(String),
-}
-
-async fn receive(state: &AppState, mut multipart: Multipart) -> Result<Received, Problem> {
-    let mut typed = Typed::default();
-    let mut file = None;
-    loop {
-        let mut field = match multipart.next_field().await {
-            Ok(Some(field)) => field,
-            Ok(None) => break,
-            Err(error) => {
-                // A body over the limit, or one that was cut off.
-                return Err(if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
-                    Problem::TooLarge
-                } else {
-                    Problem::Message(error.body_text())
-                });
-            }
-        };
-        match field.name().unwrap_or_default() {
-            "file" => {
-                let mut upload = Upload::new(&state.web.upload_dir, state.web.max_upload_bytes)
-                    .map_err(|e| Problem::Server(e.to_string()))?;
-                loop {
-                    match field.chunk().await {
-                        Ok(Some(chunk)) => match upload.push(&chunk).await {
-                            Ok(()) => {}
-                            Err(UploadError::TooLarge { .. }) => return Err(Problem::TooLarge),
-                            Err(UploadError::Io(error)) => {
-                                return Err(Problem::Server(error.to_string()));
-                            }
-                        },
-                        Ok(None) => break,
-                        Err(error) => {
-                            return Err(if error.status() == StatusCode::PAYLOAD_TOO_LARGE {
-                                Problem::TooLarge
-                            } else {
-                                Problem::Message(error.body_text())
-                            });
-                        }
-                    }
-                }
-                let spooled = upload
-                    .finish()
-                    .await
-                    .map_err(|e| Problem::Server(e.to_string()))?;
-                // A browser sends an empty file part when none was chosen.
-                if spooled.len > 0 {
-                    file = Some(spooled);
-                }
-            }
-            name => {
-                let name = name.to_owned();
-                let text = field
-                    .text()
-                    .await
-                    .map_err(|e| Problem::Message(e.body_text()))?;
-                match name.as_str() {
-                    "urls" => typed.urls = text,
-                    "format" => typed.format = text.trim().to_owned(),
-                    "every" => typed.every = text.trim().to_owned(),
-                    "allow_duplicates" => typed.allow_duplicates = true,
-                    _ => {}
-                }
-            }
-        }
-    }
-    Ok(Received { typed, file })
 }
 
 /// `POST /import`: read the file, show what would be made.

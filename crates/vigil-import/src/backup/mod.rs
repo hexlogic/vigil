@@ -5,7 +5,9 @@
 //! changes from release to release. An option the importer does not know is reported once, by
 //! name, for the whole import; options with a default value are not reported at all.
 
+mod extract;
 mod filters;
+mod request;
 mod settings;
 mod store;
 mod template;
