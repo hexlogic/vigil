@@ -8,6 +8,7 @@
 //! This crate does no I/O of its own. Callers hand it bytes and a description of what already
 //! exists ([`Existing`]).
 
+mod backup;
 mod builder;
 mod detect;
 mod opml;
@@ -181,8 +182,7 @@ pub fn plan(
     match format {
         Format::UrlList => urls::plan(bytes, options, existing),
         Format::Opml => opml::plan(bytes, options, existing),
-        Format::Backup | Format::Urlwatch | Format::Distill => {
-            Err(ImportError::Unsupported(format))
-        }
+        Format::Backup => backup::plan(bytes, options, existing),
+        Format::Urlwatch | Format::Distill => Err(ImportError::Unsupported(format)),
     }
 }

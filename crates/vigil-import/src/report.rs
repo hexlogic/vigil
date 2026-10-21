@@ -157,3 +157,67 @@ impl Report {
         }
     }
 }
+
+impl Report {
+    /// The report as plain text, for a terminal: the totals, the notes about the import, and
+    /// each watch with what could not be carried over.
+    pub fn render_text(&self) -> String {
+        use std::fmt::Write as _;
+        let t = &self.totals;
+        let mut out = String::new();
+        // Writing to a String cannot fail.
+        let _ = writeln!(
+            out,
+            "format: {}\nfound {} watch(es): {} will be made ({} with notes), {} skipped; {} tag(s) and {} notification target(s) will be made",
+            self.format,
+            t.found,
+            t.created,
+            t.partial,
+            t.skipped,
+            t.tags_created,
+            t.targets_created
+        );
+        for note in &self.notes {
+            let _ = writeln!(
+                out,
+                "  {:<12} {}: {}",
+                note.kind.label(),
+                note.option,
+                note.message
+            );
+        }
+        for item in &self.items {
+            let _ = writeln!(out, "\n{} [{}]", item.source, item.status.label());
+            for note in &item.notes {
+                let _ = writeln!(
+                    out,
+                    "  {:<12} {}: {}",
+                    note.kind.label(),
+                    note.option,
+                    note.message
+                );
+            }
+        }
+        out
+    }
+}
+
+impl NoteKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Skipped => "skipped",
+            Self::Approximated => "approximated",
+            Self::Info => "info",
+        }
+    }
+}
+
+impl Status {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Created => "will be made",
+            Self::Partial => "will be made, with notes",
+            Self::Skipped => "skipped",
+        }
+    }
+}

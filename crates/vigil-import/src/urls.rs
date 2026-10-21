@@ -90,3 +90,11 @@ pub(crate) fn plan(
     }
     Ok(builder.finish())
 }
+
+/// Whether a request header can be sent: a name of visible characters and a value without
+/// control characters.
+pub(crate) fn header_is_valid(name: &str, value: &str) -> bool {
+    !name.is_empty()
+        && name.bytes().all(|b| b.is_ascii_graphic())
+        && !value.chars().any(char::is_control)
+}

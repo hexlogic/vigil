@@ -3,9 +3,13 @@
 use std::collections::{HashMap, HashSet};
 
 use vigil_core::Watch;
-use vigil_store::{ImportBatch, ImportTag, ImportWatch, NotificationTarget, Tag, match_name};
+use vigil_notify::Channel;
+use vigil_store::{
+    ImportBatch, ImportTag, ImportTarget, ImportWatch, NotificationTarget, Tag, match_name,
+};
 
 use crate::report::{ItemReport, Note, Report};
+use crate::text::scheme_of;
 use crate::{Format, ImportError, ImportPlan, MAX_WATCHES, Options};
 
 /// What already exists in the store, so that a plan can say what it would reuse and skip.
@@ -36,6 +40,7 @@ pub(crate) struct Builder<'a> {
     items: Vec<ItemReport>,
     batch: ImportBatch,
     tag_defs: HashMap<String, ImportTag>,
+    target_defs: HashMap<String, ImportTarget>,
 }
 
 impl<'a> Builder<'a> {
@@ -51,6 +56,7 @@ impl<'a> Builder<'a> {
                 ..ImportBatch::default()
             },
             tag_defs: HashMap::new(),
+            target_defs: HashMap::new(),
         }
     }
 
@@ -77,6 +83,12 @@ impl<'a> Builder<'a> {
         self.tag_defs.entry(tag.name.clone()).or_insert(tag);
     }
 
+    /// A target the watches and tags may use, by address. It is only made if something that is
+    /// made uses it.
+    pub(crate) fn define_target(&mut self, target: ImportTarget) {
+        self.target_defs.entry(target.url.clone()).or_insert(target);
+    }
+
     /// A watch that will be made, unless its address is already watched.
     pub(crate) fn add(&mut self, source: String, watch: ImportWatch, mut notes: Vec<Note>) {
         if !self.options.allow_duplicates && self.existing.watch_urls.contains(&watch.settings.url)
@@ -90,6 +102,9 @@ impl<'a> Builder<'a> {
         }
         for name in &watch.tags {
             self.use_tag(name);
+        }
+        for url in &watch.target_urls {
+            self.use_target(url);
         }
         self.batch.watches.push(watch);
         self.items.push(ItemReport::made(source, notes));
@@ -107,7 +122,19 @@ impl<'a> Builder<'a> {
         let Some(tag) = self.tag_defs.get(name).cloned() else {
             return;
         };
+        for url in &tag.target_urls {
+            self.use_target(url);
+        }
         self.batch.tags.push(tag);
+    }
+
+    fn use_target(&mut self, url: &str) {
+        if self.batch.targets.iter().any(|t| t.url == url) {
+            return;
+        }
+        if let Some(target) = self.target_defs.get(url).cloned() {
+            self.batch.targets.push(target);
+        }
     }
 
     pub(crate) fn finish(self) -> ImportPlan {
@@ -132,5 +159,50 @@ impl<'a> Builder<'a> {
             batch: self.batch,
             report,
         }
+    }
+}
+
+/// What to call a notification target that has no name in the source: its kind and, when the
+/// address names one, its host (`ntfy ntfy.sh`).
+pub(crate) fn target_name(url: &str) -> String {
+    let Ok(channel) = Channel::parse(url) else {
+        return "notification".to_owned();
+    };
+    let kind = channel.kind().to_owned();
+    // The redacted form hides credentials, so the host it shows is safe to use.
+    let redacted = channel.redacted();
+    let authority = redacted
+        .split_once("://")
+        .map_or("", |(_, rest)| rest)
+        .split(['/', '?'])
+        .next()
+        .unwrap_or_default();
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    if host.is_empty() || host.contains('*') {
+        kind
+    } else {
+        format!("{kind} {host}")
+    }
+}
+
+/// Check a notification address from a source. If it is no good the note says which kind could
+/// not be carried over, never the address.
+pub(crate) fn check_target(url: &str) -> Result<(), Note> {
+    match Channel::parse(url.trim()) {
+        Ok(_) => Ok(()),
+        Err(_) => Err(match scheme_of(url.trim()) {
+            Some(scheme) => Note::skipped(
+                "notification_urls",
+                format!(
+                    "a {scheme}:// notification address is not supported or not valid, and was left out"
+                ),
+            ),
+            None => Note::skipped(
+                "notification_urls",
+                "a notification address that is not a URL was left out",
+            ),
+        }),
     }
 }
