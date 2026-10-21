@@ -178,7 +178,7 @@ pub(crate) fn refusal(web: &WebConfig, method: &Method, headers: &HeaderMap) -> 
 }
 
 /// Whether `origin` is the configured address of this site, or the one the request was sent to.
-fn origin_matches(web: &WebConfig, origin: &str, host: Option<&str>) -> bool {
+pub(crate) fn origin_matches(web: &WebConfig, origin: &str, host: Option<&str>) -> bool {
     let origin = origin.trim_end_matches('/');
     if web
         .origin()
@@ -191,7 +191,7 @@ fn origin_matches(web: &WebConfig, origin: &str, host: Option<&str>) -> bool {
 }
 
 /// Whether a `Host` header names a place that is safe to serve without a password.
-fn host_is_trusted(web: &WebConfig, host: &str) -> bool {
+pub(crate) fn host_is_trusted(web: &WebConfig, host: &str) -> bool {
     let name = match host.strip_prefix('[') {
         Some(rest) => rest.split(']').next().unwrap_or_default(),
         None => host.rsplit_once(':').map_or(host, |(name, port)| {

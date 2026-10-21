@@ -315,8 +315,13 @@ impl Backend for Checker {
 /// With `conditional`, the validators from the last response are sent, so the server can
 /// answer 304. A preview leaves them out: it needs a body.
 pub(crate) fn request_for(watch: &Watch, conditional: bool) -> FetchRequest {
+    // Validators belong to a page that is read. A response to a POST is not that page, and a
+    // server that answered 304 to one would never send the body again.
+    let conditional = conditional && watch.fetch.method == vigil_core::Method::Get;
     FetchRequest {
         url: watch.url.clone(),
+        method: method_of(watch.fetch.method),
+        body: watch.fetch.body.clone(),
         timeout: watch.fetch.timeout_secs.map(Duration::from_secs),
         user_agent: watch.fetch.user_agent.clone(),
         headers: watch
@@ -329,6 +334,16 @@ pub(crate) fn request_for(watch: &Watch, conditional: bool) -> FetchRequest {
         last_modified: conditional
             .then(|| watch.state.last_modified.clone())
             .flatten(),
+    }
+}
+
+fn method_of(method: vigil_core::Method) -> vigil_fetch::Method {
+    match method {
+        vigil_core::Method::Get => vigil_fetch::Method::GET,
+        vigil_core::Method::Post => vigil_fetch::Method::POST,
+        vigil_core::Method::Put => vigil_fetch::Method::PUT,
+        vigil_core::Method::Patch => vigil_fetch::Method::PATCH,
+        vigil_core::Method::Delete => vigil_fetch::Method::DELETE,
     }
 }
 

@@ -1,7 +1,7 @@
 //! Watch persistence tests.
 
-use vigil_core::{Conditions, NotifyOn, Processor, Schedule, SelectMode, Step};
-use vigil_store::{NewWatch, Store, StoreError};
+use vigil_core::{Conditions, NotifyOn, Processor, Schedule, Scope, SelectMode, Step};
+use vigil_store::{NewWatch, Store, StoreError, WatchLinks};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -46,6 +46,7 @@ async fn create_then_get_round_trips() -> TestResult {
             removed: false,
             changed: true,
         },
+        scope: Scope::Text,
     };
     let created = store.create_watch(new.clone()).await?;
 
@@ -380,6 +381,155 @@ async fn the_notification_template_is_set_cleared_and_survives_edits() -> TestRe
     let ghost = vigil_core::WatchId::from_uuid(uuid::Uuid::now_v7());
     assert!(matches!(
         store.set_notification_template(ghost, Some("x")).await,
+        Err(StoreError::NotFound(_))
+    ));
+    Ok(())
+}
+
+fn ntfy(name: &str) -> vigil_store::NewTarget {
+    vigil_store::NewTarget {
+        name: name.into(),
+        url: format!("ntfy://ntfy.example/{name}"),
+        default_template: None,
+    }
+}
+
+async fn count_watches(store: &Store) -> Result<usize, Box<dyn std::error::Error>> {
+    Ok(store.list_watches().await?.len())
+}
+
+#[tokio::test]
+async fn a_watch_made_with_links_is_stored_paused_and_linked() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let tag = store
+        .create_tag(&vigil_store::NewTag {
+            name: "shops".into(),
+            color: "blue".into(),
+            default_interval_secs: None,
+        })
+        .await?;
+    let target = store.create_target(&ntfy("phone")).await?;
+    let links = WatchLinks {
+        tags: &[tag.id],
+        targets: &[target.id],
+        template: Some("{{ watch_name }} moved"),
+    };
+    let new = NewWatch::new("https://a.example", Schedule::Interval(60));
+    let watch = store.create_watch_with_links(&new, true, &links).await?;
+
+    assert!(watch.paused);
+    assert_eq!(
+        watch.notification_template.as_deref(),
+        Some("{{ watch_name }} moved")
+    );
+    assert_eq!(store.tags_for_watch(watch.id).await?.len(), 1);
+    let targets = store.targets_for_watch(watch.id, false).await?;
+    assert_eq!(
+        targets.iter().map(|t| t.id).collect::<Vec<_>>(),
+        [target.id]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_unknown_tag_or_target_leaves_no_watch() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let ghost = uuid::Uuid::now_v7();
+    let new = NewWatch::new("https://a.example", Schedule::Interval(60));
+
+    let by_target = WatchLinks {
+        targets: &[ghost],
+        ..WatchLinks::default()
+    };
+    assert!(matches!(
+        store.create_watch_with_links(&new, false, &by_target).await,
+        Err(StoreError::NotFound(_))
+    ));
+    let by_tag = WatchLinks {
+        tags: &[ghost],
+        ..WatchLinks::default()
+    };
+    assert!(matches!(
+        store.create_watch_with_links(&new, false, &by_tag).await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert_eq!(count_watches(&store).await?, 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_replacement_with_an_unknown_target_changes_nothing() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let watch = store
+        .create_watch(NewWatch::new("https://a.example", Schedule::Interval(60)))
+        .await?;
+    sqlx::query("UPDATE watches SET etag = 'abc', consecutive_errors = 2 WHERE id = ?")
+        .bind(watch.id.to_string())
+        .execute(store.pool())
+        .await?;
+    let before = store.get_watch(watch.id).await?;
+
+    let mut settings = NewWatch::from(&before);
+    settings.url = "https://b.example".into();
+    let links = WatchLinks {
+        targets: &[uuid::Uuid::now_v7()],
+        ..WatchLinks::default()
+    };
+    let result = store
+        .replace_watch(watch.id, Some(&settings), Some(true), &links)
+        .await;
+    assert!(matches!(result, Err(StoreError::NotFound(_))));
+
+    // The URL, the pause flag, the ETag and the failure streak are as they were.
+    assert_eq!(store.get_watch(watch.id).await?, before);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_replacement_writes_only_what_it_is_given() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let watch = store
+        .create_watch(NewWatch::new("https://a.example", Schedule::Interval(60)))
+        .await?;
+    sqlx::query("UPDATE watches SET etag = 'abc', consecutive_errors = 2 WHERE id = ?")
+        .bind(watch.id.to_string())
+        .execute(store.pool())
+        .await?;
+    let target = store.create_target(&ntfy("phone")).await?;
+    let links = WatchLinks {
+        targets: &[target.id],
+        template: Some("moved"),
+        ..WatchLinks::default()
+    };
+
+    // No settings: the validators and the failure streak stay, pause and links change.
+    store
+        .replace_watch(watch.id, None, Some(true), &links)
+        .await?;
+    let kept = store.get_watch(watch.id).await?;
+    assert!(kept.paused);
+    assert_eq!(kept.notification_template.as_deref(), Some("moved"));
+    assert_eq!(kept.state.etag.as_deref(), Some("abc"));
+    assert_eq!(kept.state.consecutive_errors, 2);
+    assert_eq!(kept.updated_at, watch.updated_at);
+
+    // Settings: they are written and the validators and streak are cleared.
+    let mut settings = NewWatch::from(&kept);
+    settings.name = "Renamed".into();
+    store
+        .replace_watch(watch.id, Some(&settings), None, &links)
+        .await?;
+    let written = store.get_watch(watch.id).await?;
+    assert_eq!(written.name, "Renamed");
+    assert!(written.paused);
+    assert_eq!(written.state.etag, None);
+    assert_eq!(written.state.consecutive_errors, 0);
+
+    let ghost = vigil_core::WatchId::from_uuid(uuid::Uuid::now_v7());
+    assert!(matches!(
+        store
+            .replace_watch(ghost, None, None, &WatchLinks::default())
+            .await,
         Err(StoreError::NotFound(_))
     ));
     Ok(())

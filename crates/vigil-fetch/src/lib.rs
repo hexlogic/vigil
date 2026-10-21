@@ -9,6 +9,9 @@ use reqwest::header::{
 use reqwest::redirect::Policy;
 use reqwest::{StatusCode, Url};
 
+/// The request method, as `reqwest` names it.
+pub use reqwest::Method;
+
 /// Redirects followed before giving up.
 const MAX_REDIRECTS: usize = 10;
 
@@ -65,8 +68,12 @@ impl Default for FetchConfig {
 /// One fetch.
 #[derive(Debug, Clone, Default)]
 pub struct FetchRequest {
-    /// The URL to GET.
+    /// The URL to fetch.
     pub url: String,
+    /// The request method; `GET` unless set.
+    pub method: Method,
+    /// The request body, sent as it is. No `Content-Type` is added; send one in `headers`.
+    pub body: Option<String>,
     /// Overrides [`FetchConfig::timeout`].
     pub timeout: Option<Duration>,
     /// Overrides [`FetchConfig::user_agent`].
@@ -141,7 +148,7 @@ impl Fetcher {
         Ok(Self { client, config })
     }
 
-    /// GET `request.url`.
+    /// Fetch `request.url` with the request's method and body.
     ///
     /// `If-None-Match` and `If-Modified-Since` are sent only when the request carries the
     /// validators. A 304 is accepted only in that case.
@@ -173,11 +180,14 @@ impl Fetcher {
         let conditional =
             headers.contains_key(IF_NONE_MATCH) || headers.contains_key(IF_MODIFIED_SINCE);
 
-        let builder = self
+        let mut builder = self
             .client
-            .get(url)
+            .request(request.method.clone(), url)
             .timeout(request.timeout.unwrap_or(self.config.timeout))
             .headers(headers);
+        if let Some(body) = &request.body {
+            builder = builder.body(body.clone());
+        }
 
         let mut response = builder.send().await.map_err(map_error)?;
         let status = response.status();

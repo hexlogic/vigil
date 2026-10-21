@@ -1,0 +1,71 @@
+---
+source: crates/vigil-import/tests/lists.rs
+expression: plan.report
+---
+{
+  "format": "url-list",
+  "notes": [],
+  "items": [
+    {
+      "source": "https://example.com/pricing",
+      "status": "created",
+      "notes": []
+    },
+    {
+      "source": "https://example.com/blog",
+      "status": "created",
+      "notes": []
+    },
+    {
+      "source": "https://shop.example/widget",
+      "status": "created",
+      "notes": []
+    },
+    {
+      "source": "line 5",
+      "status": "skipped",
+      "notes": [
+        {
+          "kind": "skipped",
+          "option": "url",
+          "message": "only http and https addresses can be watched"
+        }
+      ]
+    },
+    {
+      "source": "line 6",
+      "status": "skipped",
+      "notes": [
+        {
+          "kind": "skipped",
+          "option": "url",
+          "message": "this is not an address"
+        }
+      ]
+    },
+    {
+      "source": "https://example.com/pricing",
+      "status": "created",
+      "notes": []
+    },
+    {
+      "source": "https://long.example/",
+      "status": "partial",
+      "notes": [
+        {
+          "kind": "skipped",
+          "option": "tags",
+          "message": "a tag name over 50 characters was left out"
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "found": 7,
+    "created": 5,
+    "partial": 1,
+    "skipped": 2,
+    "tags_created": 4,
+    "targets_created": 0
+  }
+}

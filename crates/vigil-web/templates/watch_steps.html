@@ -21,6 +21,8 @@
 {% if step.draft.kind == "jq" %}
 <div class="field"><label for="step-{{ step.index }}-program">{{ ctx.t("form.step_program") }}</label>
 <textarea id="step-{{ step.index }}-program" name="step-{{ step.index }}-program" rows="2" spellcheck="false">{{ step.draft.program }}</textarea></div>
+<label class="check"><input type="checkbox" name="step-{{ step.index }}-raw"{% if step.draft.raw %} checked{% endif %}>{{ ctx.t("form.step_raw") }}</label>
+<p class="hint">{{ ctx.t("form.step_raw_hint") }}</p>
 {% endif %}
 {% if step.draft.kind == "regex_extract" || step.draft.kind == "regex_replace" %}
 <div class="field"><label for="step-{{ step.index }}-pattern">{{ ctx.t("form.step_pattern") }}</label>

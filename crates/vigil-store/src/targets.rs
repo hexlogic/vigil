@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
+use sqlx::{Row, SqliteConnection};
 use uuid::Uuid;
 use vigil_core::WatchId;
 
@@ -53,22 +53,36 @@ pub struct NewTarget {
     pub default_template: Option<String>,
 }
 
+/// Insert a target row on a connection, so that a transaction can hold several.
+pub(crate) async fn insert_target(
+    conn: &mut SqliteConnection,
+    id: TargetId,
+    new: &NewTarget,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO notification_targets (id, name, url, default_template, created_at) \
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(id.to_string())
+    .bind(&new.name)
+    .bind(&new.url)
+    .bind(new.default_template.as_deref())
+    .bind(now_ms())
+    .execute(conn)
+    .await
+    .map(drop)
+}
+
 impl Store {
     /// Insert an enabled target with a fresh UUID v7 id.
     ///
     /// A name that is already taken is [`StoreError::Conflict`].
     pub async fn create_target(&self, new: &NewTarget) -> Result<NotificationTarget, StoreError> {
         let id = Uuid::now_v7();
-        let inserted = sqlx::query(
-            "INSERT INTO notification_targets (id, name, url, default_template, created_at) \
-             VALUES (?, ?, ?, ?, ?)",
-        )
-        .bind(id.to_string())
-        .bind(&new.name)
-        .bind(&new.url)
-        .bind(new.default_template.as_deref())
-        .bind(now_ms())
-        .execute(&self.pool)
+        let inserted = async {
+            let mut conn = self.pool.acquire().await?;
+            insert_target(&mut conn, id, new).await
+        }
         .await;
         match inserted {
             Ok(_) => self.get_target(id).await,

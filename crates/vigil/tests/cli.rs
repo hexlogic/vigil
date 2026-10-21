@@ -529,3 +529,55 @@ async fn check_says_when_conditions_hold_a_change_back() -> TestResult {
     );
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_post_watch_sends_its_body_and_shows_the_method_back() -> TestResult {
+    use wiremock::matchers::{body_string, method};
+    let dir = tempfile::tempdir()?;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_string(r#"{"page":1}"#))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(V1, "text/html; charset=utf-8"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let refused = vigil(dir.path(), &["watch", "add", &server.uri(), "--body", "x"]).await?;
+    assert!(!refused.ok);
+    assert!(
+        refused.stderr.contains("a request body needs POST"),
+        "{}",
+        refused.stderr
+    );
+
+    let run = vigil(
+        dir.path(),
+        &[
+            "watch",
+            "add",
+            &server.uri(),
+            "--method",
+            "post",
+            "--body",
+            r#"{"page":1}"#,
+        ],
+    )
+    .await?;
+    assert!(run.ok, "{}", run.stderr);
+    let id = run
+        .stdout
+        .split_whitespace()
+        .nth(1)
+        .ok_or("no id")?
+        .to_owned();
+
+    let shown = vigil(dir.path(), &["watch", "show", &id]).await?;
+    let json: serde_json::Value = serde_json::from_str(&shown.stdout)?;
+    assert_eq!(json["fetch"]["method"], "POST");
+    assert_eq!(json["fetch"]["body"], r#"{"page":1}"#);
+
+    // The mock only answers a POST with that body, and expects exactly one request.
+    let checked = vigil(dir.path(), &["check", &id, "--no-notify"]).await?;
+    assert!(checked.ok, "{}{}", checked.stdout, checked.stderr);
+    Ok(())
+}

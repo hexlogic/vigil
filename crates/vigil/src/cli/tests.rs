@@ -247,3 +247,23 @@ fn missing_arguments_are_errors() {
     assert!(parse(&["watch", "add"]).is_err());
     assert!(parse(&[]).is_err());
 }
+
+#[test]
+fn token_commands_take_a_name_or_an_id() -> Result<(), clap::Error> {
+    assert!(matches!(
+        parse(&["token", "add", "ci"])?.command,
+        Command::Token { command: TokenCommand::Add { name } } if name == "ci"
+    ));
+    assert!(matches!(
+        parse(&["token", "list"])?.command,
+        Command::Token {
+            command: TokenCommand::List
+        }
+    ));
+    assert!(matches!(
+        parse(&["token", "remove", "ci"])?.command,
+        Command::Token { command: TokenCommand::Remove { token } } if token == "ci"
+    ));
+    assert!(parse(&["token", "add"]).is_err());
+    Ok(())
+}

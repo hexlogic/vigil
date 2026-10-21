@@ -1,0 +1,8 @@
+# Pages to watch
+https://example.com/pricing
+https://example.com/blog?utm=x  news, company
+  https://shop.example/widget?token=SECRET#top   shops , news
+ftp://files.example/readme
+not an address at all
+https://example.com/pricing
+https://long.example/  this-tag-name-is-much-too-long-to-be-a-tag-name-on-any-watch-we-make, ok

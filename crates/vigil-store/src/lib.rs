@@ -1,13 +1,17 @@
 //! SQLite repository, migrations and snapshot storage.
 
+mod api_tokens;
 mod check_log;
 mod checks;
 mod deliveries;
+mod import;
+mod links;
 mod migrate;
 mod outbox;
 mod sessions;
 mod settings;
 mod snapshots;
+mod tag_links;
 mod tags;
 mod targets;
 mod watches;
@@ -19,9 +23,14 @@ use sqlx::SqlitePool;
 use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 
+pub use api_tokens::{ApiToken, ApiTokenId};
 pub use check_log::{CheckEntry, CheckOutcome};
 pub use checks::{CHECK_LOG_KEEP, CheckSuccess, Content, RecordOutcome};
 pub use deliveries::{DELIVERY_LOG_KEEP, DeliveryOutcome, DeliveryRecord};
+pub use import::{
+    ImportBatch, ImportOutcome, ImportTag, ImportTarget, ImportWatch, free_name, match_name,
+};
+pub use links::WatchLinks;
 pub use outbox::{NewPending, PendingNotification};
 pub use sessions::Session;
 pub use snapshots::{SnapshotId, SnapshotMeta};

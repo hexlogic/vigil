@@ -1,6 +1,6 @@
 //! What is in the form, as typed: every value is still text, nothing is checked yet.
 
-use vigil_core::{SelectMode, Step, Watch};
+use vigil_core::{Scope, SelectMode, Step, Watch};
 use vigil_store::{NotificationTarget, Tag};
 
 use super::Fields;
@@ -34,6 +34,8 @@ pub(crate) struct StepDraft {
     pub(crate) mode: String,
     pub(crate) group: String,
     pub(crate) required: bool,
+    /// A jq filter prints its outputs as lines of text.
+    pub(crate) raw: bool,
 }
 
 impl StepDraft {
@@ -61,6 +63,7 @@ impl StepDraft {
             mode: field("mode"),
             group: field("group"),
             required: fields.has(&format!("step-{at}-required")),
+            raw: fields.has(&format!("step-{at}-raw")),
         }
     }
 
@@ -95,8 +98,9 @@ impl StepDraft {
                 required: *required,
                 ..Self::new("jsonpath")
             },
-            Step::Jq { program } => Self {
+            Step::Jq { program, raw } => Self {
                 program: program.clone(),
+                raw: *raw,
                 ..Self::new("jq")
             },
             Step::RegexExtract {
@@ -156,12 +160,17 @@ pub(crate) struct Draft {
     pub(crate) steps: Vec<StepDraft>,
     pub(crate) trigger_text: String,
     pub(crate) block_text: String,
+    /// Match the two lists against the whole new text, not only the added lines.
+    pub(crate) scope_text: bool,
     pub(crate) notify_added: bool,
     pub(crate) notify_removed: bool,
     pub(crate) notify_changed: bool,
     pub(crate) timeout: String,
     pub(crate) user_agent: String,
     pub(crate) headers: String,
+    /// The request method as typed: `GET`, `POST`, ...
+    pub(crate) method: String,
+    pub(crate) body: String,
     pub(crate) retention: String,
     pub(crate) tags: Vec<String>,
     pub(crate) targets: Vec<String>,
@@ -175,6 +184,7 @@ impl Draft {
             id,
             every: "1h".to_owned(),
             processor: "text".to_owned(),
+            method: "GET".to_owned(),
             notify_added: true,
             notify_removed: true,
             notify_changed: true,
@@ -206,12 +216,15 @@ impl Draft {
                 .collect(),
             trigger_text: text("trigger_text"),
             block_text: text("block_text"),
+            scope_text: fields.has("scope_text"),
             notify_added: fields.has("notify_added"),
             notify_removed: fields.has("notify_removed"),
             notify_changed: fields.has("notify_changed"),
             timeout: text("timeout"),
             user_agent: text("user_agent"),
             headers: text("headers"),
+            method: text("method"),
+            body: text("body"),
             retention: text("retention"),
             tags: fields.all("tag"),
             targets: fields.all("target"),
@@ -240,6 +253,7 @@ impl Draft {
             steps: watch.pipeline.iter().map(StepDraft::from_step).collect(),
             trigger_text: watch.conditions.trigger_text.join("\n"),
             block_text: watch.conditions.block_text.join("\n"),
+            scope_text: watch.conditions.scope == Scope::Text,
             notify_added: watch.conditions.notify_on.added,
             notify_removed: watch.conditions.notify_on.removed,
             notify_changed: watch.conditions.notify_on.changed,
@@ -256,6 +270,8 @@ impl Draft {
                 .map(|(name, value)| format!("{name}: {value}"))
                 .collect::<Vec<_>>()
                 .join("\n"),
+            method: watch.fetch.method.to_string(),
+            body: watch.fetch.body.clone().unwrap_or_default(),
             retention: watch.snapshot_retention.to_string(),
             tags: tags.iter().map(|tag| tag.id.to_string()).collect(),
             targets: targets.iter().map(|target| target.id.to_string()).collect(),

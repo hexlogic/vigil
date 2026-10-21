@@ -1,5 +1,6 @@
 //! axum application: REST API and web UI.
 
+mod api;
 mod assets;
 mod auth;
 mod config;
@@ -7,16 +8,18 @@ mod diff_html;
 mod fmt;
 mod form;
 mod i18n;
+mod import_cache;
 mod page;
 mod pages;
 mod preview_cache;
 mod security;
+mod upload;
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
-use axum::extract::State;
+use axum::extract::{DefaultBodyLimit, State};
 use axum::http::StatusCode;
 use axum::middleware::from_fn_with_state;
 use axum::response::Redirect;
@@ -27,6 +30,7 @@ use tower_http::trace::TraceLayer;
 use vigil_scheduler::{Checker, Notifier, SchedulerHandle};
 use vigil_store::Store;
 
+pub use api::{GeneratedToken, generate_token};
 pub use auth::{AuthError, PasswordSource, change_password, ensure_admin_password};
 pub use config::{Auth, WebConfig};
 pub use i18n::{I18n, Lang, LocaleError, Translator};
@@ -34,6 +38,9 @@ pub use i18n::{I18n, Lang, LocaleError, Translator};
 /// Longest a request may take. Longer than the slowest page (a preview fetches for up to 30
 /// seconds and then processes for up to 30 more), so only a stuck request is cut off.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Longest an import may take, from the first byte of the upload to the answer.
+const IMPORT_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 /// Shared state handed to every request handler.
 #[derive(Debug, Clone)]
@@ -56,6 +63,8 @@ pub struct AppState {
     slots: Arc<form::SlotLocks>,
     /// The page each open form last fetched for its preview.
     previews: Arc<preview_cache::PreviewCache>,
+    /// Import previews waiting for their button.
+    import_plans: Arc<import_cache::ImportPlans>,
 }
 
 impl AppState {
@@ -79,6 +88,7 @@ impl AppState {
             limiter: Arc::default(),
             slots: Arc::default(),
             previews: Arc::default(),
+            import_plans: Arc::default(),
         })
     }
 }
@@ -107,6 +117,12 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", get(pages::settings))
         .route("/settings/language", post(pages::set_language))
         .route("/settings/password", post(pages::set_password))
+        .route("/settings/tokens", post(pages::create_token))
+        .route("/settings/tokens/{id}/row", get(pages::token_row))
+        .route(
+            "/settings/tokens/{id}/revoke",
+            get(pages::confirm_revoke_token).post(pages::revoke_token),
+        )
         .route(
             "/settings/sign-out-everywhere",
             post(pages::sign_out_everywhere),
@@ -155,14 +171,33 @@ pub fn router(state: AppState) -> Router {
             get(pages::confirm_delete).post(pages::delete_watch),
         )
         .route_layer(from_fn_with_state(state.clone(), auth::require_session));
+    // The import takes a file of up to hundreds of megabytes, so its pages get a longer
+    // timeout than the others, which an outer layer could not give them.
+    let imports = Router::new()
+        .route(
+            "/import",
+            get(pages::import_form)
+                .post(pages::import_preview)
+                .layer(DefaultBodyLimit::max(upload_limit(&state))),
+        )
+        .route("/import/apply", post(pages::import_apply))
+        .route_layer(from_fn_with_state(state.clone(), auth::require_session))
+        .layer(timeout(IMPORT_TIMEOUT));
     let ui = public
         .merge(protected)
+        .layer(timeout(REQUEST_TIMEOUT))
+        .merge(imports)
         .fallback(pages::not_found)
-        .layer(from_fn_with_state(state.clone(), auth::check_origin));
+        .layer(from_fn_with_state(state.clone(), auth::check_origin))
+        .with_state(state.clone());
+    // The API has its own checks (a token, not a cookie), so it is outside the UI's. Whatever
+    // is not an API path is the UI's.
+    let site =
+        api::router(&state, timeout(REQUEST_TIMEOUT), timeout(IMPORT_TIMEOUT)).fallback_service(ui);
     let base_path = state.web.base_path();
-    let app = Router::new().route("/healthz", get(healthz));
+    let app = Router::new().route("/healthz", get(healthz).layer(timeout(REQUEST_TIMEOUT)));
     let app = if base_path.is_empty() {
-        app.merge(ui)
+        app.merge(site)
     } else {
         // axum nests `/` at the prefix alone; people also type the address with a slash. That
         // is sent on to the real page, so that it passes the same checks as every other.
@@ -171,16 +206,25 @@ pub fn router(state: AppState) -> Router {
             &format!("{base_path}/"),
             get(move || async move { Redirect::permanent(&canonical) }),
         )
-        .nest(&base_path, ui)
+        .nest(&base_path, site)
     };
     security::add(app)
         .layer(CompressionLayer::new())
-        .layer(TimeoutLayer::with_status_code(
-            StatusCode::REQUEST_TIMEOUT,
-            REQUEST_TIMEOUT,
-        ))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// The most bytes the import form accepts: the file, and a little for the other fields.
+fn upload_limit(state: &AppState) -> usize {
+    usize::try_from(state.web.max_upload_bytes)
+        .unwrap_or(usize::MAX)
+        .saturating_add(64 * 1024)
+}
+
+/// Cuts off a request that hangs. It is applied to the UI and to the API separately, because
+/// an outer layer cannot be loosened for one route inside it, and the import takes longer.
+fn timeout(limit: Duration) -> TimeoutLayer {
+    TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, limit)
 }
 
 /// Liveness/readiness probe: `200 ok` when the database answers, `503` otherwise.

@@ -211,3 +211,32 @@ async fn the_check_log_is_read_newest_first_with_errors() -> TestResult {
     assert!(store.list_checks(other.id, 10).await?.is_empty());
     Ok(())
 }
+
+#[tokio::test]
+async fn the_snapshot_before_one_is_found_however_far_back() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let watch = watch(&store).await?;
+    let mut ids = Vec::new();
+    for (n, at) in [1_000, 2_000, 3_000].into_iter().enumerate() {
+        match store
+            .record_success(watch.id, &success(at, &format!("text {n}")))
+            .await?
+        {
+            RecordOutcome::Baseline { snapshot } => ids.push(snapshot),
+            RecordOutcome::Changed { current, .. } => ids.push(current),
+            RecordOutcome::Unchanged => return Err("unchanged".into()),
+        }
+    }
+    let before = |id| store.snapshot_before(watch.id, id);
+    assert_eq!(before(ids[2]).await?.map(|m| m.id), Some(ids[1]));
+    assert_eq!(before(ids[1]).await?.map(|m| m.id), Some(ids[0]));
+    assert_eq!(before(ids[0]).await?, None);
+    // A version that does not exist has no version before it, and another watch's has none
+    // for this one.
+    assert_eq!(before(Uuid::now_v7()).await?, None);
+    let other = store
+        .create_watch(NewWatch::new("https://o.example", Schedule::Interval(60)))
+        .await?;
+    assert_eq!(store.snapshot_before(other.id, ids[2]).await?, None);
+    Ok(())
+}

@@ -1,0 +1,62 @@
+---
+source: crates/vigil-import/tests/lists.rs
+expression: plan.report
+---
+{
+  "format": "distill",
+  "notes": [
+    {
+      "kind": "info",
+      "option": "schedule",
+      "message": "the schedule of each monitor was not read, so every watch is checked every 1h"
+    }
+  ],
+  "items": [
+    {
+      "source": "Widget",
+      "status": "created",
+      "notes": []
+    },
+    {
+      "source": "News",
+      "status": "partial",
+      "notes": [
+        {
+          "kind": "skipped",
+          "option": "selections",
+          "message": "a selection of type \"js\" has no equivalent and was left out"
+        }
+      ]
+    },
+    {
+      "source": "https://plain.example/",
+      "status": "partial",
+      "notes": [
+        {
+          "kind": "skipped",
+          "option": "config",
+          "message": "the selections could not be read, so the whole page is watched"
+        }
+      ]
+    },
+    {
+      "source": "Not a page",
+      "status": "skipped",
+      "notes": [
+        {
+          "kind": "skipped",
+          "option": "uri",
+          "message": "only http and https addresses can be watched"
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "found": 4,
+    "created": 3,
+    "partial": 2,
+    "skipped": 1,
+    "tags_created": 2,
+    "targets_created": 0
+  }
+}

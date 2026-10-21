@@ -19,7 +19,7 @@ A pipeline is a JSON array of steps, run in order. Each step is an object with a
 | `css` | `selector`, `mode` (`include` default, or `remove`), `required` | Keep only the elements a CSS selector matches, or delete them. The page is parsed as HTML whatever its content type. |
 | `xpath` | `expr`, `mode`, `required` | The same with an XPath 1.0 expression. `include` can also select text nodes (`//ul/li/text()`), attribute values (`//a/@href`) and computed values (`count(//li)`, `string(//h1)`); `remove` deletes elements and text nodes. |
 | `jsonpath` | `expr`, `required` | A JSONPath query ([RFC 9535](https://www.rfc-editor.org/rfc/rfc9535), filters and functions included). The result is always an array of the matches. |
-| `jq` | `program` | A jq program ([jaq](https://github.com/01mf02/jaq)). The outputs are collected into an array; no output gives `[]`. `env`, `now`, `input`, `halt`, `debug` and other filters that read the machine or the clock are not available, so the same input always gives the same output. At most 10,000 outputs. |
+| `jq` | `program`, `raw` | A jq program ([jaq](https://github.com/01mf02/jaq)). The outputs are collected into an array; no output gives `[]`. With `"raw": true` they are printed as lines of text instead, as `jq -r` does (a string without its quotes, anything else as compact JSON); the result is then text, so a raw step must be the last of the JSON steps and text steps may follow it. `env`, `now`, `input`, `halt`, `debug` and other filters that read the machine or the clock are not available, so the same input always gives the same output. At most 10,000 outputs. |
 | `regex_extract` | `pattern`, `group` (default 0), `required` | Keep only what the regex matches, one match per line, or one capture group of each. |
 | `regex_replace` | `pattern`, `replacement` | Replace every match. `$1` and `${name}` refer to capture groups, `$$` is a dollar sign. A name runs as far as letters, digits and underscores go, so text right after a group needs braces (`${1}USD`, not `$1USD`); a group the pattern does not have is refused. |
 | `ignore_lines` | `patterns` | Drop lines that match any pattern. |
@@ -62,11 +62,12 @@ Conditions decide whether a change would notify. They never decide whether it is
 
 | Field | Meaning |
 |---|---|
-| `trigger_text` | Notify only if an added line matches one of these patterns. Empty means no restriction. |
-| `block_text` | Never notify if an added line matches one of these. Wins over `trigger_text`. |
+| `trigger_text` | Notify only if a line in `scope` matches one of these patterns. Empty means no restriction. |
+| `block_text` | Never notify if a line in `scope` matches one of these. Wins over `trigger_text`. |
 | `notify_on` | `added` (lines were only added), `removed` (only removed) and `changed` (both) each switch on or off; all default to on. |
+| `scope` | `added` (the default): the two lists look at added lines only. `text`: they look at every line of the new text, changed or not. |
 
-`{}` notifies about every change. Patterns look at added lines only, so a change that only removes lines never satisfies a trigger. `vigil preview` and `vigil check` say whether a change would notify and why.
+`{}` notifies about every change. With the default scope, patterns look at added lines only, so a change that only removes lines never satisfies a trigger. `vigil preview` and `vigil check` say whether a change would notify and why.
 
 ## Limits
 

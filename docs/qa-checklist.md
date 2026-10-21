@@ -64,6 +64,22 @@ http.server.HTTPServer(('127.0.0.1', 8001), H).serve_forever()"
 - [ ] *Pause* a watch: its row is dimmed and it is not checked; *Resume*.
 - [ ] *Delete* a watch: asks first; it disappears from the list.
 
+## API tokens and the API
+
+- [ ] *Settings* → *API tokens*: make one named `qa`; it is shown once, and reloading the page no longer shows it. The list shows its name and first characters.
+- [ ] `curl -s localhost:5800/api/v1/version` answers `401` with a JSON error. With `-H "x-api-key: <token>"` it answers `200` with the version and `"access": "token"`.
+- [ ] `curl -s -H "x-api-key: <token>" localhost:5800/api/docs/openapi.json` is a JSON description with the paths under `/api/v1`.
+- [ ] `curl -s -H "x-api-key: <token>" -H 'Content-Type: application/json' -d '{"url": "http://localhost:8000/", "pipeline": [{"type": "css", "selector": ".price"}]}' localhost:5800/api/v1/watch` answers `201`; the watch appears in the UI and is checked. The same with `"pipeline": [{"type": "css", "selector": "a["}]` answers `422` naming `pipeline`.
+- [ ] `POST .../watch/<id>/check?wait=true` answers `200`; `GET .../watch/<id>/diff` shows the change after you edit the page.
+- [ ] `vigil token list` shows the token without its value; *Revoke* in the UI (it asks first); the same `curl` now answers `401`.
+
+## Import
+
+- [ ] *Import*: paste `http://localhost:8000/` and one more address with `news` after it; *Preview* lists both, with the tag `news` to be made, and nothing exists yet in *Watches*. *Import 2 watches* makes them; pressing the button again (browser back, reload) says the preview has expired and makes nothing more.
+- [ ] Choose a file that is not any format (a PNG): the form is shown again with a message, and what was typed is still there.
+- [ ] `vigil import <a backup ZIP> --dry-run` prints a report; notes name what was left out and never print a token, a topic or a header value. Without `--dry-run` the watches appear; importing the same file again makes none.
+- [ ] Upload a file over `import.max_upload_bytes` (set it to `1000` for this): refused with a message, and no file is left in the data directory.
+
 ## Looks
 
 - [ ] Dark mode (OS setting): every page is readable; diffs, badges and tags keep their meaning.

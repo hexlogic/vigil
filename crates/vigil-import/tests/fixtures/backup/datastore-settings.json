@@ -1,0 +1,38 @@
+{
+ "app_guid": "00000000-0000-4000-8000-000000000000",
+ "settings": {
+  "application": {
+   "notification_urls": [
+    "json://hooks.example/default"
+   ],
+   "notification_body": "{{watch_url}} had a change.\n---\n{{diff}}\n---",
+   "global_ignore_text": [
+    "Copyright"
+   ],
+   "global_subtractive_selectors": [
+    ".cookie-banner"
+   ],
+   "history_snapshot_max_length": 25,
+   "all_paused": false,
+   "all_muted": false,
+   "tags": {}
+  },
+  "requests": {
+   "time_between_check": {
+    "weeks": null,
+    "days": null,
+    "hours": 3,
+    "minutes": null,
+    "seconds": null
+   },
+   "jitter_seconds": 7,
+   "timeout": 45,
+   "default_ua": {
+    "html_requests": "FixtureBrowser/1.0"
+   }
+  },
+  "headers": {
+   "Accept-Language": "uk"
+  }
+ }
+}

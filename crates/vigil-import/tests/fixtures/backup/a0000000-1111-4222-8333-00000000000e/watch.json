@@ -1,0 +1,72 @@
+{
+ "uuid": "a0000000-1111-4222-8333-00000000000e",
+ "date_created": 1700000014,
+ "url": "https://site-14.example/",
+ "title": "Extract two kinds",
+ "page_title": null,
+ "tags": [],
+ "paused": false,
+ "processor": "text_json_diff",
+ "fetch_backend": "system",
+ "method": "GET",
+ "headers": {},
+ "body": null,
+ "proxy": null,
+ "include_filters": [],
+ "subtractive_selectors": [],
+ "ignore_text": [],
+ "trigger_text": [],
+ "text_should_not_be_present": [],
+ "extract_text": [
+  "alpha.beta",
+  "/gam+a/"
+ ],
+ "extract_lines_containing": [],
+ "sort_text_alphabetically": false,
+ "remove_duplicate_lines": false,
+ "trim_text_whitespace": false,
+ "check_unique_lines": false,
+ "filter_text_added": true,
+ "filter_text_removed": true,
+ "filter_text_replaced": true,
+ "time_between_check": {
+  "weeks": null,
+  "days": null,
+  "hours": null,
+  "minutes": null,
+  "seconds": null
+ },
+ "time_between_check_use_default": true,
+ "notification_urls": [],
+ "notification_title": null,
+ "notification_body": null,
+ "notification_format": "System default",
+ "notification_muted": false,
+ "conditions": [
+  {
+   "field": "None",
+   "operator": "None",
+   "value": ""
+  }
+ ],
+ "conditions_match_logic": "ALL",
+ "browser_steps": [],
+ "ignore_status_codes": false,
+ "webdriver_delay": null,
+ "webdriver_js_execute_code": null,
+ "link_to_open": "",
+ "llm_intent": "",
+ "llm_change_summary": "",
+ "last_checked": 1760000000,
+ "previous_md5": "00000000000000000000000000000000",
+ "check_count": 7,
+ "fetch_time": 0.2,
+ "content-type": "text/html",
+ "consecutive_filter_failures": 0,
+ "follow_price_changes": true,
+ "in_stock_only": true,
+ "notification_screenshot": false,
+ "time_schedule_limit": {
+  "enabled": false
+ }
+}

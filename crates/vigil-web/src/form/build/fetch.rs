@@ -1,0 +1,69 @@
+//! The request settings of the form.
+
+use std::collections::BTreeMap;
+
+use vigil_core::{FetchSettings, FetchSettingsError, Method};
+
+use super::super::draft::Draft;
+use super::Problems;
+use crate::i18n::Translator;
+
+pub(super) fn fetch_settings(
+    draft: &Draft,
+    t: &Translator,
+    problems: &mut Problems,
+) -> FetchSettings {
+    let timeout_secs = match draft.timeout.trim() {
+        "" => None,
+        text => match text.parse::<u64>() {
+            Ok(n) if FetchSettings::TIMEOUT_SECS.contains(&n) => Some(n),
+            _ => {
+                problems.timeout = Some(t.t("form.err.timeout"));
+                None
+            }
+        },
+    };
+    let mut headers = BTreeMap::new();
+    for (number, line) in draft.headers.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let parsed = line.split_once(':').map(|(n, v)| (n.trim(), v.trim()));
+        match parsed {
+            Some((name, value)) if FetchSettings::header_is_valid(name, value) => {
+                headers.insert(name.to_owned(), value.to_owned());
+            }
+            _ => {
+                problems.headers = Some(t.t1("form.err.header", "n", number + 1));
+                break;
+            }
+        }
+    }
+    let user_agent = Some(draft.user_agent.trim().to_owned()).filter(|ua| !ua.is_empty());
+    let method = match draft.method.trim() {
+        "" => Method::default(),
+        text => text.parse().unwrap_or_else(|_| {
+            problems.method = Some(t.t("form.err.method"));
+            Method::default()
+        }),
+    };
+    // A body is sent exactly as typed, except that a form submits line breaks as CRLF.
+    let body = Some(draft.body.replace("\r\n", "\n")).filter(|body| !body.trim().is_empty());
+    let settings = FetchSettings {
+        timeout_secs,
+        user_agent,
+        headers,
+        method,
+        body,
+    };
+    if problems.method.is_none()
+        && let Err(error) = settings.validate()
+    {
+        problems.body = Some(t.t(match error {
+            FetchSettingsError::BodyWithGet => "form.err.body_get",
+            FetchSettingsError::BodyTooLarge => "form.err.body_size",
+        }));
+    }
+    settings
+}

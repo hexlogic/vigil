@@ -1,0 +1,11 @@
+<tr id="token-{{ row.id }}">
+<td class="name"><span class="title">{{ row.name }}</span></td>
+<td><span class="mono small">{{ row.prefix }}…</span></td>
+<td class="hide-narrow nowrap"><time datetime="{{ row.created.iso }}" title="{{ row.created.title }}">{{ row.created.text }}</time></td>
+<td class="hide-narrow nowrap">{% if row.used.iso.is_empty() %}<span class="muted">{{ row.used.text }}</span>{% else %}<time datetime="{{ row.used.iso }}" title="{{ row.used.title }}">{{ row.used.text }}</time>{% endif %}</td>
+<td class="right nowrap">
+<span class="actions">
+<button class="btn btn-small btn-danger" type="button" hx-get="{{ row.revoke_url }}" hx-target="#token-{{ row.id }}" hx-swap="outerHTML">{{ ctx.t("settings.revoke") }}</button>
+</span>
+</td>
+</tr>

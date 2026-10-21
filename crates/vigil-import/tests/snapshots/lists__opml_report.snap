@@ -1,0 +1,54 @@
+---
+source: crates/vigil-import/tests/lists.rs
+expression: plan.report
+---
+{
+  "format": "opml",
+  "notes": [],
+  "items": [
+    {
+      "source": "Example Blog",
+      "status": "created",
+      "notes": []
+    },
+    {
+      "source": "Other & Co",
+      "status": "created",
+      "notes": []
+    },
+    {
+      "source": "Deep",
+      "status": "created",
+      "notes": []
+    },
+    {
+      "source": "Loose",
+      "status": "created",
+      "notes": []
+    },
+    {
+      "source": "A page",
+      "status": "created",
+      "notes": []
+    },
+    {
+      "source": "Gopher",
+      "status": "skipped",
+      "notes": [
+        {
+          "kind": "skipped",
+          "option": "url",
+          "message": "only http and https addresses can be watched"
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "found": 6,
+    "created": 5,
+    "partial": 0,
+    "skipped": 1,
+    "tags_created": 2,
+    "targets_created": 0
+  }
+}

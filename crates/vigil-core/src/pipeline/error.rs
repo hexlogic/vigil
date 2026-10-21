@@ -52,6 +52,9 @@ pub enum PipelineErrorKind {
     /// A jq program is invalid.
     #[error("invalid jq program: {0}")]
     JqProgram(String),
+    /// A raw jq step is followed by another JSON step, which would get text and not JSON.
+    #[error("a raw jq step must be the last of the JSON steps")]
+    RawJqNotLast,
     /// A jq program failed while running.
     #[error("jq failed: {0}")]
     JqRuntime(String),

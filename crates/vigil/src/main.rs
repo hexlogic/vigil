@@ -12,7 +12,7 @@ use std::process::ExitCode;
 use anyhow::{Context, ensure};
 use clap::Parser;
 
-use crate::cli::{Cli, Command, NotifyCommand, WatchCommand};
+use crate::cli::{Cli, Command, NotifyCommand, TokenCommand, WatchCommand};
 use crate::config::Config;
 
 #[tokio::main]
@@ -73,6 +73,24 @@ async fn main() -> anyhow::Result<ExitCode> {
                 .await
                 .map(|()| ExitCode::SUCCESS),
             NotifyCommand::Test { target } => commands::notify::test(&config, &target).await,
+        },
+        Command::Import {
+            file,
+            format,
+            dry_run,
+            every,
+            allow_duplicates,
+        } => commands::import::run(&config, &file, format, dry_run, every, allow_duplicates).await,
+        Command::Token { command } => match command {
+            TokenCommand::Add { name } => commands::token::add(&config, &name)
+                .await
+                .map(|()| ExitCode::SUCCESS),
+            TokenCommand::List => commands::token::list(&config)
+                .await
+                .map(|()| ExitCode::SUCCESS),
+            TokenCommand::Remove { token } => commands::token::remove(&config, &token)
+                .await
+                .map(|()| ExitCode::SUCCESS),
         },
         Command::Check { id, no_notify } => commands::check::run(&config, &id, no_notify).await,
         Command::Diff { id } => commands::diff::run(&config, &id)

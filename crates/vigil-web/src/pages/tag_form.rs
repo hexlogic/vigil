@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 use uuid::Uuid;
 use vigil_scheduler::{IntervalError, parse_interval};
-use vigil_store::{NewTag, NotificationTarget, StoreError, Tag};
+use vigil_store::{NewTag, NotificationTarget, StoreError};
 
 use super::{TAG_COLORS, not_found, server_error};
 use crate::AppState;
@@ -15,7 +15,7 @@ use crate::form::Fields;
 use crate::page::{Ctx, Nav, render, render_with};
 
 /// Longest name of a tag.
-const NAME_LEN: usize = 50;
+pub(crate) const NAME_LEN: usize = 50;
 
 /// What was typed.
 struct Draft {
@@ -257,13 +257,8 @@ pub(crate) async fn create(State(state): State<AppState>, ctx: Ctx, body: String
             );
         }
     };
-    let saved = async {
-        let tag: Tag = state.store.create_tag(&new).await?;
-        state.store.set_tag_targets(tag.id, &chosen).await
-    }
-    .await;
-    match saved {
-        Ok(()) => Redirect::to(&ctx.url("/tags")).into_response(),
+    match state.store.create_tag_with_targets(&new, &chosen).await {
+        Ok(_) => Redirect::to(&ctx.url("/tags")).into_response(),
         Err(StoreError::Conflict(_)) => {
             let problems = taken(&ctx);
             render_with(
@@ -300,13 +295,8 @@ pub(crate) async fn update(
             );
         }
     };
-    let saved = async {
-        state.store.update_tag(uuid, &new).await?;
-        state.store.set_tag_targets(uuid, &chosen).await
-    }
-    .await;
-    match saved {
-        Ok(()) => Redirect::to(&ctx.url("/tags")).into_response(),
+    match state.store.replace_tag(uuid, &new, &chosen).await {
+        Ok(_) => Redirect::to(&ctx.url("/tags")).into_response(),
         Err(StoreError::Conflict(_)) => {
             let problems = taken(&ctx);
             render_with(

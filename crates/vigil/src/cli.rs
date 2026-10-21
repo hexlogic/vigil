@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand};
-use vigil_core::Processor;
+use vigil_core::{Method, Processor};
+use vigil_import::Format;
 use vigil_scheduler::parse_interval;
 
 /// Self-hosted website change detection.
@@ -41,6 +42,34 @@ pub enum Command {
         /// What to do with notification targets.
         #[command(subcommand)]
         command: NotifyCommand,
+    },
+    /// Import watches from a file, and say what could not be carried over.
+    ///
+    /// The file is a list of addresses (one per line, optionally followed by tags), an OPML
+    /// outline of feeds, a backup of another self-hosted change monitor (a ZIP or its older
+    /// JSON file), a urlwatch `urls.yaml`, or a Distill JSON export. The format is guessed
+    /// from the content unless `--format` says. Use `--dry-run` to see the report first.
+    Import {
+        /// The file to read, or `-` for standard input.
+        file: String,
+        /// What the file is: url-list, opml, backup, urlwatch or distill.
+        #[arg(long, value_name = "FORMAT")]
+        format: Option<Format>,
+        /// Show what would be imported and change nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Time between checks for sources that do not say, e.g. 30m, 1h, 1d.
+        #[arg(long, default_value = "1h", value_parser = parse_interval, value_name = "DURATION")]
+        every: Duration,
+        /// Make a watch even when one with its address exists.
+        #[arg(long)]
+        allow_duplicates: bool,
+    },
+    /// Make, list or revoke API tokens.
+    Token {
+        /// What to do with API tokens.
+        #[command(subcommand)]
+        command: TokenCommand,
     },
     /// Check a watch now and report what changed.
     ///
@@ -93,12 +122,23 @@ pub struct ContentArgs {
     /// Example: '{"trigger_text": ["in stock"]}'
     #[arg(long, value_name = "JSON|@FILE")]
     pub conditions: Option<String>,
+    /// The request method: GET (the default), POST, PUT, PATCH or DELETE.
+    #[arg(long, value_name = "METHOD")]
+    pub method: Option<Method>,
+    /// The request body, as text or @FILE; empty removes it. Needs a method other than GET.
+    /// Send a Content-Type header too if the server wants one.
+    #[arg(long, value_name = "TEXT|@FILE")]
+    pub body: Option<String>,
 }
 
 impl ContentArgs {
     /// True when none of the options was given.
     pub fn is_empty(&self) -> bool {
-        self.processor.is_none() && self.pipeline.is_none() && self.conditions.is_none()
+        self.processor.is_none()
+            && self.pipeline.is_none()
+            && self.conditions.is_none()
+            && self.method.is_none()
+            && self.body.is_none()
     }
 }
 
@@ -165,6 +205,26 @@ pub enum WatchCommand {
     Remove {
         /// Watch id, or the last 6 or more characters of it.
         id: String,
+    },
+}
+
+/// `vigil token` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum TokenCommand {
+    /// Make an API token and print it. It is shown only this once.
+    ///
+    /// Send it to the REST API in the x-api-key header. Capture it in a script with
+    /// `TOKEN=$(vigil token add ci)`.
+    Add {
+        /// A name for the token, such as "backup script".
+        name: String,
+    },
+    /// List API tokens (never the tokens themselves).
+    List,
+    /// Revoke a token; programs that use it stop working.
+    Remove {
+        /// Token name, or its id or the last 6 or more characters of it.
+        token: String,
     },
 }
 

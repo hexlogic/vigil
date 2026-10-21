@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t("import.title") }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ ctx.t("import.title") }}</h1></div>
+<p class="muted">{{ ctx.t("import.intro") }}</p>
+{% if let Some(message) = error %}<p class="notice notice-error" role="alert">{{ message }}</p>{% endif %}
+<form method="post" action="{{ action }}" enctype="multipart/form-data">
+<div class="field">
+<label for="file">{{ ctx.t("import.file") }}</label>
+<input type="file" id="file" name="file">
+<p class="hint">{{ ctx.t1("import.file_hint", "limit", limit) }}</p>
+</div>
+<div class="field">
+<label for="urls">{{ ctx.t("import.urls") }}</label>
+<textarea id="urls" name="urls" rows="4" spellcheck="false">{{ urls }}</textarea>
+<p class="hint">{{ ctx.t("import.urls_hint") }}</p>
+</div>
+<div class="grid-2">
+<div class="field">
+<label for="format">{{ ctx.t("import.format_label") }}</label>
+<select id="format" name="format">{% for option in formats %}<option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>{% endfor %}</select>
+</div>
+<div class="field">
+<label for="every">{{ ctx.t("import.every") }}</label>
+<input type="text" id="every" name="every" value="{{ every }}" autocomplete="off">
+<p class="hint">{{ ctx.t("import.every_hint") }}</p>
+</div>
+</div>
+<label class="check"><input type="checkbox" name="allow_duplicates"{% if allow_duplicates %} checked{% endif %}>{{ ctx.t("import.allow_duplicates") }}</label>
+<div class="row mt"><button class="btn btn-primary" type="submit">{{ ctx.t("import.preview") }}</button></div>
+</form>
+{% endblock %}

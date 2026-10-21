@@ -24,15 +24,18 @@ pub(crate) enum Nav {
     Notifications,
     /// Tags.
     Tags,
+    /// Importing watches.
+    Import,
     /// Settings.
     Settings,
 }
 
 /// The menu: the entry, where it leads and the key of its label.
-const MENU: [(Nav, &str, &str); 4] = [
+const MENU: [(Nav, &str, &str); 5] = [
     (Nav::Watches, "/", "nav.watches"),
     (Nav::Notifications, "/notifications", "nav.notifications"),
     (Nav::Tags, "/tags", "nav.tags"),
+    (Nav::Import, "/import", "nav.import"),
     (Nav::Settings, "/settings", "nav.settings"),
 ];
 

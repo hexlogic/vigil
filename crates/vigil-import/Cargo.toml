@@ -1,0 +1,36 @@
+[package]
+name = "vigil-import"
+description = "Reads watches from URL lists, OPML and other tools' exports, and reports what it could not carry over."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# OpenAPI schemas for the report, which the REST API sends.
+openapi = ["dep:utoipa"]
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+humantime = "2.4.0"
+quick-xml = "0.42.0"
+regex = "1.13.1"
+serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+utoipa = { version = "6.0.0", optional = true }
+vigil-core = { version = "0.1.0", path = "../vigil-core" }
+vigil-fetch = { version = "0.1.0", path = "../vigil-fetch" }
+vigil-notify = { version = "0.1.0", path = "../vigil-notify" }
+vigil-store = { version = "0.1.0", path = "../vigil-store" }
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }
+
+[dev-dependencies]
+insta = { version = "1.49.0", features = ["json"] }
+uuid = "1.28.0"
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }

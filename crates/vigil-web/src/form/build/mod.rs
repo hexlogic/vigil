@@ -1,17 +1,21 @@
 //! Checking what was typed, and turning it into a watch.
 
-use std::collections::{BTreeMap, HashMap};
+pub(crate) mod fetch;
+mod fields;
+mod steps;
+
+use std::collections::HashMap;
 
 use uuid::Uuid;
-use vigil_core::{
-    Conditions, FetchSettings, NotifyOn, Processor, Schedule, SelectMode, Step, Watch, WatchId,
-    WatchState,
-};
+use vigil_core::{Conditions, NotifyOn, Processor, Schedule, Scope, Watch, WatchId, WatchState};
 use vigil_notify::{describe_error, validate_template};
-use vigil_scheduler::{Checker, IntervalError, parse_interval};
+use vigil_scheduler::Checker;
 use vigil_store::{NewWatch, NotificationTarget, Tag};
 
-use super::draft::{Draft, StepDraft};
+use self::fetch::fetch_settings;
+use self::fields::{chosen, every, number};
+use self::steps::{lines, step_of};
+use super::draft::Draft;
 use crate::i18n::Translator;
 
 /// Interval when neither the form nor a tag says.
@@ -44,6 +48,8 @@ pub(crate) struct Problems {
     pub(crate) notify_on: Option<String>,
     pub(crate) timeout: Option<String>,
     pub(crate) headers: Option<String>,
+    pub(crate) method: Option<String>,
+    pub(crate) body: Option<String>,
     pub(crate) retention: Option<String>,
     pub(crate) template: Option<String>,
     pub(crate) tags: Option<String>,
@@ -65,6 +71,8 @@ impl Problems {
             &self.url,
             &self.timeout,
             &self.headers,
+            &self.method,
+            &self.body,
             &self.pipeline,
             &self.conditions,
         ]
@@ -90,6 +98,8 @@ impl Problems {
             &self.conditions,
             &self.timeout,
             &self.headers,
+            &self.method,
+            &self.body,
             &self.pipeline,
         ];
         !self.steps.is_empty() || fields.iter().any(|field| field.is_some())
@@ -106,6 +116,8 @@ impl Problems {
             &self.notify_on,
             &self.timeout,
             &self.headers,
+            &self.method,
+            &self.body,
             &self.retention,
             &self.template,
             &self.tags,
@@ -225,6 +237,11 @@ async fn evaluate(
             removed: draft.notify_removed,
             changed: draft.notify_changed,
         },
+        scope: if draft.scope_text {
+            Scope::Text
+        } else {
+            Scope::Added
+        },
     };
     if !conditions.notify_on.added && !conditions.notify_on.removed && !conditions.notify_on.changed
     {
@@ -304,177 +321,4 @@ pub(crate) fn preview_watch(new: &NewWatch, id: WatchId) -> Watch {
         updated_at: 0,
         state: WatchState::default(),
     }
-}
-
-/// The ids in `chosen` that exist among `known`; anything else is a problem.
-fn chosen(
-    chosen: &[String],
-    known: impl Iterator<Item = Uuid>,
-    problem: &mut Option<String>,
-    t: &Translator,
-) -> Vec<Uuid> {
-    let known: Vec<Uuid> = known.collect();
-    let mut out = Vec::new();
-    for text in chosen {
-        match text.parse::<Uuid>() {
-            Ok(id) if known.contains(&id) => {
-                if !out.contains(&id) {
-                    out.push(id);
-                }
-            }
-            _ => *problem = Some(t.t("form.err.unknown_choice")),
-        }
-    }
-    out
-}
-
-/// The interval: what was typed, else the shortest default of the chosen tags, else an hour.
-fn every(
-    draft: &Draft,
-    tags: &[Tag],
-    chosen: &[Uuid],
-    t: &Translator,
-    problems: &mut Problems,
-) -> u64 {
-    let text = draft.every.trim();
-    if text.is_empty() {
-        return tags
-            .iter()
-            .filter(|tag| chosen.contains(&tag.id))
-            .filter_map(|tag| tag.default_interval_secs)
-            .min()
-            .unwrap_or(DEFAULT_EVERY_SECS);
-    }
-    match parse_interval(text) {
-        Ok(every) => every.as_secs(),
-        Err(error) => {
-            problems.every = Some(t.t(match error {
-                IntervalError::Invalid(_) => "form.err.every_invalid",
-                IntervalError::TooShort => "form.err.every_short",
-                IntervalError::TooLong => "form.err.every_long",
-            }));
-            DEFAULT_EVERY_SECS
-        }
-    }
-}
-
-/// A whole number typed in a field, or `default` when it is empty.
-fn number(text: &str, default: u32, problem: &mut Option<String>, t: &Translator) -> u32 {
-    match text.trim() {
-        "" => default,
-        text => text.parse().unwrap_or_else(|_| {
-            *problem = Some(t.t("form.err.number"));
-            default
-        }),
-    }
-}
-
-fn fetch_settings(draft: &Draft, t: &Translator, problems: &mut Problems) -> FetchSettings {
-    let timeout_secs = match draft.timeout.trim() {
-        "" => None,
-        text => match text.parse::<u64>() {
-            Ok(n) if (1..=3600).contains(&n) => Some(n),
-            _ => {
-                problems.timeout = Some(t.t("form.err.timeout"));
-                None
-            }
-        },
-    };
-    let mut headers = BTreeMap::new();
-    for (number, line) in draft.headers.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let parsed = line.split_once(':').map(|(n, v)| (n.trim(), v.trim()));
-        match parsed {
-            Some((name, value))
-                if !name.is_empty()
-                    && name.bytes().all(|b| b.is_ascii_graphic())
-                    && !value.chars().any(char::is_control) =>
-            {
-                headers.insert(name.to_owned(), value.to_owned());
-            }
-            _ => {
-                problems.headers = Some(t.t1("form.err.header", "n", number + 1));
-                break;
-            }
-        }
-    }
-    let user_agent = Some(draft.user_agent.trim().to_owned()).filter(|ua| !ua.is_empty());
-    FetchSettings {
-        timeout_secs,
-        user_agent,
-        headers,
-    }
-}
-
-/// The lines of a text area, without blanks.
-fn lines(text: &str) -> Vec<String> {
-    text.lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
-/// A filter from its fields; the key of the problem if it lacks one.
-fn step_of(step: &StepDraft) -> Result<Step, &'static str> {
-    let need = |text: &str| -> Result<String, &'static str> {
-        if text.trim().is_empty() {
-            Err("form.err.step_empty")
-        } else {
-            Ok(text.trim().to_owned())
-        }
-    };
-    let mode = if step.mode == "remove" {
-        SelectMode::Remove
-    } else {
-        SelectMode::Include
-    };
-    Ok(match step.kind.as_str() {
-        "css" => Step::Css {
-            selector: need(&step.selector)?,
-            mode,
-            required: step.required,
-        },
-        "xpath" => Step::XPath {
-            expr: need(&step.expr)?,
-            mode,
-            required: step.required,
-        },
-        "jsonpath" => Step::JsonPath {
-            expr: need(&step.expr)?,
-            required: step.required,
-        },
-        "jq" => Step::Jq {
-            program: need(&step.program)?,
-        },
-        "regex_extract" => Step::RegexExtract {
-            pattern: need(&step.pattern)?,
-            group: match step.group.trim() {
-                "" => 0,
-                text => text.parse().map_err(|_| "form.err.step_group")?,
-            },
-            required: step.required,
-        },
-        "regex_replace" => Step::RegexReplace {
-            pattern: need(&step.pattern)?,
-            // An empty replacement deletes the matches, which is a fine thing to want.
-            replacement: step.replacement.clone(),
-        },
-        "ignore_lines" => {
-            let patterns = lines(&step.patterns);
-            if patterns.is_empty() {
-                return Err("form.err.step_empty");
-            }
-            Step::IgnoreLines { patterns }
-        }
-        "sort" => Step::Sort {},
-        "unique" => Step::Unique {},
-        "trim" => Step::Trim {},
-        "collapse_whitespace" => Step::CollapseWhitespace {},
-        "lowercase" => Step::Lowercase {},
-        _ => return Err("form.err.step_kind"),
-    })
 }

@@ -1,7 +1,7 @@
 //! The form for adding and editing a watch: reading what was typed, checking it, and turning it
 //! into a watch.
 
-mod build;
+pub(crate) mod build;
 mod draft;
 
 pub(crate) use build::{Built, Known, Problems, build, build_for_preview, preview_watch};

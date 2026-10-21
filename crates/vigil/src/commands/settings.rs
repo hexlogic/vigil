@@ -5,6 +5,7 @@ use serde::de::DeserializeOwned;
 use vigil_core::{Pipeline, PipelineErrorKind, Watch};
 use vigil_store::NewWatch;
 
+use super::notify::read_text;
 use crate::cli::ContentArgs;
 
 /// Parse the value of a `--pipeline` or `--conditions` option: JSON, or `@path` to a file
@@ -31,6 +32,13 @@ pub fn apply(settings: &mut NewWatch, args: &ContentArgs) -> anyhow::Result<()> 
     if let Some(value) = &args.conditions {
         settings.conditions = read_json("conditions", value)?;
     }
+    if let Some(method) = args.method {
+        settings.fetch.method = method;
+    }
+    if let Some(value) = &args.body {
+        let body = read_text("body", value)?;
+        settings.fetch.body = Some(body).filter(|body| !body.is_empty());
+    }
     validate(settings)
 }
 
@@ -43,12 +51,17 @@ pub fn overridden(watch: &Watch, args: &ContentArgs) -> anyhow::Result<Watch> {
         processor: settings.processor,
         pipeline: settings.pipeline,
         conditions: settings.conditions,
+        fetch: settings.fetch,
         ..watch.clone()
     })
 }
 
-/// Check a watch's processor, steps and conditions without fetching anything.
+/// Check a watch's request settings, processor, steps and conditions without fetching anything.
 pub fn validate(settings: &NewWatch) -> anyhow::Result<()> {
+    settings
+        .fetch
+        .validate()
+        .map_err(|error| anyhow!("invalid request settings: {error}"))?;
     if let Err(error) = Pipeline::new(settings.processor, &settings.pipeline) {
         let hint = match error.kind() {
             PipelineErrorKind::WrongProcessor { .. } | PipelineErrorKind::OutOfOrder { .. } => {
@@ -85,6 +98,8 @@ mod tests {
             processor,
             pipeline: pipeline.map(str::to_owned),
             conditions: conditions.map(str::to_owned),
+            method: None,
+            body: None,
         }
     }
 
@@ -141,6 +156,43 @@ mod tests {
         )?;
         assert_eq!(settings.pipeline, [Step::Lowercase {}]);
         Ok(())
+    }
+
+    #[test]
+    fn method_and_body_are_set_read_from_files_and_removed() -> anyhow::Result<()> {
+        let mut settings = fresh();
+        let mut given = args(None, None, None);
+        given.method = Some(vigil_core::Method::Post);
+        given.body = Some("q=widgets".into());
+        apply(&mut settings, &given)?;
+        assert_eq!(settings.fetch.method, vigil_core::Method::Post);
+        assert_eq!(settings.fetch.body.as_deref(), Some("q=widgets"));
+
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("body.json");
+        std::fs::write(&path, r#"{"page": 2}"#)?;
+        let mut given = args(None, None, None);
+        given.body = Some(format!("@{}", path.display()));
+        apply(&mut settings, &given)?;
+        assert_eq!(settings.fetch.body.as_deref(), Some(r#"{"page": 2}"#));
+
+        let mut given = args(None, None, None);
+        given.body = Some(String::new());
+        apply(&mut settings, &given)?;
+        assert_eq!(settings.fetch.body, None);
+        assert_eq!(settings.fetch.method, vigil_core::Method::Post);
+        Ok(())
+    }
+
+    #[test]
+    fn a_body_with_get_is_refused() {
+        let mut given = args(None, None, None);
+        given.body = Some("q=1".into());
+        let text = message(apply(&mut fresh(), &given));
+        assert_eq!(
+            text,
+            "invalid request settings: a request body needs POST, PUT, PATCH or DELETE, not GET"
+        );
     }
 
     #[test]

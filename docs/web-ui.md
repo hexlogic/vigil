@@ -17,7 +17,8 @@ The first run makes up an admin password and prints it once in the log; `VIGIL_A
 | **Changes** (`/watch/<id>/diff?from=<version>&to=<version>`) | The difference between two versions, inline or side by side, with the changed words marked. This is the address notifications link to. |
 | **Notifications** | Targets: add, edit, turn on or off, delete, and *Send test*. Addresses are shown with their secrets replaced by `***`, and are never put back in a form. |
 | **Tags** | Name, colour, a default interval for watches added with the tag, and default targets that are notified about all its watches. |
-| **Settings** | Language, password, *Sign out everywhere*, version, and whether `base_url` is set. |
+| **Import** | Choose a file or paste addresses, read the preview of what would be made and what could not be carried over, then press the button. See [migrating.md](migrating.md). |
+| **Settings** | Language, password, *Sign out everywhere*, **API tokens** (list, make one from a name, revoke), version, and whether `base_url` is set. A new token is shown once, on the page that answers; with sign-in off the API needs no token and the page says so. |
 
 ## Behind a reverse proxy
 

@@ -253,3 +253,151 @@ async fn a_change_goes_to_the_watch_targets_and_the_tag_targets_once_each() -> T
     assert_eq!(direct_only, ["direct", "shared"]);
     Ok(())
 }
+
+#[tokio::test]
+async fn a_watchs_links_are_replaced_together_or_not_at_all() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let id = watch(&store).await?;
+    let (news, shops) = (
+        store.create_tag(&tag("news")).await?,
+        store.create_tag(&tag("shops")).await?,
+    );
+    let (phone, mail) = (
+        target(&store, "phone").await?,
+        target(&store, "mail").await?,
+    );
+
+    store
+        .set_watch_links(id, &[news.id, news.id], &[phone], Some("{{ watch_name }}"))
+        .await?;
+    let names = |tags: Vec<vigil_store::Tag>| tags.into_iter().map(|t| t.name).collect::<Vec<_>>();
+    assert_eq!(names(store.tags_for_watch(id).await?), ["news"]);
+    let linked = store.targets_for_watch(id, false).await?;
+    assert_eq!(
+        linked.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+        ["phone"]
+    );
+    assert_eq!(
+        store.get_watch(id).await?.notification_template.as_deref(),
+        Some("{{ watch_name }}")
+    );
+
+    store
+        .set_watch_links(id, &[shops.id], &[mail, phone], None)
+        .await?;
+    assert_eq!(names(store.tags_for_watch(id).await?), ["shops"]);
+    assert_eq!(store.targets_for_watch(id, false).await?.len(), 2);
+    assert_eq!(store.get_watch(id).await?.notification_template, None);
+
+    // An unknown target refuses the whole change, including the tags and the template.
+    let ghost = Uuid::now_v7();
+    let error = store
+        .set_watch_links(id, &[news.id], &[ghost], Some("x"))
+        .await
+        .err()
+        .ok_or("an unknown target was accepted")?;
+    assert!(matches!(error, StoreError::NotFound(_)), "{error}");
+    assert_eq!(names(store.tags_for_watch(id).await?), ["shops"]);
+    assert_eq!(store.get_watch(id).await?.notification_template, None);
+
+    // An unknown watch is not found either, and an edit's check state is left alone.
+    let missing = WatchId::from_uuid(Uuid::now_v7());
+    assert!(matches!(
+        store.set_watch_links(missing, &[], &[], None).await,
+        Err(StoreError::NotFound(_))
+    ));
+    let before = store.get_watch(id).await?.updated_at;
+    store.set_watch_links(id, &[], &[], None).await?;
+    assert_eq!(store.get_watch(id).await?.updated_at, before);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_tag_is_made_with_its_targets_or_not_at_all() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let phone = target(&store, "phone").await?;
+    let made = store
+        .create_tag_with_targets(&tag("shops"), &[phone, phone])
+        .await?;
+    assert_eq!(store.tag_targets(made.id).await?, [phone]);
+
+    // An unknown target and a taken name each leave no new tag and the old one as it was.
+    assert!(matches!(
+        store
+            .create_tag_with_targets(&tag("news"), &[Uuid::now_v7()])
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert!(matches!(
+        store.create_tag_with_targets(&tag("shops"), &[]).await,
+        Err(StoreError::Conflict(_))
+    ));
+    let names: Vec<_> = store
+        .list_tags()
+        .await?
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    assert_eq!(names, ["shops"]);
+    assert_eq!(store.tag_targets(made.id).await?, [phone]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_tag_is_replaced_with_its_targets_or_not_at_all() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let (a, b) = (target(&store, "a").await?, target(&store, "b").await?);
+    let shops = store.create_tag_with_targets(&tag("shops"), &[a]).await?;
+    let news = store.create_tag_with_targets(&tag("news"), &[]).await?;
+
+    let mut green = tag("shops");
+    green.color = "green".to_owned();
+    let replaced = store.replace_tag(shops.id, &green, &[b]).await?;
+    assert_eq!(replaced.color, "green");
+    assert_eq!(store.tag_targets(shops.id).await?, [b]);
+
+    // The new settings are rolled back with the failed links.
+    let mut renamed = tag("shops 2");
+    renamed.default_interval_secs = Some(60);
+    assert!(matches!(
+        store
+            .replace_tag(shops.id, &renamed, &[Uuid::now_v7()])
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert_eq!(store.get_tag(shops.id).await?, replaced);
+    assert_eq!(store.tag_targets(shops.id).await?, [b]);
+
+    // A name that another tag has changes nothing either, and neither does an unknown tag.
+    assert!(matches!(
+        store.replace_tag(news.id, &tag("shops"), &[a]).await,
+        Err(StoreError::Conflict(_))
+    ));
+    assert_eq!(store.get_tag(news.id).await?, news);
+    assert!(store.tag_targets(news.id).await?.is_empty());
+    assert!(matches!(
+        store.replace_tag(Uuid::now_v7(), &tag("x"), &[]).await,
+        Err(StoreError::NotFound(_))
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn every_tags_targets_are_listed_with_one_query() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let (a, b) = (target(&store, "a").await?, target(&store, "b").await?);
+    let one = store.create_tag_with_targets(&tag("one"), &[a, b]).await?;
+    let two = store.create_tag_with_targets(&tag("two"), &[b]).await?;
+    let none = store.create_tag_with_targets(&tag("none"), &[]).await?;
+
+    let all = store.tag_target_ids().await?;
+    let mut for_one = all.get(&one.id).cloned().unwrap_or_default();
+    for_one.sort();
+    let mut expected = vec![a, b];
+    expected.sort();
+    assert_eq!(for_one, expected);
+    assert_eq!(all.get(&two.id), Some(&vec![b]));
+    // A tag with no targets is absent, as in the other listing queries.
+    assert!(!all.contains_key(&none.id));
+    Ok(())
+}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t("import.report_title") }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ ctx.t("import.report_title") }}</h1></div>
+<p class="muted">{{ ctx.t1("import.read_as", "format", format) }}</p>
+<p>{% for line in summary %}{% if !loop.first %} · {% endif %}{{ line }}{% endfor %}</p>
+{% for note in notes %}<p class="{{ note.kind }}"><strong>{{ note.label }}</strong> <span class="mono small">{{ note.option }}</span>: {{ note.message }}</p>{% endfor %}
+<div class="row mt">
+{% if can_apply %}
+<form method="post" action="{{ apply_url }}"><input type="hidden" name="plan" value="{{ plan }}"><button class="btn btn-primary" type="submit">{{ apply_label }}</button></form>
+{% else %}
+<span class="muted">{{ ctx.t("import.nothing_to_make") }}</span>
+{% endif %}
+<a class="btn" href="{{ back_url }}">{{ ctx.t("import.start_over") }}</a>
+</div>
+{% for item in items %}
+<section class="panel">
+<h2><span class="{{ item.status_class }}">{{ item.status_label }}</span> {{ item.source }}</h2>
+{% for note in item.notes %}<p class="{{ note.kind }}"><strong>{{ note.label }}</strong> <span class="mono small">{{ note.option }}</span>: {{ note.message }}</p>{% endfor %}
+</section>
+{% endfor %}
+{% endblock %}

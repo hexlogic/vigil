@@ -713,3 +713,36 @@ async fn an_edited_pipeline_runs_even_when_the_server_answers_304() -> TestResul
     assert_eq!(diff.added_count(), 0);
     Ok(())
 }
+
+#[tokio::test]
+async fn a_post_watch_sends_its_body_and_never_asks_for_a_304() -> TestResult {
+    let s = setup().await?;
+    Mock::given(method("POST"))
+        .and(wiremock::matchers::body_string("page=1"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("etag", "\"v1\"")
+                .set_body_raw(PAGE_V1, "text/html; charset=utf-8"),
+        )
+        .mount(&s.server)
+        .await;
+    let watch = add_with(&s, |new| {
+        new.fetch.method = vigil_core::Method::Post;
+        new.fetch.body = Some("page=1".to_owned());
+    })
+    .await?;
+    for _ in 0..2 {
+        let CheckResult::Failed { message, .. } = s.checker.check(watch.id).await?.result else {
+            continue;
+        };
+        return Err(message.into());
+    }
+    let requests = s.server.received_requests().await.unwrap_or_default();
+    assert_eq!(requests.len(), 2);
+    for request in &requests {
+        assert_eq!(request.method.as_str(), "POST");
+        assert!(request.headers.get("if-none-match").is_none());
+    }
+    assert_eq!(s.store.list_snapshots(watch.id, 10).await?.len(), 1);
+    Ok(())
+}

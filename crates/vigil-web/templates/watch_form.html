@@ -65,6 +65,10 @@
 {% if let Some(message) = problems.conditions %}<p class="error" role="alert">{{ message }}</p>{% endif %}
 </div>
 <div class="field">
+<label class="check"><input type="checkbox" name="scope_text"{% if draft.scope_text %} checked{% endif %}>{{ ctx.t("form.scope_text") }}</label>
+<p class="hint">{{ ctx.t("form.scope_hint") }}</p>
+</div>
+<div class="field">
 <label>{{ ctx.t("form.notify_on") }}</label>
 <label class="check"><input type="checkbox" name="notify_added"{% if draft.notify_added %} checked{% endif %}>{{ ctx.t("form.notify_added") }}</label>
 <label class="check"><input type="checkbox" name="notify_removed"{% if draft.notify_removed %} checked{% endif %}>{{ ctx.t("form.notify_removed") }}</label>
@@ -92,7 +96,7 @@
 {% if let Some(message) = problems.tags %}<p class="error" role="alert">{{ message }}</p>{% endif %}
 </fieldset>
 
-<details{% if problems.timeout.is_some() || problems.headers.is_some() || problems.jitter.is_some() || problems.retention.is_some() %} open{% endif %}>
+<details{% if problems.timeout.is_some() || problems.headers.is_some() || problems.method.is_some() || problems.body.is_some() || problems.jitter.is_some() || problems.retention.is_some() %} open{% endif %}>
 <summary>{{ ctx.t("form.advanced") }}</summary>
 <fieldset>
 <legend>{{ ctx.t("form.request") }}</legend>
@@ -113,6 +117,19 @@
 <textarea id="headers" name="headers" rows="3" spellcheck="false" placeholder="Accept-Language: en"{% if problems.headers.is_some() %} aria-invalid="true"{% endif %}>{{ draft.headers }}</textarea>
 {% if let Some(message) = problems.headers %}<p class="error" role="alert">{{ message }}</p>{% endif %}
 <p class="hint">{{ ctx.t("form.headers_hint") }}</p>
+</div>
+<div class="field">
+<label for="method">{{ ctx.t("form.method") }}</label>
+<select id="method" name="method">
+{% for name in ["GET", "POST", "PUT", "PATCH", "DELETE"] %}<option value="{{ name }}"{% if draft.method == *name %} selected{% endif %}>{{ name }}</option>{% endfor %}
+</select>
+{% if let Some(message) = problems.method %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+</div>
+<div class="field">
+<label for="body">{{ ctx.t("form.body") }}</label>
+<textarea id="body" name="body" rows="3" spellcheck="false"{% if problems.body.is_some() %} aria-invalid="true"{% endif %}>{{ draft.body }}</textarea>
+{% if let Some(message) = problems.body %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<p class="hint">{{ ctx.t("form.body_hint") }}</p>
 </div>
 <div class="grid-2">
 <div class="field">

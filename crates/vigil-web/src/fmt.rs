@@ -45,6 +45,12 @@ pub(crate) fn when(t: &Translator, at: Option<i64>, now: i64) -> TimeView {
     }
 }
 
+/// A moment (unix milliseconds) as RFC 3339 in UTC: `2027-01-15T08:00:00Z`.
+pub(crate) fn rfc3339(at: i64) -> String {
+    let moment = UNIX_EPOCH + Duration::from_millis(u64::try_from(at).unwrap_or(0));
+    humantime::format_rfc3339_seconds(moment).to_string()
+}
+
 /// A moment (unix milliseconds) to read: `2027-01-15 08:00:00 UTC`.
 pub(crate) fn exact(at: i64) -> String {
     let moment = UNIX_EPOCH + Duration::from_millis(u64::try_from(at).unwrap_or(0));

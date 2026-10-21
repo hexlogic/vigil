@@ -6,7 +6,7 @@ Vigil reads configuration from, lowest to highest precedence:
 2. A TOML file: `--config <path>` or `VIGIL_CONFIG`, otherwise `./vigil.toml` if it exists.
 3. `VIGIL_*` environment variables (nested keys are separated by `__`).
 
-See [`vigil.example.toml`](../vigil.example.toml) for a complete example. The web UI is described in [web-ui.md](web-ui.md).
+See [`vigil.example.toml`](../vigil.example.toml) for a complete example. The web UI is described in [web-ui.md](web-ui.md), the REST API in [api.md](api.md).
 
 | Key | Env var | Default | Description |
 |---|---|---|---|
@@ -19,6 +19,7 @@ See [`vigil.example.toml`](../vigil.example.toml) for a complete example. The we
 | `fetch.timeout_secs` | `VIGIL_FETCH__TIMEOUT_SECS` | `30` | Request timeout for watches that do not set their own. |
 | `fetch.max_body_bytes` | `VIGIL_FETCH__MAX_BODY_BYTES` | `10485760` | Largest accepted response body, measured after decompression. Larger responses fail the check. |
 | `fetch.user_agent` | `VIGIL_FETCH__USER_AGENT` | `vigil/<version>` | `User-Agent` header sent with every request. |
+| `import.max_upload_bytes` | `VIGIL_IMPORT__MAX_UPLOAD_BYTES` | `268435456` | Largest file the web UI and the API accept for an import (256 MiB). Text formats are limited to 16 MiB in any case. See [migrating.md](migrating.md). |
 | `scheduler.concurrency` | `VIGIL_SCHEDULER__CONCURRENCY` | `8` | Checks running at once. |
 | `scheduler.per_host` | `VIGIL_SCHEDULER__PER_HOST` | `2` | Checks running at once against the same host and port. |
 
@@ -49,6 +50,10 @@ Behind a reverse proxy, set `base_url` to the public address. A path in it (`htt
 | `vigil notify list` | Show the targets with their credentials replaced by `***`, whether they are enabled and how many watches use them. |
 | `vigil notify remove <target>` | Delete a target. A `<target>` is its name, its id or the last six or more characters of it. |
 | `vigil notify test <target>` | Send a test notification and say whether it arrived. Not retried; exits non-zero if it failed. |
+| `vigil import <file\|-> [--format <F>] [--dry-run] [--every <interval>] [--allow-duplicates]` | Read a list of addresses, OPML, a backup of another change monitor, a urlwatch `urls.yaml` or a Distill export, print what it holds and what could not be carried over, and make the watches. `--dry-run` changes nothing. See [migrating.md](migrating.md). |
+| `vigil token add <name>` | Make an API token and print it, alone on stdout, so `TOKEN=$(vigil token add ci)` works. It is shown only this once; only its hash is kept. |
+| `vigil token list` | Show the tokens by name and first characters, with when each was made and last used. |
+| `vigil token remove <token>` | Revoke a token. A `<token>` is its name, its id or the last six or more characters of it. |
 | `vigil check <id> [--no-notify]` | Check a watch now. A change the watch's conditions want announced is sent to its targets, and the command waits for that (retries included) before it exits; `--no-notify` skips it. A delivery that fails is reported on stderr and does not change the exit code. Prints `baseline stored`, `unchanged` or `changed, +N -M lines` (with `no notification: <reason>` when the watch's conditions hold the change back); exits non-zero if the page could not be checked. |
 | `vigil diff <id>` | Show the difference between the two newest snapshots as a unified diff, in color on a terminal (`NO_COLOR` turns it off). |
 
@@ -65,6 +70,8 @@ An `<id>` is the full id from `vigil watch list` or its last six or more charact
 | `--processor text\|json\|feed` | How the response becomes text. `text` (the default) turns HTML into readable text and uses other content as is; `json` prints JSON with sorted keys; `feed` lists the entries of an RSS, Atom or JSON feed. |
 | `--pipeline <JSON\|@FILE>` | Steps applied after the processor: a JSON array, or `@path` to a file holding one. See [pipeline.md](pipeline.md). |
 | `--conditions <JSON\|@FILE>` | Which changes notify: a JSON object, or `@path`. See [pipeline.md](pipeline.md#conditions). |
+| `--method <METHOD>` | The request method: `GET` (the default), `POST`, `PUT`, `PATCH` or `DELETE`. |
+| `--body <TEXT\|@FILE>` | The request body, sent as given; empty removes it. Needs a method other than `GET`. No `Content-Type` is added, so a server that wants one needs it as a header (set in the web form). |
 
 ```sh
 vigil watch add https://shop.example/widget --every 15m \
@@ -75,4 +82,4 @@ vigil preview <id>        # what would a check store, and would it notify?
 
 ## How a check works
 
-The page is fetched (redirects followed up to 10 hops, responses over `fetch.max_body_bytes` rejected), decoded (the charset comes from a byte-order mark, the `Content-Type` header, or a declaration in the first kilobyte of an HTML or XML page, in that order), turned into text by the watch's processor, run through its pipeline steps, and normalised (line endings, trailing spaces and blank runs). Processing a response (building the steps and running them) runs on its own thread, and a check whose processing takes more than 30 seconds fails. A snapshot is stored only when the text differs from the previous one; the watch's conditions then decide whether the change would notify, but the change is stored either way. When the server sent an `ETag` or `Last-Modified`, the next request is conditional and a `304` counts as unchanged. A failed check is recorded on the watch and the next attempt waits `interval x 2^failures`, at most 6 hours. Each run is delayed by a random jitter of up to a tenth of the interval (at most 60 seconds). Only `http` and `https` URLs are fetched.
+The page is fetched (redirects followed up to 10 hops, responses over `fetch.max_body_bytes` rejected), decoded (the charset comes from a byte-order mark, the `Content-Type` header, or a declaration in the first kilobyte of an HTML or XML page, in that order), turned into text by the watch's processor, run through its pipeline steps, and normalised (line endings, trailing spaces and blank runs). Processing a response (building the steps and running them) runs on its own thread, and a check whose processing takes more than 30 seconds fails. A snapshot is stored only when the text differs from the previous one; the watch's conditions then decide whether the change would notify, but the change is stored either way. When the server sent an `ETag` or `Last-Modified` for a `GET`, the next request is conditional and a `304` counts as unchanged. A failed check is recorded on the watch and the next attempt waits `interval x 2^failures`, at most 6 hours. Each run is delayed by a random jitter of up to a tenth of the interval (at most 60 seconds). Only `http` and `https` URLs are fetched.

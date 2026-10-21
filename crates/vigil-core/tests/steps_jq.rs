@@ -269,3 +269,58 @@ fn jq_text_with_bytes_that_are_not_utf8_is_cleaned() -> TestResult {
     );
     Ok(())
 }
+
+fn jq_raw(program: &str, body: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let steps = serde_json::json!([{"type": "jq", "program": program, "raw": true}]);
+    render_with(Processor::Json, &steps.to_string(), body)
+}
+
+#[test]
+fn raw_jq_prints_one_line_per_output() -> TestResult {
+    // The shape a listing watch uses: one summary line per record, built with string
+    // interpolation, a default and a slice.
+    let program = r#".data[] | "\(.title | gsub("\\s+"; " ")) | \(.procuringEntity.name) | \(.value.amount) \(.value.currency) | until \((.tenderPeriod.endDate // "?")[0:10])""#;
+    insta::assert_snapshot!(jq_raw(program, TENDERS)?);
+    Ok(())
+}
+
+#[test]
+fn raw_jq_writes_strings_bare_and_everything_else_as_compact_json() -> TestResult {
+    let text = jq_raw(r#""a", 2, {"k": [1, "x"]}, null, true"#, "{}")?;
+    assert_eq!(text, "a\n2\n{\"k\":[1,\"x\"]}\nnull\ntrue\n");
+    Ok(())
+}
+
+#[test]
+fn raw_jq_with_no_output_is_empty_text() -> TestResult {
+    assert_eq!(jq_raw("empty", TENDERS)?, "");
+    Ok(())
+}
+
+#[test]
+fn raw_jq_may_be_followed_by_text_steps_but_not_by_json_steps() -> TestResult {
+    let steps = serde_json::json!([
+        {"type": "jq", "program": ".data[].title", "raw": true},
+        {"type": "sort"}
+    ]);
+    let sorted = render_with(Processor::Json, &steps.to_string(), TENDERS)?;
+    let lines: Vec<&str> = sorted.lines().collect();
+    let mut expected = lines.clone();
+    expected.sort_unstable();
+    assert_eq!(lines.len(), 3);
+    assert_eq!(lines, expected);
+
+    let steps = serde_json::json!([
+        {"type": "jq", "program": ".data", "raw": true},
+        {"type": "jsonpath", "expr": "$[*]"}
+    ]);
+    let error = render_with(Processor::Json, &steps.to_string(), TENDERS)
+        .err()
+        .map(|e| e.to_string())
+        .unwrap_or_default();
+    assert_eq!(
+        error,
+        "step 1 (jq): a raw jq step must be the last of the JSON steps"
+    );
+    Ok(())
+}

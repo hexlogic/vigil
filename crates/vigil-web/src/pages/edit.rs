@@ -1,16 +1,13 @@
 //! Adding a watch and changing one.
 
-use std::collections::HashSet;
-
 use askama::Template;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
-use uuid::Uuid;
-use vigil_core::{Watch, WatchId};
+use vigil_core::WatchId;
 use vigil_notify::Channel;
-use vigil_store::{NewWatch, NotificationTarget, StoreError, Tag};
+use vigil_store::{NewWatch, NotificationTarget, StoreError, Tag, WatchLinks};
 
 use super::{not_found, parse_id, server_error, tag_class};
 use crate::AppState;
@@ -203,13 +200,14 @@ pub(crate) async fn create(State(state): State<AppState>, ctx: Ctx, body: String
             );
         }
     };
-    let watch = match state.store.create_watch(built.new.clone()).await {
+    let watch = match state
+        .store
+        .create_watch_with_links(&built.new, false, &links_of(&built))
+        .await
+    {
         Ok(watch) => watch,
         Err(error) => return server_error(ctx, &error),
     };
-    if let Err(error) = save_links(&state, watch.id, &built, &watch).await {
-        return server_error(ctx, &error);
-    }
     if let Err(error) = state.scheduler.reload().await {
         tracing::warn!(%error, "the scheduler could not be told about the new watch");
     }
@@ -286,13 +284,14 @@ pub(crate) async fn update(
     };
     // Like `vigil watch edit`: the settings of the check are written only when they changed,
     // because writing them forgets the page's ETag and the failure streak and moves the
-    // schedule. Tags, targets and the template are not part of that.
-    if NewWatch::from(&current) != built.new
-        && let Err(error) = state.store.update_watch(id, &built.new).await
+    // schedule. Tags, targets and the template are not part of that. All of it is saved or
+    // none.
+    let settings = (NewWatch::from(&current) != built.new).then_some(&built.new);
+    if let Err(error) = state
+        .store
+        .replace_watch(id, settings, None, &links_of(&built))
+        .await
     {
-        return server_error(ctx, &error);
-    }
-    if let Err(error) = save_links(&state, id, &built, &current).await {
         return server_error(ctx, &error);
     }
     if let Err(error) = state.scheduler.reload().await {
@@ -317,38 +316,13 @@ async fn check(
     form::build(draft, ctx.translator(), &known, &state.checker).await
 }
 
-/// Make the watch's tags, targets and template what the form says. `before` is the watch as
-/// it was, to change only what differs.
-async fn save_links(
-    state: &AppState,
-    id: WatchId,
-    built: &Built,
-    before: &Watch,
-) -> Result<(), StoreError> {
-    state.store.set_watch_tags(id, &built.tags).await?;
-
-    let linked: HashSet<Uuid> = state
-        .store
-        .targets_for_watch(id, false)
-        .await?
-        .into_iter()
-        .map(|target| target.id)
-        .collect();
-    let wanted: HashSet<Uuid> = built.targets.iter().copied().collect();
-    for target in wanted.difference(&linked) {
-        state.store.link_target(id, *target).await?;
+/// The tags, targets and template the form says.
+fn links_of(built: &Built) -> WatchLinks<'_> {
+    WatchLinks {
+        tags: &built.tags,
+        targets: &built.targets,
+        template: built.template.as_deref(),
     }
-    for target in linked.difference(&wanted) {
-        state.store.unlink_target(id, *target).await?;
-    }
-
-    if before.notification_template != built.template {
-        state
-            .store
-            .set_notification_template(id, built.template.as_deref())
-            .await?;
-    }
-    Ok(())
 }
 
 /// What a button next to the filters asked for.
