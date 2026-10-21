@@ -12,7 +12,8 @@ pub mod pipeline;
 pub mod process;
 
 pub use conditions::{
-    CompiledConditions, Conditions, ConditionsError, DiffShape, NotifyOn, Verdict, VerdictReason,
+    CompiledConditions, Conditions, ConditionsError, DiffShape, NotifyOn, Scope, Verdict,
+    VerdictReason,
 };
 pub use diff::{ChangeKind, DiffLine, LineDiff};
 pub use diff_view::{Block, DiffView, Hunk, Line, Span};

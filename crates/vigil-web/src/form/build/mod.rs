@@ -7,7 +7,7 @@ mod steps;
 use std::collections::HashMap;
 
 use uuid::Uuid;
-use vigil_core::{Conditions, NotifyOn, Processor, Schedule, Watch, WatchId, WatchState};
+use vigil_core::{Conditions, NotifyOn, Processor, Schedule, Scope, Watch, WatchId, WatchState};
 use vigil_notify::{describe_error, validate_template};
 use vigil_scheduler::Checker;
 use vigil_store::{NewWatch, NotificationTarget, Tag};
@@ -228,6 +228,11 @@ async fn evaluate(
             added: draft.notify_added,
             removed: draft.notify_removed,
             changed: draft.notify_changed,
+        },
+        scope: if draft.scope_text {
+            Scope::Text
+        } else {
+            Scope::Added
         },
     };
     if !conditions.notify_on.added && !conditions.notify_on.removed && !conditions.notify_on.changed

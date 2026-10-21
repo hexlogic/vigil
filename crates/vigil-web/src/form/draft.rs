@@ -1,6 +1,6 @@
 //! What is in the form, as typed: every value is still text, nothing is checked yet.
 
-use vigil_core::{SelectMode, Step, Watch};
+use vigil_core::{Scope, SelectMode, Step, Watch};
 use vigil_store::{NotificationTarget, Tag};
 
 use super::Fields;
@@ -156,6 +156,8 @@ pub(crate) struct Draft {
     pub(crate) steps: Vec<StepDraft>,
     pub(crate) trigger_text: String,
     pub(crate) block_text: String,
+    /// Match the two lists against the whole new text, not only the added lines.
+    pub(crate) scope_text: bool,
     pub(crate) notify_added: bool,
     pub(crate) notify_removed: bool,
     pub(crate) notify_changed: bool,
@@ -206,6 +208,7 @@ impl Draft {
                 .collect(),
             trigger_text: text("trigger_text"),
             block_text: text("block_text"),
+            scope_text: fields.has("scope_text"),
             notify_added: fields.has("notify_added"),
             notify_removed: fields.has("notify_removed"),
             notify_changed: fields.has("notify_changed"),
@@ -240,6 +243,7 @@ impl Draft {
             steps: watch.pipeline.iter().map(StepDraft::from_step).collect(),
             trigger_text: watch.conditions.trigger_text.join("\n"),
             block_text: watch.conditions.block_text.join("\n"),
+            scope_text: watch.conditions.scope == Scope::Text,
             notify_added: watch.conditions.notify_on.added,
             notify_removed: watch.conditions.notify_on.removed,
             notify_changed: watch.conditions.notify_on.changed,

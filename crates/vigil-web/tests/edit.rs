@@ -5,7 +5,7 @@ mod common;
 use std::time::{Duration, Instant};
 
 use axum::http::StatusCode;
-use vigil_core::{Processor, Schedule, SelectMode, Step};
+use vigil_core::{Processor, Schedule, Scope, SelectMode, Step};
 use vigil_store::{NewTag, NewTarget};
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -668,5 +668,67 @@ async fn saves_of_the_same_form_at_the_same_time_take_turns_instead_of_refusing_
         );
     }
     assert_eq!(app.store.list_watches().await?.len(), 16);
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_whole_text_scope_is_saved_shown_and_can_be_turned_off() -> TestResult {
+    let app = app().await?;
+    let server = page("<p>Out of stock</p>").await;
+    let url = server.uri();
+
+    let body = form(&[
+        ("name", "stock"),
+        ("url", &url),
+        ("processor", "text"),
+        ("trigger_text", "out of stock"),
+        ("scope_text", "on"),
+        ("notify_added", "on"),
+        ("notify_changed", "on"),
+    ]);
+    let response = app.post_form("/watch/new", &body).await?;
+    assert_eq!(
+        response.status(),
+        StatusCode::SEE_OTHER,
+        "{}",
+        response.body()
+    );
+    let watch = app
+        .store
+        .list_watches()
+        .await?
+        .into_iter()
+        .next()
+        .ok_or("no watch was added")?;
+    assert_eq!(watch.conditions.scope, Scope::Text);
+
+    let shown = app.get(&format!("/watch/{}/edit", watch.id)).await?;
+    assert!(
+        shown.body().contains("name=\"scope_text\" checked"),
+        "{}",
+        shown.body()
+    );
+
+    let body = form(&[
+        ("name", "stock"),
+        ("url", &url),
+        ("processor", "text"),
+        ("trigger_text", "out of stock"),
+        ("notify_added", "on"),
+        ("notify_changed", "on"),
+    ]);
+    let response = app
+        .post_form(&format!("/watch/{}/edit", watch.id), &body)
+        .await?;
+    assert_eq!(
+        response.status(),
+        StatusCode::SEE_OTHER,
+        "{}",
+        response.body()
+    );
+    assert_eq!(
+        app.store.get_watch(watch.id).await?.conditions.scope,
+        Scope::Added
+    );
     Ok(())
 }

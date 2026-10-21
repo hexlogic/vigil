@@ -1,6 +1,6 @@
 //! Watch persistence tests.
 
-use vigil_core::{Conditions, NotifyOn, Processor, Schedule, SelectMode, Step};
+use vigil_core::{Conditions, NotifyOn, Processor, Schedule, Scope, SelectMode, Step};
 use vigil_store::{NewWatch, Store, StoreError};
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -46,6 +46,7 @@ async fn create_then_get_round_trips() -> TestResult {
             removed: false,
             changed: true,
         },
+        scope: Scope::Text,
     };
     let created = store.create_watch(new.clone()).await?;
 
