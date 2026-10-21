@@ -2,6 +2,7 @@
 
 pub mod check;
 pub mod diff;
+pub mod import;
 pub mod notify;
 pub mod preview;
 pub mod settings;

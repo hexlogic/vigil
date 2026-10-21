@@ -74,6 +74,13 @@ async fn main() -> anyhow::Result<ExitCode> {
                 .map(|()| ExitCode::SUCCESS),
             NotifyCommand::Test { target } => commands::notify::test(&config, &target).await,
         },
+        Command::Import {
+            file,
+            format,
+            dry_run,
+            every,
+            allow_duplicates,
+        } => commands::import::run(&config, &file, format, dry_run, every, allow_duplicates).await,
         Command::Token { command } => match command {
             TokenCommand::Add { name } => commands::token::add(&config, &name)
                 .await

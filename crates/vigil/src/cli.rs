@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand};
 use vigil_core::{Method, Processor};
+use vigil_import::Format;
 use vigil_scheduler::parse_interval;
 
 /// Self-hosted website change detection.
@@ -41,6 +42,28 @@ pub enum Command {
         /// What to do with notification targets.
         #[command(subcommand)]
         command: NotifyCommand,
+    },
+    /// Import watches from a file, and say what could not be carried over.
+    ///
+    /// The file is a list of addresses (one per line, optionally followed by tags), an OPML
+    /// outline of feeds, a backup of another self-hosted change monitor (a ZIP or its older
+    /// JSON file), a urlwatch `urls.yaml`, or a Distill JSON export. The format is guessed
+    /// from the content unless `--format` says. Use `--dry-run` to see the report first.
+    Import {
+        /// The file to read, or `-` for standard input.
+        file: String,
+        /// What the file is: url-list, opml, backup, urlwatch or distill.
+        #[arg(long, value_name = "FORMAT")]
+        format: Option<Format>,
+        /// Show what would be imported and change nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Time between checks for sources that do not say, e.g. 30m, 1h, 1d.
+        #[arg(long, default_value = "1h", value_parser = parse_interval, value_name = "DURATION")]
+        every: Duration,
+        /// Make a watch even when one with its address exists.
+        #[arg(long)]
+        allow_duplicates: bool,
     },
     /// Make, list or revoke API tokens.
     Token {
