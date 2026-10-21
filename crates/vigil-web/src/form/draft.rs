@@ -164,6 +164,9 @@ pub(crate) struct Draft {
     pub(crate) timeout: String,
     pub(crate) user_agent: String,
     pub(crate) headers: String,
+    /// The request method as typed: `GET`, `POST`, ...
+    pub(crate) method: String,
+    pub(crate) body: String,
     pub(crate) retention: String,
     pub(crate) tags: Vec<String>,
     pub(crate) targets: Vec<String>,
@@ -177,6 +180,7 @@ impl Draft {
             id,
             every: "1h".to_owned(),
             processor: "text".to_owned(),
+            method: "GET".to_owned(),
             notify_added: true,
             notify_removed: true,
             notify_changed: true,
@@ -215,6 +219,8 @@ impl Draft {
             timeout: text("timeout"),
             user_agent: text("user_agent"),
             headers: text("headers"),
+            method: text("method"),
+            body: text("body"),
             retention: text("retention"),
             tags: fields.all("tag"),
             targets: fields.all("target"),
@@ -260,6 +266,8 @@ impl Draft {
                 .map(|(name, value)| format!("{name}: {value}"))
                 .collect::<Vec<_>>()
                 .join("\n"),
+            method: watch.fetch.method.to_string(),
+            body: watch.fetch.body.clone().unwrap_or_default(),
             retention: watch.snapshot_retention.to_string(),
             tags: tags.iter().map(|tag| tag.id.to_string()).collect(),
             targets: targets.iter().map(|target| target.id.to_string()).collect(),

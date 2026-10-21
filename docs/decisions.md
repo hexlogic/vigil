@@ -161,7 +161,11 @@ A page that cannot be fetched or processed is not an error of the checker: it is
 
 ## Request headers
 
-Per-watch headers replace a default of the same name (`User-Agent`, `If-None-Match`, `If-Modified-Since`) instead of being sent beside it. A header that makes the request conditional also makes a 304 acceptable. Errors about an unusable header name the header but never include its value, since values often hold tokens and these messages end up in the check log. Custom headers are still forwarded if a page redirects to another host; restricting that is future work.
+Per-watch headers replace a default of the same name (`User-Agent`, `If-None-Match`, `If-Modified-Since`) instead of being sent beside it. A header that makes the request conditional also makes a 304 acceptable. The stored `ETag` and `Last-Modified` are sent only when the watch's method is GET (see "Request method and body"); a conditional header the user sets is theirs and still makes a 304 acceptable for any method. Errors about an unusable header name the header but never include its value, since values often hold tokens and these messages end up in the check log. Custom headers are still forwarded if a page redirects to another host; restricting that is future work.
+
+## Request method and body
+
+A watch's `fetch` settings gain `method` (`GET`, `POST`, `PUT`, `PATCH` or `DELETE`, in capitals in JSON) and `body`. Both are left out of the stored JSON while they are the default, so existing rows and `watch show` output keep their shape. `HEAD` and `OPTIONS` are not offered: they carry no page to compare. A body needs a method that carries one, and is at most 1 MiB; `FetchSettings::validate` checks both and the form, the CLI and the API all call it. The body is sent exactly as typed and no `Content-Type` is added, because the right one depends on the server (`reqwest` adds none for a text body); the user sets it in the headers, and importers add it explicitly. A form posts line breaks as CRLF, which the form turns back into LF so a body the user wrote is the body that is sent. The stored validators (`If-None-Match`, `If-Modified-Since`) are sent only for GET: the response to a POST is not a page that can be "not modified", and a server that answered 304 to one would never send the body again. `vigil-fetch` stays independent of `vigil-core` and re-exports `reqwest::Method`; the scheduler maps one to the other.
 
 ## Patterns
 

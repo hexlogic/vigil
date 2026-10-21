@@ -732,3 +732,76 @@ async fn the_whole_text_scope_is_saved_shown_and_can_be_turned_off() -> TestResu
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn the_method_and_body_are_saved_shown_and_checked_together() -> TestResult {
+    let app = app().await?;
+    let server = page("<p>ok</p>").await;
+    let url = server.uri();
+
+    let body = form(&[
+        ("name", "search"),
+        ("url", &url),
+        ("processor", "text"),
+        ("method", "POST"),
+        ("body", "q=widgets\r\npage=1"),
+        ("notify_added", "on"),
+    ]);
+    let response = app.post_form("/watch/new", &body).await?;
+    assert_eq!(
+        response.status(),
+        StatusCode::SEE_OTHER,
+        "{}",
+        response.body()
+    );
+    let watch = app
+        .store
+        .list_watches()
+        .await?
+        .into_iter()
+        .next()
+        .ok_or("no watch was added")?;
+    assert_eq!(watch.fetch.method, vigil_core::Method::Post);
+    assert_eq!(watch.fetch.body.as_deref(), Some("q=widgets\npage=1"));
+
+    let shown = app.get(&format!("/watch/{}/edit", watch.id)).await?;
+    assert!(
+        shown.body().contains("<option value=\"POST\" selected>"),
+        "{}",
+        shown.body()
+    );
+    assert!(shown.body().contains("q=widgets"), "{}", shown.body());
+
+    // The same body with GET is refused, and nothing is saved.
+    let refused = form(&[
+        ("name", "search"),
+        ("url", &url),
+        ("processor", "text"),
+        ("method", "GET"),
+        ("body", "q=widgets"),
+        ("notify_added", "on"),
+    ]);
+    let response = app
+        .post_form(&format!("/watch/{}/edit", watch.id), &refused)
+        .await?;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        response.body().contains("A request body needs POST"),
+        "{}",
+        response.body()
+    );
+    assert_eq!(
+        app.store.get_watch(watch.id).await?.fetch.method,
+        vigil_core::Method::Post
+    );
+
+    let unknown = form(&[("url", &url), ("method", "TRACE"), ("notify_added", "on")]);
+    let response = app.post_form("/watch/new", &unknown).await?;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        response.body().contains("Choose one of GET"),
+        "{}",
+        response.body()
+    );
+    Ok(())
+}

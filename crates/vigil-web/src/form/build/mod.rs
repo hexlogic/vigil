@@ -48,6 +48,8 @@ pub(crate) struct Problems {
     pub(crate) notify_on: Option<String>,
     pub(crate) timeout: Option<String>,
     pub(crate) headers: Option<String>,
+    pub(crate) method: Option<String>,
+    pub(crate) body: Option<String>,
     pub(crate) retention: Option<String>,
     pub(crate) template: Option<String>,
     pub(crate) tags: Option<String>,
@@ -69,6 +71,8 @@ impl Problems {
             &self.url,
             &self.timeout,
             &self.headers,
+            &self.method,
+            &self.body,
             &self.pipeline,
             &self.conditions,
         ]
@@ -94,6 +98,8 @@ impl Problems {
             &self.conditions,
             &self.timeout,
             &self.headers,
+            &self.method,
+            &self.body,
             &self.pipeline,
         ];
         !self.steps.is_empty() || fields.iter().any(|field| field.is_some())
@@ -110,6 +116,8 @@ impl Problems {
             &self.notify_on,
             &self.timeout,
             &self.headers,
+            &self.method,
+            &self.body,
             &self.retention,
             &self.template,
             &self.tags,

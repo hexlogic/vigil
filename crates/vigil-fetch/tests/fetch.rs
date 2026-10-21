@@ -433,3 +433,46 @@ async fn invalid_header_errors_name_the_header_but_never_show_its_value() -> Tes
     assert!(!shown.contains("s3cret"), "{shown}");
     Ok(())
 }
+
+#[tokio::test]
+async fn sends_the_method_and_body_it_is_given() -> TestResult {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/search"))
+        .and(header("content-type", "application/json"))
+        .and(wiremock::matchers::body_string("{\"q\":\"widgets\"}"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw("{\"hits\":3}", "application/json"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let request = FetchRequest {
+        url: format!("{}/search", server.uri()),
+        method: vigil_fetch::Method::POST,
+        body: Some("{\"q\":\"widgets\"}".to_owned()),
+        headers: vec![("Content-Type".to_owned(), "application/json".to_owned())],
+        ..FetchRequest::default()
+    };
+    let body = body_of(fetcher()?.fetch(&request).await?)?;
+    assert_eq!(body.body, b"{\"hits\":3}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn adds_no_content_type_of_its_own_to_a_body() -> TestResult {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let request = FetchRequest {
+        url: server.uri(),
+        method: vigil_fetch::Method::PUT,
+        body: Some("raw".to_owned()),
+        ..FetchRequest::default()
+    };
+    fetcher()?.fetch(&request).await?;
+    let received = server.received_requests().await.unwrap_or_default();
+    assert_eq!(received.len(), 1);
+    assert!(received[0].headers.get("content-type").is_none());
+    Ok(())
+}
