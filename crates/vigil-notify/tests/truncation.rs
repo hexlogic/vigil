@@ -202,3 +202,27 @@ fn a_huge_name_and_url_still_fit() {
         assert!(Limit::Chars(200).fits(&out.title), "{url}");
     }
 }
+
+#[test]
+fn a_template_that_indexes_a_short_list_survives_truncation() {
+    // `triggered_text[0]` and `lines | first` exist for the whole event; the cut-down variants
+    // used to fit the message must not turn that into an error.
+    let mut event = big_event();
+    event.triggered = vec!["Widget".into()];
+    for template in [
+        "{{ triggered_text[0] }}\n{{ diff_full | code }}",
+        "{{ diff_added | lines | first }}\n{{ diff_full | code }}",
+    ] {
+        let (channel, out) = prep("discord://1/a", &event, Some(template));
+        assert_eq!(out.template_note, None, "{template}");
+        assert!(
+            out.truncated && channel.limit().fits(&out.body),
+            "{template}"
+        );
+        assert!(
+            out.body.starts_with("Widget") || out.body.starts_with("0: "),
+            "{}",
+            &out.body[..40]
+        );
+    }
+}

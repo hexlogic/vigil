@@ -6,7 +6,7 @@ use crate::builtin::builtin;
 use crate::error::TemplateError;
 use crate::escape::{Markup, diff_link, escape, link};
 use crate::event::Event;
-use crate::template::{Vars, render};
+use crate::template::{Vars, render, render_cut};
 use crate::truncate::{Limit, cut_to, shrink};
 
 /// Longest title kept, in characters.
@@ -142,14 +142,14 @@ fn fit(
 
     let suffix = suffix(markup, &event.diff_url);
     let bare = vars.skeleton();
-    let bare_size = limit.measure(&render(markup, source, &Arc::new(bare.clone()))?.body);
+    let bare_size = limit.measure(&render_cut(markup, source, &Arc::new(bare.clone()))?.body);
 
     // Only the long values that reach the output are worth cutting.
     let mut used = Vec::new();
     for which in LARGE {
         let mut only = bare.clone();
         which.copy_cut(&mut only, &vars, usize::MAX, limit);
-        let shown = limit.measure(&render(markup, source, &Arc::new(only))?.body);
+        let shown = limit.measure(&render_cut(markup, source, &Arc::new(only))?.body);
         if shown > bare_size {
             used.push((which, which.size(&vars, limit)));
         }
@@ -173,7 +173,7 @@ fn fit(
             remaining -= 1;
             which.copy_cut(&mut shrunk, &vars, share, limit);
         }
-        let rendered = render(markup, source, &Arc::new(shrunk))?;
+        let rendered = render_cut(markup, source, &Arc::new(shrunk))?;
         let body = format!("{}{suffix}", rendered.body);
         let size = limit.measure(&body);
         if size <= limit.max() {
