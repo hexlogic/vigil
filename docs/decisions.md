@@ -365,6 +365,10 @@ Without sign-in there is a second hole, DNS rebinding: a page at `attacker.examp
 
 The base-path home address with a final slash redirects to the one without. It was first served directly, outside the session check, because routes added next to `nest` are not under its layers: a test found it. Every route of the UI is added to the router that has the layers.
 
+## API tokens
+
+Tokens for the REST API live in `api_tokens` (migration 0006): a name, the blake3 hash of the token, its first characters (`prefix`, so a person can tell tokens apart) and when it was made and last used. The token itself is shown once, when it is created, and is not kept; a token is 256 random bits, so a fast hash is enough, for the reason given under "Signing in". Names are unique, and the command line and the settings page revoke by name or by id (a full id or a suffix of at least six hex digits, as for targets). The time a token was last used is written at most once a minute so that a busy client does not turn every call into a database write. Tokens do not expire and have no scopes: there is one admin, and a token can do what the admin can.
+
 ## The watch list
 
 The list is a table of rows; each row is a fragment (`GET /watch/{id}/row`) that its buttons replace in place with htmx, so the page keeps its place and scroll. Check now, pause, resume and delete are `POST`s that answer with the new row (delete answers with nothing, and first shows a confirmation row in its place: the page policy and the plan's "no browser dialogs" rule out `hx-confirm`). Without htmx they redirect to the list, so a form post still works.

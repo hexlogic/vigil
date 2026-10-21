@@ -1,5 +1,6 @@
 //! SQLite repository, migrations and snapshot storage.
 
+mod api_tokens;
 mod check_log;
 mod checks;
 mod deliveries;
@@ -20,6 +21,7 @@ use sqlx::SqlitePool;
 use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 
+pub use api_tokens::{ApiToken, ApiTokenId};
 pub use check_log::{CheckEntry, CheckOutcome};
 pub use checks::{CHECK_LOG_KEEP, CheckSuccess, Content, RecordOutcome};
 pub use deliveries::{DELIVERY_LOG_KEEP, DeliveryOutcome, DeliveryRecord};
