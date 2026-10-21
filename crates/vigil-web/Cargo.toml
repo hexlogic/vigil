@@ -14,7 +14,7 @@ workspace = true
 [dependencies]
 argon2 = "0.6.0"
 askama = { version = "0.16.1", default-features = false, features = ["derive", "std", "urlencode"] }
-axum = "0.8.9"
+axum = { version = "0.8.9", features = ["multipart"] }
 blake3 = "1.8.7"
 getrandom = "0.4.3"
 http-body-util = "0.1.5"

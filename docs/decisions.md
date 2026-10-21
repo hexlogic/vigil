@@ -119,6 +119,7 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `tokio` (`fs`, `io-util`; web) | Writes the upload to that file without blocking a worker. |
 | `http-body-util` (web) | Reads the request body frame by frame, so its size is counted as it arrives. Already in the tree through axum. |
 | `zip`, `futures-util` (dev, web) | The import tests build a ZIP and send a body with no declared length. |
+| `axum` (`multipart`) | Reads the import form, which carries a file. Brings `multer`, pure Rust; the file is streamed to disk chunk by chunk, not buffered. |
 | `serde_json` (notify) | Builds every JSON request body, so message text can never break the JSON. Already in the tree. |
 | `tokio` (notify; time, macros) | Waiting between retries, and `select!` on cancellation. |
 | `tokio-util` (notify) | `CancellationToken`, so shutdown can stop a retry sleep. Already in the tree through axum. |
@@ -457,6 +458,12 @@ The options of a watch are read as loose JSON and mapped (the table is in `docs/
 The body is not an extractor: it is read frame by frame into a temporary file in the upload directory (the data directory, which is where there is room), counting the bytes that arrive, because a declared `Content-Length` can be wrong and is only used to refuse early. The limit is `import.max_upload_bytes` (default 256 MiB, which is also what `vigil_import::MAX_INPUT_BYTES` allows). The file is deleted when the request ends, however it ends. A ZIP is then read from that file entry by entry (`plan_reader`), so a backup of hundreds of megabytes is never held in memory; other formats are read whole, up to 16 MiB. Planning runs on a blocking thread, since reading an archive is neither short nor async, and its time is bounded by the size limits and the per-entry caps.
 
 The request timeout moved again: the import route has 30 minutes, from the first byte to the answer, and the rest of the API keeps two minutes. They are separate layers (`/api` routes are built twice, once with each, and their descriptions merged) because an outer timeout cannot be loosened for one route inside it. The JSON body limit of the other endpoints does not apply to this one.
+
+## The import page
+
+`/import` is a form (a file, or pasted addresses, a format, an interval, a switch for duplicates) that posts as `multipart/form-data`. Pressing Preview reads the file exactly as the API and the command line do (`vigil_import::plan`), shows the report, and keeps the plan in memory under a random id (`ImportPlans`: at most four, for fifteen minutes, handed out once); pressing the button on the report posts only that id, so what is made is what was shown, and what the file said is not uploaded twice. A plan that is gone (it waited too long, or the button was pressed twice) answers `410` with the form and says so. Making it re-resolves tags and targets, as for the API, since they may have changed in between. The notes of the report are shown as the library words them, in English, as other library messages are; the labels around them are translated.
+
+The form's pages have a 30 minute timeout and a body limit of the configured upload size plus a little for the other fields; the rest of the UI keeps two minutes. The file goes through the same spool as the API's (a temporary file in the data directory, counted as it arrives, removed when the request ends). A file over the limit is a `413` with the form, not a connection that hangs up.
 
 ## The watch list
 

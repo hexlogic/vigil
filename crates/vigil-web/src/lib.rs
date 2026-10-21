@@ -8,6 +8,7 @@ mod diff_html;
 mod fmt;
 mod form;
 mod i18n;
+mod import_cache;
 mod page;
 mod pages;
 mod preview_cache;
@@ -18,7 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
-use axum::extract::State;
+use axum::extract::{DefaultBodyLimit, State};
 use axum::http::StatusCode;
 use axum::middleware::from_fn_with_state;
 use axum::response::Redirect;
@@ -62,6 +63,8 @@ pub struct AppState {
     slots: Arc<form::SlotLocks>,
     /// The page each open form last fetched for its preview.
     previews: Arc<preview_cache::PreviewCache>,
+    /// Import previews waiting for their button.
+    import_plans: Arc<import_cache::ImportPlans>,
 }
 
 impl AppState {
@@ -85,6 +88,7 @@ impl AppState {
             limiter: Arc::default(),
             slots: Arc::default(),
             previews: Arc::default(),
+            import_plans: Arc::default(),
         })
     }
 }
@@ -167,11 +171,24 @@ pub fn router(state: AppState) -> Router {
             get(pages::confirm_delete).post(pages::delete_watch),
         )
         .route_layer(from_fn_with_state(state.clone(), auth::require_session));
+    // The import takes a file of up to hundreds of megabytes, so its pages get a longer
+    // timeout than the others, which an outer layer could not give them.
+    let imports = Router::new()
+        .route(
+            "/import",
+            get(pages::import_form)
+                .post(pages::import_preview)
+                .layer(DefaultBodyLimit::max(upload_limit(&state))),
+        )
+        .route("/import/apply", post(pages::import_apply))
+        .route_layer(from_fn_with_state(state.clone(), auth::require_session))
+        .layer(timeout(IMPORT_TIMEOUT));
     let ui = public
         .merge(protected)
+        .layer(timeout(REQUEST_TIMEOUT))
+        .merge(imports)
         .fallback(pages::not_found)
         .layer(from_fn_with_state(state.clone(), auth::check_origin))
-        .layer(timeout(REQUEST_TIMEOUT))
         .with_state(state.clone());
     // The API has its own checks (a token, not a cookie), so it is outside the UI's. Whatever
     // is not an API path is the UI's.
@@ -195,6 +212,13 @@ pub fn router(state: AppState) -> Router {
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// The most bytes the import form accepts: the file, and a little for the other fields.
+fn upload_limit(state: &AppState) -> usize {
+    usize::try_from(state.web.max_upload_bytes)
+        .unwrap_or(usize::MAX)
+        .saturating_add(64 * 1024)
 }
 
 /// Cuts off a request that hangs. It is applied to the UI and to the API separately, because
