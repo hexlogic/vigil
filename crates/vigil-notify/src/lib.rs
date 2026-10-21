@@ -27,7 +27,7 @@ pub use channel::{
     Channel, Discord, Email, Gotify, HttpAuth, Ntfy, SCHEMES, Slack, SmtpTls, Telegram, Webhook,
     WebhookFormat,
 };
-pub use error::{ParseError, SendError, TemplateError};
+pub use error::{ParseError, SendError, TemplateError, describe_error};
 pub use escape::{Markup, code_block, escape, link};
 pub use event::Event;
 pub use message::{Prepared, prepare};

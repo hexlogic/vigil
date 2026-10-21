@@ -1,11 +1,11 @@
 //! One check of one watch: fetch, render through the pipeline, record, judge.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use vigil_core::{CompiledConditions, LineDiff, Verdict, Watch, WatchId};
 use vigil_fetch::{FetchOutcome, FetchRequest, Fetcher, host_key};
-use vigil_store::{CheckSuccess, Content, RecordOutcome, SnapshotId, Store, StoreError};
+use vigil_store::{CheckSuccess, Content, RecordOutcome, SnapshotId, Store, StoreError, now_ms};
 
 use crate::backoff::{MAX_INTERVAL, default_jitter};
 use crate::describe::describe;
@@ -339,12 +339,4 @@ fn job_from(watch: Watch) -> Job {
         last_checked_at: watch.state.last_checked_at,
         consecutive_errors: watch.state.consecutive_errors,
     }
-}
-
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|d| i64::try_from(d.as_millis()).ok())
-        .unwrap_or(0)
 }

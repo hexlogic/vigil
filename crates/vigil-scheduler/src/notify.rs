@@ -5,13 +5,13 @@
 //! the watched host, never change the check's result and never count as a failed check.
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use vigil_core::{LineDiff, Verdict, Watch, WatchId};
 use vigil_notify::{Channel, DeliveryReport, Event, RetryPolicy, Sender, deliver, prepare};
-use vigil_store::{DeliveryOutcome, DeliveryRecord, NotificationTarget, SnapshotId, Store};
+use vigil_store::{DeliveryOutcome, DeliveryRecord, NotificationTarget, SnapshotId, Store, now_ms};
 
 use crate::describe::describe;
 
@@ -277,12 +277,4 @@ impl Delivery {
             });
         }
     }
-}
-
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|d| i64::try_from(d.as_millis()).ok())
-        .unwrap_or(0)
 }

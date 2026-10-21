@@ -6,7 +6,7 @@ use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderValue, RETRY_AFTER};
 
 use crate::channel::{Channel, HttpAuth};
-use crate::error::SendError;
+use crate::error::{SendError, describe_error};
 use crate::event::Event;
 use crate::message::Prepared;
 use crate::request::{Endpoints, HttpBody, HttpRequest, http_request};
@@ -56,7 +56,7 @@ impl Sender {
             .redirect(reqwest::redirect::Policy::none())
             .no_proxy()
             .build()
-            .map_err(|e| SendError::permanent(describe(&e.without_url())))?;
+            .map_err(|e| SendError::permanent(describe_error(&e.without_url())))?;
         Ok(Self {
             client,
             endpoints: config.endpoints,
@@ -171,28 +171,13 @@ fn from_reqwest(error: reqwest::Error) -> SendError {
     let message = if error.is_timeout() {
         "timed out".to_owned()
     } else {
-        describe(&error)
+        describe_error(&error)
     };
     SendError {
         message,
         transient: !error.is_builder(),
         retry_after: None,
     }
-}
-
-/// An error and its causes on one line.
-fn describe(error: &dyn std::error::Error) -> String {
-    let mut text = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        let cause_text = cause.to_string();
-        if !text.contains(&cause_text) {
-            text.push_str(": ");
-            text.push_str(&cause_text);
-        }
-        source = cause.source();
-    }
-    text
 }
 
 /// Replace every occurrence of a secret in `text` with `***`.
