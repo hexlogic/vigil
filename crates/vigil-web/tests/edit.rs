@@ -805,3 +805,48 @@ async fn the_method_and_body_are_saved_shown_and_checked_together() -> TestResul
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn a_raw_jq_filter_is_saved_and_shown_ticked() -> TestResult {
+    let app = app().await?;
+    let server = page("{\"items\":[{\"name\":\"a\"}]}").await;
+    let url = server.uri();
+
+    let body = form(&[
+        ("name", "list"),
+        ("url", &url),
+        ("processor", "json"),
+        ("step-0-type", "jq"),
+        ("step-0-program", ".items[].name"),
+        ("step-0-raw", "on"),
+        ("notify_added", "on"),
+    ]);
+    let response = app.post_form("/watch/new", &body).await?;
+    assert_eq!(
+        response.status(),
+        StatusCode::SEE_OTHER,
+        "{}",
+        response.body()
+    );
+    let watch = app
+        .store
+        .list_watches()
+        .await?
+        .into_iter()
+        .next()
+        .ok_or("no watch was added")?;
+    assert_eq!(
+        watch.pipeline,
+        [Step::Jq {
+            program: ".items[].name".into(),
+            raw: true
+        }]
+    );
+    let shown = app.get(&format!("/watch/{}/edit", watch.id)).await?;
+    assert!(
+        shown.body().contains("name=\"step-0-raw\" checked"),
+        "{}",
+        shown.body()
+    );
+    Ok(())
+}

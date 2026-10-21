@@ -54,9 +54,17 @@ pub enum Step {
     /// several give the same shape; no output gives `[]`. Only works with the `json`
     /// processor. `env`, `now`, `input`, `halt` and other filters that read the world or
     /// stop the program are not available, so the same input always gives the same output.
+    ///
+    /// With `raw`, the outputs are printed as lines of text instead of as a JSON array, the
+    /// way `jq -r` does: a string is written without its quotes and anything else as compact
+    /// JSON. The result is text and not JSON any more, so a raw step must be the last of the
+    /// JSON steps.
     Jq {
         /// A jq program such as `.items | map(.price)`.
         program: String,
+        /// Print the outputs as lines of text.
+        #[serde(default, skip_serializing_if = "is_false")]
+        raw: bool,
     },
     /// Keep only what a regex matches, one match per line. With `group` set, keep that
     /// capture group of each match instead of the whole match. Finding nothing leaves empty
@@ -222,8 +230,16 @@ mod tests {
             (
                 Step::Jq {
                     program: ".items | map(.price)".into(),
+                    raw: false,
                 },
                 json!({"type": "jq", "program": ".items | map(.price)"}),
+            ),
+            (
+                Step::Jq {
+                    program: ".items[].name".into(),
+                    raw: true,
+                },
+                json!({"type": "jq", "program": ".items[].name", "raw": true}),
             ),
             (
                 Step::RegexExtract {

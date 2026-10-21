@@ -47,15 +47,18 @@ type Data = data::JustLut<Val>;
 #[derive(Debug)]
 pub(super) struct JqStep {
     program: String,
+    /// Print the outputs as lines of text; see [`super::json::render_raw`].
+    pub(super) raw: bool,
 }
 
-pub(super) fn jq(program: &str) -> Result<JqStep, PipelineErrorKind> {
+pub(super) fn jq(program: &str, raw: bool) -> Result<JqStep, PipelineErrorKind> {
     if let Some(reason) = too_big("program", program, MAX_JQ_BYTES) {
         return Err(PipelineErrorKind::JqProgram(reason));
     }
     compile_program(program)
         .map(|_| JqStep {
             program: program.to_owned(),
+            raw,
         })
         .map_err(PipelineErrorKind::JqProgram)
 }

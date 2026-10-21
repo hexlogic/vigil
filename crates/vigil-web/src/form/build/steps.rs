@@ -44,6 +44,7 @@ pub(super) fn step_of(step: &StepDraft) -> Result<Step, &'static str> {
         },
         "jq" => Step::Jq {
             program: need(&step.program)?,
+            raw: step.raw,
         },
         "regex_extract" => Step::RegexExtract {
             pattern: need(&step.pattern)?,

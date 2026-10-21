@@ -111,11 +111,16 @@ impl Pipeline {
                     name,
                     step: json::jsonpath(expr, *required).map_err(fail)?,
                 }),
-                Step::Jq { program } => json.push(Slot {
-                    index,
-                    name,
-                    step: json::jq(program).map_err(fail)?,
-                }),
+                Step::Jq { program, raw } => {
+                    if *raw && steps[index + 1..].iter().any(|s| s.stage() == Stage::Json) {
+                        return Err(fail(PipelineErrorKind::RawJqNotLast));
+                    }
+                    json.push(Slot {
+                        index,
+                        name,
+                        step: json::jq(program, *raw).map_err(fail)?,
+                    });
+                }
                 Step::RegexExtract {
                     pattern,
                     group,
@@ -200,7 +205,11 @@ impl Pipeline {
             for slot in &self.json {
                 value = slot.step.apply(value).map_err(|kind| slot.fail(kind))?;
             }
-            render_json(&value)?
+            if self.json.last().is_some_and(|slot| slot.step.is_raw()) {
+                json::render_raw(&value).map_err(PipelineError::general)?
+            } else {
+                render_json(&value)?
+            }
         } else {
             process(self.processor, &decoded, content_type)?
         };

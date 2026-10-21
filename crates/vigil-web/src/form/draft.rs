@@ -34,6 +34,8 @@ pub(crate) struct StepDraft {
     pub(crate) mode: String,
     pub(crate) group: String,
     pub(crate) required: bool,
+    /// A jq filter prints its outputs as lines of text.
+    pub(crate) raw: bool,
 }
 
 impl StepDraft {
@@ -61,6 +63,7 @@ impl StepDraft {
             mode: field("mode"),
             group: field("group"),
             required: fields.has(&format!("step-{at}-required")),
+            raw: fields.has(&format!("step-{at}-raw")),
         }
     }
 
@@ -95,8 +98,9 @@ impl StepDraft {
                 required: *required,
                 ..Self::new("jsonpath")
             },
-            Step::Jq { program } => Self {
+            Step::Jq { program, raw } => Self {
                 program: program.clone(),
+                raw: *raw,
                 ..Self::new("jq")
             },
             Step::RegexExtract {
