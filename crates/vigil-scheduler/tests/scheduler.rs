@@ -98,6 +98,10 @@ impl Backend for Handle {
         Ok(lock(&self.0.jobs).clone())
     }
 
+    async fn find(&self, id: WatchId) -> Result<Option<Job>, String> {
+        Ok(lock(&self.0.jobs).iter().find(|j| j.id == id).cloned())
+    }
+
     async fn run(&self, watch: WatchId) -> RunOutcome {
         let fake = &self.0;
         let nth = {
