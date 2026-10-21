@@ -3,6 +3,7 @@
 mod check_log;
 mod checks;
 mod deliveries;
+mod links;
 mod migrate;
 mod outbox;
 mod sessions;

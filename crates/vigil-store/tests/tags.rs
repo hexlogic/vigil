@@ -253,3 +253,61 @@ async fn a_change_goes_to_the_watch_targets_and_the_tag_targets_once_each() -> T
     assert_eq!(direct_only, ["direct", "shared"]);
     Ok(())
 }
+
+#[tokio::test]
+async fn a_watchs_links_are_replaced_together_or_not_at_all() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let id = watch(&store).await?;
+    let (news, shops) = (
+        store.create_tag(&tag("news")).await?,
+        store.create_tag(&tag("shops")).await?,
+    );
+    let (phone, mail) = (
+        target(&store, "phone").await?,
+        target(&store, "mail").await?,
+    );
+
+    store
+        .set_watch_links(id, &[news.id, news.id], &[phone], Some("{{ watch_name }}"))
+        .await?;
+    let names = |tags: Vec<vigil_store::Tag>| tags.into_iter().map(|t| t.name).collect::<Vec<_>>();
+    assert_eq!(names(store.tags_for_watch(id).await?), ["news"]);
+    let linked = store.targets_for_watch(id, false).await?;
+    assert_eq!(
+        linked.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+        ["phone"]
+    );
+    assert_eq!(
+        store.get_watch(id).await?.notification_template.as_deref(),
+        Some("{{ watch_name }}")
+    );
+
+    store
+        .set_watch_links(id, &[shops.id], &[mail, phone], None)
+        .await?;
+    assert_eq!(names(store.tags_for_watch(id).await?), ["shops"]);
+    assert_eq!(store.targets_for_watch(id, false).await?.len(), 2);
+    assert_eq!(store.get_watch(id).await?.notification_template, None);
+
+    // An unknown target refuses the whole change, including the tags and the template.
+    let ghost = Uuid::now_v7();
+    let error = store
+        .set_watch_links(id, &[news.id], &[ghost], Some("x"))
+        .await
+        .err()
+        .ok_or("an unknown target was accepted")?;
+    assert!(matches!(error, StoreError::NotFound(_)), "{error}");
+    assert_eq!(names(store.tags_for_watch(id).await?), ["shops"]);
+    assert_eq!(store.get_watch(id).await?.notification_template, None);
+
+    // An unknown watch is not found either, and an edit's check state is left alone.
+    let missing = WatchId::from_uuid(Uuid::now_v7());
+    assert!(matches!(
+        store.set_watch_links(missing, &[], &[], None).await,
+        Err(StoreError::NotFound(_))
+    ));
+    let before = store.get_watch(id).await?.updated_at;
+    store.set_watch_links(id, &[], &[], None).await?;
+    assert_eq!(store.get_watch(id).await?.updated_at, before);
+    Ok(())
+}
