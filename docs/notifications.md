@@ -24,7 +24,7 @@ Add an `s` for HTTPS where the scheme has a plain and a secure form. Plain HTTP 
 | Webhook | `json://[user:password@]host[:port]/path[?query]` / `jsons://`, `form://` / `forms://` | POSTs the whole event as JSON or as form fields. See [Webhooks](#webhooks). |
 | Gotify | `gotify://host[:port][/prefix]/APP_TOKEN` / `gotifys://` | Option: `priority` (0-10). |
 
-An option that is unknown or given twice is an error, and so is anything else wrong with the URL; the message says what, and never repeats the URL. Characters that are special in a URL (`@`, `:`, `/`) in a user name or password are written as `%40`, `%3A`, `%2F`. `matrix://` and other schemes are not supported yet.
+An option that is unknown or given twice is an error, and so is anything else wrong with the URL; the message says what, and never repeats the URL. Characters that are special in a URL (`@`, `:`, `/`) in a user name or password are written as `%40`, `%3A`, `%2F`; in an option value (after `?`) a space is `%20`, and a `+` is just a plus. `matrix://` and other schemes are not supported yet.
 
 ### Email
 

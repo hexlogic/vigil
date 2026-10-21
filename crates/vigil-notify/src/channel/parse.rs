@@ -82,14 +82,24 @@ pub(super) struct Query {
 
 impl Query {
     /// Parse a raw query string.
+    ///
+    /// Values are percent-decoded and nothing else: a `+` stays a plus, as in an address like
+    /// `me+vigil@example.com` or a token, which the form encoding would turn into a space.
     pub(super) fn parse(scheme: &'static str, raw: Option<&str>) -> Self {
         let pairs = raw
-            .map(|query| {
-                url::form_urlencoded::parse(query.as_bytes())
-                    .map(|(key, value)| (key.to_ascii_lowercase(), value.into_owned()))
-                    .collect()
+            .into_iter()
+            .flat_map(|query| query.split('&'))
+            .filter(|pair| !pair.is_empty())
+            .map(|pair| {
+                let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+                (
+                    percent_decode_str(key)
+                        .decode_utf8_lossy()
+                        .to_ascii_lowercase(),
+                    percent_decode_str(value).decode_utf8_lossy().into_owned(),
+                )
             })
-            .unwrap_or_default();
+            .collect();
         Self { scheme, pairs }
     }
 

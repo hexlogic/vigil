@@ -275,3 +275,24 @@ fn kinds_are_named() {
         assert_eq!(ok(url).kind(), kind);
     }
 }
+
+#[test]
+fn a_plus_in_an_option_is_a_plus() {
+    let Channel::Email(email) =
+        ok("mailto://smtp.example.com?from=vigil@example.com&to=me+vigil@gmail.com")
+    else {
+        panic!("not email");
+    };
+    assert_eq!(email.to[0].email.to_string(), "me+vigil@gmail.com");
+
+    let Channel::Ntfy(ntfy) = ok("ntfy://h/t?token=ab+cd") else {
+        panic!("not ntfy");
+    };
+    assert_eq!(ntfy.auth, Some(HttpAuth::Bearer(Secret::new("ab+cd"))));
+
+    // A space is written %20, and a plus can also be written %2B.
+    let Channel::Discord(discord) = ok("discord://1/tok?username=Vigil%20Bot+%2B") else {
+        panic!("not discord");
+    };
+    assert_eq!(discord.username.as_deref(), Some("Vigil Bot++"));
+}
