@@ -171,11 +171,29 @@ fn from_reqwest(error: reqwest::Error) -> SendError {
     } else {
         describe_error(&error)
     };
+    // A certificate that is wrong, or a server that does not speak TLS on this port, is a
+    // problem with the address or the server's setup: waiting will not fix it.
+    let transient = !error.is_builder() && !is_tls_failure(&message);
     SendError {
         message,
-        transient: !error.is_builder(),
+        transient,
         retry_after: None,
     }
+}
+
+/// Whether an error message is a TLS failure that retrying cannot fix, as rustls words them.
+fn is_tls_failure(message: &str) -> bool {
+    [
+        // "invalid peer certificate: UnknownIssuer", "...: Expired", "...: NotValidForName"
+        "certificate",
+        // https:// against a port that speaks plain HTTP
+        "corrupt message",
+        "peer is incompatible",
+        "peer misbehaved",
+        "received fatal alert",
+    ]
+    .iter()
+    .any(|marker| message.contains(marker))
 }
 
 /// Replace every occurrence of a secret in `text` with `***`.
@@ -184,4 +202,31 @@ fn scrub(mut text: String, secrets: &[String]) -> String {
         text = text.replace(secret.as_str(), "***");
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_tls_failure;
+
+    #[test]
+    fn tls_setup_problems_are_not_retried_but_network_problems_are() {
+        for permanent in [
+            "error sending request: client error (Connect): invalid peer certificate: UnknownIssuer",
+            "error sending request: client error (Connect): invalid peer certificate: Expired",
+            "error sending request: client error (Connect): invalid peer certificate: NotValidForName",
+            "error sending request: client error (Connect): received corrupt message of type InvalidContentType",
+            "error sending request: client error (Connect): peer is incompatible: NoCipherSuitesInCommon",
+            "error sending request: client error (Connect): received fatal alert: HandshakeFailure",
+        ] {
+            assert!(is_tls_failure(permanent), "{permanent}");
+        }
+        for transient in [
+            "error sending request: client error (Connect): tcp connect error: Connection refused (os error 111)",
+            "error sending request: client error (Connect): dns error: failed to lookup address information",
+            "error sending request: connection closed before message completed",
+            "timed out",
+        ] {
+            assert!(!is_tls_failure(transient), "{transient}");
+        }
+    }
 }
