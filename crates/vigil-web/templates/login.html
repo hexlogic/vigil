@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t("login.title") }}{% endblock %}
+{% block header %}
+<header class="top"><a class="brand" href="{{ ctx.url("/") }}">Vigil</a></header>
+{% endblock %}
+{% block content %}
+<div class="login panel">
+<h1>{{ ctx.t("login.title") }}</h1>
+<form method="post" action="{{ ctx.url("/login") }}">
+{% if let Some(key) = error %}<p class="notice notice-error" role="alert">{{ ctx.t(key) }}</p>{% endif %}
+<div class="field">
+<label for="password">{{ ctx.t("login.password") }}</label>
+<input type="password" id="password" name="password" autocomplete="current-password" required autofocus>
+</div>
+<input type="hidden" name="next" value="{{ next }}">
+<button class="btn btn-primary" type="submit">{{ ctx.t("login.submit") }}</button>
+</form>
+</div>
+{% endblock %}

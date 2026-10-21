@@ -13,6 +13,8 @@ See [`vigil.example.toml`](../vigil.example.toml) for a complete example.
 | `listen` | `VIGIL_LISTEN` | `0.0.0.0:5800` | Address the HTTP server binds to. |
 | `data_dir` | `VIGIL_DATA_DIR` | `data` | Directory for the SQLite database (`vigil.db`). Created if missing. |
 | `base_url` | `VIGIL_BASE_URL` | unset | The address Vigil is reached at, such as `https://vigil.example.com` (an `http` or `https` URL, which may include a path but no query, fragment or user name). Notifications use it to link to the diff page of a change; without it they have no link. |
+| `admin_password` | `VIGIL_ADMIN_PASSWORD` | unset | The password for the web UI. Set, it is the password at every start, whatever was saved before (a password changed in Settings is replaced). Unset, the first start makes one up and shows it once in the log; later starts keep it. Only a hash is stored. Prefer the environment variable to the file. |
+| `no_auth` | `VIGIL_NO_AUTH` | `false` | Skip the sign-in: anyone who can reach the server can change everything. Also `vigil serve --no-auth`. For a trusted network only; see [Signing in](#signing-in-to-the-web-ui). |
 | `log_format` | `VIGIL_LOG_FORMAT` | `text` | `text` or `json`. |
 | `fetch.timeout_secs` | `VIGIL_FETCH__TIMEOUT_SECS` | `30` | Request timeout for watches that do not set their own. |
 | `fetch.max_body_bytes` | `VIGIL_FETCH__MAX_BODY_BYTES` | `10485760` | Largest accepted response body, measured after decompression. Larger responses fail the check. |
@@ -22,11 +24,21 @@ See [`vigil.example.toml`](../vigil.example.toml) for a complete example.
 
 Log verbosity is controlled by `RUST_LOG`. The default is `info` (stdout) for `vigil serve` and `warn` (stderr) for the one-shot commands, so their stdout carries only results.
 
+## Signing in to the web UI
+
+The web UI asks for a password. Sessions last 30 days after they were last used, and are kept in the database under a hash of the browser's cookie, so a copy of the database cannot be used to sign in. After five wrong passwords within a minute, signing in is refused for the rest of that minute, whoever asks. The password is hashed with Argon2id.
+
+If `VIGIL_ADMIN_PASSWORD` is not set, the first `vigil serve` makes up a password, prints it once in the log (`WARN ... password=...`) and keeps only its hash. If you miss it, stop the server and start it with `VIGIL_ADMIN_PASSWORD` set to choose a new one.
+
+With `no_auth`, pages are open to everyone who can reach the server, and every page says so. As a guard against a web page elsewhere reaching your server by a name it controls (DNS rebinding), Vigil then answers only requests addressed to an IP address, to `localhost`, or to the host in `base_url`; set `base_url` if you reach the server by a name such as `nas.lan`. `/healthz` is exempt. Do not turn sign-in off on a server that is reachable from the internet.
+
+Behind a reverse proxy, set `base_url` to the public address. A path in it (`https://example.com/vigil`) serves the whole UI under that path, so the proxy must pass the path on and not strip it. With an `https` `base_url` the session cookie is marked `Secure`. A form post is accepted only when the browser says it comes from the page it posts to, or from `base_url`.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `vigil serve` | Start the HTTP server and the scheduler. `GET /healthz` returns `200 ok` when the database is reachable. Ctrl-C or SIGTERM stops starting checks and waits up to 30 seconds for running ones. |
+| `vigil serve [--no-auth]` | Start the HTTP server, the web UI and the scheduler. `GET /healthz` returns `200 ok` when the database is reachable. Ctrl-C or SIGTERM stops starting checks and waits up to 30 seconds for running ones. |
 | `vigil watch add <url> [--every 1h] [--name <name>] [content options] [--notify <target>]... [--notify-template <TEXT\|@FILE>]` | Watch a page. The interval takes values like `30s`, `5m`, `1h 30m`, `1d` and must be between one second and 365 days. See [Content options](#content-options). |
 | `vigil watch edit <id> [--every <interval>] [--name <name>] [content options] [--notify <target>]... [--no-notify <target>]... [--notify-template <TEXT\|@FILE>]` | Change a watch. Only the options given change. The remembered `ETag` and the failure streak are cleared, so the next check fetches the page afresh and may report the edit itself as a change. A new interval, or a cleared failure streak, moves the next check within about 30 seconds (when `vigil serve` reloads its watches); other edits apply at the next scheduled check. |
 | `vigil watch show <id>` | Print a watch's settings as JSON, in the shape `--pipeline` and `--conditions` take, with the targets it notifies and its notification template. |

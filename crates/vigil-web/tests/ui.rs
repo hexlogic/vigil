@@ -229,9 +229,11 @@ async fn the_ui_lives_under_the_path_of_the_base_url() -> TestResult {
     ))
     .await?;
 
-    // Both spellings of the home address work.
-    assert_eq!(app.get("/vigil").await?.status(), StatusCode::OK);
-    let home = app.get("/vigil/").await?;
+    // The address with a final slash is sent on to the one without.
+    let slash = app.get("/vigil/").await?;
+    assert_eq!(slash.status(), StatusCode::PERMANENT_REDIRECT);
+    assert_eq!(header_of(&slash, "location"), "/vigil");
+    let home = app.get("/vigil").await?;
     assert_eq!(home.status(), StatusCode::OK);
     let body = home.body();
     assert!(body.contains("href=\"/vigil/assets/vigil.css?v="), "{body}");

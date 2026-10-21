@@ -7,6 +7,19 @@ fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
 }
 
 #[test]
+fn serve_can_turn_sign_in_off() -> Result<(), clap::Error> {
+    assert!(matches!(
+        parse(&["serve"])?.command,
+        Command::Serve { no_auth: false }
+    ));
+    assert!(matches!(
+        parse(&["serve", "--no-auth"])?.command,
+        Command::Serve { no_auth: true }
+    ));
+    Ok(())
+}
+
+#[test]
 fn serve_is_the_server_command() -> Result<(), clap::Error> {
     assert!(parse(&["serve"])?.command.is_server());
     assert!(!parse(&["watch", "list"])?.command.is_server());

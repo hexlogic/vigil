@@ -25,7 +25,13 @@ async fn main() -> anyhow::Result<ExitCode> {
     telemetry::init(config.log_format, cli.command.is_server());
 
     match cli.command {
-        Command::Serve => serve::run(config).await.map(|()| ExitCode::SUCCESS),
+        Command::Serve { no_auth } => {
+            let config = Config {
+                no_auth: config.no_auth || no_auth,
+                ..config
+            };
+            serve::run(config).await.map(|()| ExitCode::SUCCESS)
+        }
         Command::Watch { command } => {
             match command {
                 WatchCommand::Add {

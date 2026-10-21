@@ -23,3 +23,11 @@ expect_used = "warn"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# Argon2 is slow by design; unoptimised it would make every sign-in in a debug build or a test
+# take seconds.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3

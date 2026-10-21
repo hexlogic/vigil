@@ -1,6 +1,7 @@
 //! axum application: REST API and web UI.
 
 mod assets;
+mod auth;
 mod config;
 mod i18n;
 mod page;
@@ -13,12 +14,15 @@ use std::time::Duration;
 use axum::Router;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::routing::get;
+use axum::middleware::from_fn_with_state;
+use axum::response::Redirect;
+use axum::routing::{get, post};
 use tower_http::compression::CompressionLayer;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 use vigil_store::Store;
 
+pub use auth::{AuthError, PasswordSource, change_password, ensure_admin_password};
 pub use config::{Auth, WebConfig};
 pub use i18n::{I18n, Lang, LocaleError, Translator};
 
@@ -35,6 +39,8 @@ pub struct AppState {
     pub web: Arc<WebConfig>,
     /// The texts of the UI.
     pub i18n: Arc<I18n>,
+    /// Recent wrong passwords.
+    limiter: Arc<auth::LoginLimiter>,
 }
 
 impl AppState {
@@ -44,6 +50,7 @@ impl AppState {
             store,
             web: Arc::new(web),
             i18n: Arc::new(I18n::load()?),
+            limiter: Arc::default(),
         })
     }
 }
@@ -54,18 +61,32 @@ impl AppState {
 /// `base_url`, if it has one, because a reverse proxy that serves Vigil under a prefix passes
 /// the prefix on.
 pub fn router(state: AppState) -> Router {
-    let ui = Router::new()
+    // What a visitor who is not signed in may reach.
+    let public = Router::new()
+        .route("/login", get(pages::login_form).post(pages::login_submit))
+        .route("/assets/{name}", get(assets::serve));
+    // Everything else needs a session, unless sign-in is off.
+    let protected = Router::new()
         .route("/", get(pages::home))
-        .route("/assets/{name}", get(assets::serve))
-        .fallback(pages::not_found);
+        .route("/logout", post(pages::logout))
+        .route_layer(from_fn_with_state(state.clone(), auth::require_session));
+    let ui = public
+        .merge(protected)
+        .fallback(pages::not_found)
+        .layer(from_fn_with_state(state.clone(), auth::check_origin));
     let base_path = state.web.base_path();
     let app = Router::new().route("/healthz", get(healthz));
     let app = if base_path.is_empty() {
         app.merge(ui)
     } else {
-        // axum nests `/` at the prefix alone; people also type the address with a slash.
-        app.route(&format!("{base_path}/"), get(pages::home))
-            .nest(&base_path, ui)
+        // axum nests `/` at the prefix alone; people also type the address with a slash. That
+        // is sent on to the real page, so that it passes the same checks as every other.
+        let canonical = base_path.clone();
+        app.route(
+            &format!("{base_path}/"),
+            get(move || async move { Redirect::permanent(&canonical) }),
+        )
+        .nest(&base_path, ui)
     };
     security::add(app)
         .layer(CompressionLayer::new())

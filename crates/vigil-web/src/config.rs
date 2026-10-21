@@ -1,5 +1,7 @@
 //! How the web UI is set up by whoever runs the server.
 
+use std::time::Duration;
+
 /// Whether the UI asks for a password.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Auth {
@@ -18,6 +20,8 @@ pub struct WebConfig {
     pub base_url: Option<String>,
     /// Version shown in the footer, and in asset URLs so a new release is fetched afresh.
     pub version: &'static str,
+    /// How long a wrong password is made to wait for its answer. Tests set it to zero.
+    pub failed_login_delay: Duration,
 }
 
 impl WebConfig {
@@ -29,6 +33,7 @@ impl WebConfig {
                 .map(|url| url.trim().trim_end_matches('/').to_owned())
                 .filter(|url| !url.is_empty()),
             version: env!("CARGO_PKG_VERSION"),
+            failed_login_delay: Duration::from_secs(1),
         }
     }
 
