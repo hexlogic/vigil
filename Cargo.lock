@@ -3681,6 +3681,7 @@ dependencies = [
  "tracing-subscriber",
  "vigil-core",
  "vigil-fetch",
+ "vigil-notify",
  "vigil-scheduler",
  "vigil-store",
  "vigil-web",
