@@ -118,9 +118,10 @@ impl Notifier {
         self
     }
 
-    /// Start delivering `change` to the watch's enabled targets and return at once.
+    /// Start delivering `change` to the watch's enabled targets, its own and its tags'
+    /// defaults, and return at once.
     pub(crate) async fn dispatch(&self, watch: &Watch, change: Change<'_>) {
-        let targets = match self.store.targets_for_watch(watch.id, true).await {
+        let targets = match self.store.delivery_targets(watch.id).await {
             Ok(targets) if targets.is_empty() => return,
             Ok(targets) => targets,
             Err(error) => {
