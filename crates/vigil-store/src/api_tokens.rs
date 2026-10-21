@@ -152,12 +152,26 @@ impl Store {
 
     /// The token identified by `token_hash`, and a note that it was used at `now`. The note is
     /// written at most once a minute.
+    ///
+    /// The token is read first and the note is only written when it is due: a write takes
+    /// SQLite's single write lock even when it changes no row, and almost every request of a
+    /// busy client finds the note fresh.
     pub async fn use_api_token(
         &self,
         token_hash: &[u8],
         now: i64,
     ) -> Result<Option<ApiToken>, StoreError> {
-        sqlx::query(
+        let Some(mut token) = self.api_token_by_hash(token_hash).await? else {
+            return Ok(None);
+        };
+        if token
+            .last_used_at
+            .is_some_and(|used| used > now - TOUCH_AFTER_MS)
+        {
+            return Ok(Some(token));
+        }
+        // The same condition again: a request that was here at the same time may have noted it.
+        let noted = sqlx::query(
             "UPDATE api_tokens SET last_used_at = ?1 \
              WHERE token_hash = ?2 AND (last_used_at IS NULL OR last_used_at <= ?1 - ?3)",
         )
@@ -166,6 +180,14 @@ impl Store {
         .bind(TOUCH_AFTER_MS)
         .execute(&self.pool)
         .await?;
+        if noted.rows_affected() == 1 {
+            token.last_used_at = Some(now);
+            return Ok(Some(token));
+        }
+        self.api_token_by_hash(token_hash).await
+    }
+
+    async fn api_token_by_hash(&self, token_hash: &[u8]) -> Result<Option<ApiToken>, StoreError> {
         let row = sqlx::query(
             "SELECT id, name, prefix, created_at, last_used_at FROM api_tokens \
              WHERE token_hash = ?",

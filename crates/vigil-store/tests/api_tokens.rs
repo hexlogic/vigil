@@ -114,3 +114,32 @@ async fn names_are_unique_and_tokens_can_be_resolved_listed_and_revoked() -> Tes
     assert_eq!(store.list_api_tokens().await?.len(), 1);
     Ok(())
 }
+
+#[tokio::test]
+async fn using_a_token_that_was_noted_a_moment_ago_needs_no_write() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let hash = [3u8; 32];
+    store.create_api_token("ci", &hash, "vigil_03").await?;
+    store
+        .use_api_token(&hash, 20_000_000)
+        .await?
+        .ok_or("missing")?;
+
+    // Another connection holds the one write lock, as the scheduler does while it records a
+    // check. A request that only reads must not wait for it.
+    let mut writer = store.pool().acquire().await?;
+    sqlx::query("BEGIN IMMEDIATE").execute(&mut *writer).await?;
+    let started = std::time::Instant::now();
+    let found = store
+        .use_api_token(&hash, 20_010_000)
+        .await?
+        .ok_or("missing")?;
+    let waited = started.elapsed();
+    sqlx::query("ROLLBACK").execute(&mut *writer).await?;
+
+    assert_eq!(found.last_used_at, Some(20_000_000));
+    assert!(waited < std::time::Duration::from_secs(2), "{waited:?}");
+    // A token that is not there is still not there, and revoking one in between is no error.
+    assert!(store.use_api_token(&[9u8; 32], 20_010_000).await?.is_none());
+    Ok(())
+}
