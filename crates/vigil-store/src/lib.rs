@@ -8,6 +8,7 @@ mod outbox;
 mod sessions;
 mod settings;
 mod snapshots;
+mod tags;
 mod targets;
 mod watches;
 
@@ -24,6 +25,7 @@ pub use deliveries::{DELIVERY_LOG_KEEP, DeliveryOutcome, DeliveryRecord};
 pub use outbox::{NewPending, PendingNotification};
 pub use sessions::Session;
 pub use snapshots::{SnapshotId, SnapshotMeta};
+pub use tags::{NewTag, Tag, TagId};
 pub use targets::{NewTarget, NotificationTarget, TargetId};
 pub use watches::NewWatch;
 
