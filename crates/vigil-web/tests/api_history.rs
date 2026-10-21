@@ -313,3 +313,110 @@ async fn history_needs_a_token() -> TestResult {
     }
     Ok(())
 }
+
+/// Make a watch that keeps `count` versions and record that many, one per second of an
+/// invented clock, so the newest is `count - 1`. Returns the ids, oldest first.
+async fn long_history(
+    app: &App,
+    count: usize,
+) -> Result<(Watch, Vec<SnapshotId>), Box<dyn std::error::Error>> {
+    let watch = app.add_watch("long", "https://long.example/").await?;
+    let mut settings = vigil_store::NewWatch::from(&watch);
+    settings.snapshot_retention = u32::try_from(count)? + 10;
+    app.store.update_watch(watch.id, &settings).await?;
+    let mut ids = Vec::new();
+    for n in 0..count {
+        let outcome = app
+            .store
+            .record_success(
+                watch.id,
+                &CheckSuccess {
+                    at: 1_000 + i64::try_from(n)? * 1_000,
+                    duration_ms: 1,
+                    http_status: Some(200),
+                    content_type: Some("text/plain".into()),
+                    etag: None,
+                    last_modified: None,
+                    content: Some(Content {
+                        text: format!("version {n}\n"),
+                        raw_size: 10,
+                    }),
+                    settings_version: None,
+                },
+            )
+            .await?;
+        match outcome {
+            RecordOutcome::Baseline { snapshot } => ids.push(snapshot),
+            RecordOutcome::Changed { current, .. } => ids.push(current),
+            RecordOutcome::Unchanged => return Err("no new version".into()),
+        }
+    }
+    Ok((watch, ids))
+}
+
+#[tokio::test]
+async fn a_diff_finds_the_version_before_one_that_is_far_back_in_a_long_history() -> TestResult {
+    let app = app().await?;
+    let token = app.api_token("t").await?;
+    let (watch, ids) = long_history(&app, 520).await?;
+    let path = format!("/api/v1/watch/{}/diff", watch.id);
+
+    // The third oldest is 518 versions from the newest, beyond what was once searched.
+    let (status, diff) = app
+        .api(
+            Method::GET,
+            &format!("{path}?to={}", ids[2]),
+            Some(&token),
+            None,
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK, "{diff}");
+    assert_eq!(diff["from"]["id"], ids[1].to_string());
+    assert_eq!(diff["to"]["id"], ids[2].to_string());
+    assert_eq!(diff["added"], json!(["version 2"]));
+
+    // The oldest has nothing before it.
+    let (status, answer) = app
+        .api(
+            Method::GET,
+            &format!("{path}?to={}", ids[0]),
+            Some(&token),
+            None,
+        )
+        .await?;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{answer}");
+    assert_eq!(answer["error"]["code"], "nothing_to_compare");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_diff_from_the_newest_version_alone_has_nothing_to_compare_with() -> TestResult {
+    let app = app().await?;
+    let token = app.api_token("t").await?;
+    let v = three_versions(&app).await?;
+    let path = format!("/api/v1/watch/{}/diff", v.watch.id);
+
+    let (status, answer) = app
+        .api(
+            Method::GET,
+            &format!("{path}?from={}", v.third),
+            Some(&token),
+            None,
+        )
+        .await?;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{answer}");
+    assert_eq!(answer["error"]["code"], "nothing_to_compare");
+
+    // An older `from` alone is compared with the newest.
+    let (status, diff) = app
+        .api(
+            Method::GET,
+            &format!("{path}?from={}", v.first),
+            Some(&token),
+            None,
+        )
+        .await?;
+    assert_eq!(status, StatusCode::OK, "{diff}");
+    assert_eq!(diff["to"]["id"], v.third.to_string());
+    Ok(())
+}

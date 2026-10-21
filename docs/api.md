@@ -60,7 +60,7 @@ A 500 says only that something went wrong; the details are in the server log.
 | `POST /watch/{id}/check?wait=true` | Check now, even if paused. `202` and returns at once; with `wait=true`, waits up to a minute and answers `200` with the outcome and the watch. |
 | `GET /watch/{id}/history?limit=` | The stored versions, newest first (100 by default, at most 500), without their text. |
 | `GET /watch/{id}/history/{snapshot}` | One version with its text. |
-| `GET /watch/{id}/diff?from=&to=` | How two versions differ: added and removed lines, their counts and a unified diff. Defaults to the newest two. |
+| `GET /watch/{id}/diff?from=&to=` | How two versions differ: added and removed lines, their counts and a unified diff. `to` is the newest version unless named, and `from` is the version before `to` unless named, wherever it is in the history. With nothing to compare with, such as `from` set to the newest version alone, the answer is 404 `nothing_to_compare`. |
 | `GET/POST /tags`, `GET/PUT/DELETE /tags/{id}` | Tags. |
 | `GET/POST /notifications`, `GET/PUT/DELETE /notifications/{id}` | Notification targets. Addresses are written but never read back: answers carry them with secrets replaced by `***`. |
 | `POST /notifications/{id}/test` | Send one test message and say whether it arrived. |

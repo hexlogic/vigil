@@ -50,6 +50,27 @@ impl Store {
         rows.iter().map(meta_from_row).collect()
     }
 
+    /// The snapshot of a watch taken just before `snapshot`, in the order of
+    /// [`Store::list_snapshots`], or `None` if it is the oldest one that is kept or does not
+    /// exist.
+    pub async fn snapshot_before(
+        &self,
+        watch: WatchId,
+        snapshot: SnapshotId,
+    ) -> Result<Option<SnapshotMeta>, StoreError> {
+        let row = sqlx::query(
+            "SELECT id, watch_id, taken_at, hash, raw_size, http_status, content_type \
+             FROM snapshots WHERE watch_id = ?1 \
+             AND (taken_at, id) < (SELECT taken_at, id FROM snapshots WHERE id = ?2) \
+             ORDER BY taken_at DESC, id DESC LIMIT 1",
+        )
+        .bind(watch.to_string())
+        .bind(snapshot.hyphenated().to_string())
+        .fetch_optional(&self.pool)
+        .await?;
+        row.as_ref().map(meta_from_row).transpose()
+    }
+
     /// One snapshot without its content. A snapshot that retention has removed is
     /// [`StoreError::NotFound`].
     pub async fn get_snapshot(&self, id: SnapshotId) -> Result<SnapshotMeta, StoreError> {

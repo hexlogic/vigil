@@ -18,9 +18,6 @@ const DEFAULT_LIMIT: u32 = 100;
 /// Most versions one request lists.
 const MAX_LIMIT: u32 = 500;
 
-/// Versions looked through to find the two to compare. Retention keeps 100 by default.
-const COMPARE_WINDOW: u32 = 500;
-
 /// Most lines of a difference one answer holds.
 const MAX_LINES: usize = 5000;
 
@@ -189,7 +186,8 @@ pub(super) async fn get_snapshot(
     }))
 }
 
-/// Compare two versions of a watch's text by line. With no `from` and `to`, the newest two.
+/// Compare two versions of a watch's text by line. `to` is the newest version unless named, and
+/// `from` is the version before `to` unless named.
 #[utoipa::path(
     get,
     path = "/watch/{id}/diff",
@@ -199,7 +197,7 @@ pub(super) async fn get_snapshot(
     responses(
         (status = 200, description = "The difference", body = Diff),
         (status = 401, description = "No valid token", body = ErrorBody),
-        (status = 404, description = "No such watch or version, or fewer than two versions", body = ErrorBody),
+        (status = 404, description = "No such watch or version, or no second version to compare with", body = ErrorBody),
     )
 )]
 pub(super) async fn get_diff(
@@ -209,17 +207,34 @@ pub(super) async fn get_diff(
 ) -> Result<Json<Diff>, ApiError> {
     let id = watch_id(&id)?;
     state.store.get_watch(id).await?;
-    let listed = state.store.list_snapshots(id, COMPARE_WINDOW).await?;
-    let to_id = query.to.or_else(|| listed.first().map(|meta| meta.id));
-    let from_id = query.from.or_else(|| {
-        let at = listed.iter().position(|meta| Some(meta.id) == to_id)?;
-        listed.get(at + 1).map(|meta| meta.id)
-    });
-    let (Some(from_id), Some(to_id)) = (from_id, to_id) else {
-        return Err(
-            ApiError::not_found("a second version to compare with").code("nothing_to_compare")
-        );
+    let to_id = match query.to {
+        Some(to) => Some(to),
+        None => state
+            .store
+            .list_snapshots(id, 1)
+            .await?
+            .first()
+            .map(|meta| meta.id),
     };
+    let from_id = match (query.from, to_id) {
+        (Some(from), _) => Some(from),
+        (None, Some(to)) => state
+            .store
+            .snapshot_before(id, to)
+            .await?
+            .map(|meta| meta.id),
+        (None, None) => None,
+    };
+    let nothing =
+        || ApiError::not_found("a second version to compare with").code("nothing_to_compare");
+    let (Some(from_id), Some(to_id)) = (from_id, to_id) else {
+        return Err(nothing());
+    };
+    // Only `from` was given and it is the newest version: nothing is newer to compare it with.
+    // Naming one version twice is a question with an answer, no difference, and is allowed.
+    if query.to.is_none() && from_id == to_id {
+        return Err(nothing());
+    }
     let from = snapshot_of(&state, id, from_id).await?;
     let to = snapshot_of(&state, id, to_id).await?;
     let old = state.store.snapshot_content(from_id).await?;
