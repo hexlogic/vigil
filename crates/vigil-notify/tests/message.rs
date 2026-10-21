@@ -180,6 +180,9 @@ fn every_documented_variable_is_available() {
 fn bad_templates_are_caught_when_saved() {
     assert!(validate_template("{{ watch_name }} changed").is_ok());
     for bad in [
+        "",
+        "  \n ",
+        "{% if triggered_text | length > 99 %}never{% endif %}",
         "{{ wach_name }}",
         "{{ watch_name | nope }}",
         "{% if %}",
@@ -243,4 +246,16 @@ fn limits_count_the_unit_the_service_counts() {
     assert_eq!(channel(PLAIN).limit(), Limit::Bytes(4096));
     assert_eq!(channel(TELEGRAM).limit(), Limit::Chars(4096));
     assert_eq!(channel(DISCORD).limit(), Limit::Chars(2000));
+}
+
+#[test]
+fn a_template_that_renders_nothing_falls_back_to_the_built_in_one() {
+    let event = Event::sample();
+    let builtin = prep(SLACK, &event, None);
+    for template in ["", "   \n", "{% if false %}x{% endif %}"] {
+        let out = prep(SLACK, &event, Some(template));
+        assert_eq!(out.body, builtin.body, "{template:?}");
+        let note = out.template_note.expect("a note");
+        assert!(note.contains("empty message"), "{note}");
+    }
 }

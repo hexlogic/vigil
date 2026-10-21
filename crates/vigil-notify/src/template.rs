@@ -190,13 +190,21 @@ pub(crate) fn default_title(vars: &Vars) -> String {
     }
 }
 
-/// Render `source` for a channel with `markup`; a variable the template uses must exist.
+/// Render `source` for a channel with `markup`; a variable the template uses must exist and the
+/// message must not be empty.
 pub(crate) fn render(
     markup: Markup,
     source: &str,
     vars: &Arc<Vars>,
 ) -> Result<Rendered, TemplateError> {
-    render_in(strict(), markup, source, vars)
+    let rendered = render_in(strict(), markup, source, vars)?;
+    // Slack and Telegram refuse an empty message for good, so it would never be delivered.
+    if rendered.body.is_empty() {
+        return Err(TemplateError(
+            "template: it renders an empty message".into(),
+        ));
+    }
+    Ok(rendered)
 }
 
 /// Like [`render`], for the cut-down variants of an event that are rendered to fit a size
