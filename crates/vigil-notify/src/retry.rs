@@ -42,6 +42,9 @@ pub struct DeliveryReport {
     pub result: Result<(), String>,
     /// Set when a custom template failed and the built-in one was sent instead.
     pub note: Option<String>,
+    /// Set when the delivery was stopped by its cancellation token before it was over. It is
+    /// neither sent nor failed for good, and can be started again.
+    pub interrupted: bool,
 }
 
 /// Deliver `prepared` to `channel`, retrying transient failures as `policy` says.
@@ -65,6 +68,7 @@ pub async fn deliver(
                     attempts,
                     result: Ok(()),
                     note: prepared.template_note.clone(),
+                    interrupted: false,
                 };
             }
             Err(error) => error,
@@ -78,6 +82,7 @@ pub async fn deliver(
                 attempts,
                 result: Err(error.message),
                 note: prepared.template_note.clone(),
+                interrupted: false,
             };
         };
         let delay = error
@@ -97,6 +102,7 @@ pub async fn deliver(
                     attempts,
                     result: Err(format!("{}; gave up retrying: shutting down", error.message)),
                     note: prepared.template_note.clone(),
+                    interrupted: true,
                 };
             }
         }

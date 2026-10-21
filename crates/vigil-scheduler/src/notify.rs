@@ -10,10 +10,16 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use vigil_core::{LineDiff, Verdict, Watch, WatchId};
-use vigil_notify::{Channel, DeliveryReport, Event, RetryPolicy, Sender, send_event};
-use vigil_store::{DeliveryOutcome, DeliveryRecord, NotificationTarget, SnapshotId, Store, now_ms};
+use vigil_notify::{DeliveryReport, Event, RetryPolicy, Sender};
+use vigil_store::{
+    NewPending, NotificationTarget, PendingNotification, SnapshotId, Store, StoreError, now_ms,
+};
 
+use crate::delivery::Delivery;
 use crate::describe::describe;
+
+/// How long a saved notification is still worth sending after a restart: a day.
+const MAX_PENDING_AGE_MS: i64 = 24 * 60 * 60 * 1000;
 
 /// A change that was just recorded, as the notifier needs to know it.
 pub(crate) struct Change<'a> {
@@ -105,16 +111,147 @@ impl Notifier {
             }
         };
         let event = Arc::new(self.event(watch, &change));
+        let payload = match event.to_json() {
+            Ok(payload) => Some(payload),
+            Err(error) => {
+                tracing::error!(watch = %watch.id, %error, "could not save the notification");
+                None
+            }
+        };
         for target in targets {
-            let delivery = self.delivery(
+            // Saved before it is sent, so that a restart in the middle does not lose it.
+            let outbox = match &payload {
+                Some(payload) => {
+                    self.save(watch.id, &target, change.current, payload.clone())
+                        .await
+                }
+                None => None,
+            };
+            let mut delivery = self.delivery(
                 Some(watch.id),
                 Some(change.current),
                 watch.notification_template.clone(),
                 Arc::clone(&event),
             );
+            delivery.outbox = outbox;
             self.tracker.spawn(async move {
                 delivery.run(&target).await;
             });
+        }
+    }
+
+    async fn save(
+        &self,
+        watch: WatchId,
+        target: &NotificationTarget,
+        snapshot: SnapshotId,
+        payload: String,
+    ) -> Option<i64> {
+        let pending = NewPending {
+            watch,
+            target: target.id,
+            snapshot,
+            payload,
+        };
+        match self.store.enqueue_notification(&pending).await {
+            Ok(id) => Some(id),
+            // Deliver anyway: a notification that cannot survive a restart beats none.
+            Err(error) => {
+                tracing::error!(%watch, error = %describe(&error), "could not save the notification");
+                None
+            }
+        }
+    }
+
+    /// Deliver the notifications that were saved but not finished when the process last stopped:
+    /// the ones a shutdown cut short, or that a crash left behind. Call it once at start-up,
+    /// from the process that serves; returns how many were started.
+    ///
+    /// One whose target has since been removed or disabled is dropped, and one older than a day
+    /// is recorded as failed instead of being sent: a notice that late is noise.
+    pub async fn resume(&self) -> usize {
+        let pending = match self.store.pending_notifications().await {
+            Ok(pending) => pending,
+            Err(error) => {
+                tracing::error!(error = %describe(&error), "could not read the saved notifications");
+                return 0;
+            }
+        };
+        let mut started = 0;
+        for item in pending {
+            if self.resume_one(&item).await {
+                started += 1;
+            }
+        }
+        started
+    }
+
+    async fn resume_one(&self, item: &PendingNotification) -> bool {
+        let target = match self.store.get_target(item.target).await {
+            Ok(target) if target.enabled => target,
+            Ok(_) | Err(StoreError::NotFound(_)) => {
+                self.forget(item.id).await;
+                return false;
+            }
+            Err(error) => {
+                tracing::error!(error = %describe(&error), "could not load a notification target");
+                return false;
+            }
+        };
+        let delivery = self.delivery(Some(item.watch), Some(item.snapshot), None, Arc::default());
+        if now_ms().saturating_sub(item.created_at) > MAX_PENDING_AGE_MS {
+            let report = DeliveryReport {
+                attempts: 0,
+                result: Err(
+                    "not sent: the notification was too old by the time Vigil started again".into(),
+                ),
+                note: None,
+                interrupted: false,
+            };
+            delivery.record(&target, &report).await;
+            self.forget(item.id).await;
+            return false;
+        }
+        let mut event = match Event::from_json(&item.payload) {
+            Ok(event) => event,
+            Err(error) => {
+                tracing::warn!(id = item.id, %error, "dropping an unreadable saved notification");
+                self.forget(item.id).await;
+                return false;
+            }
+        };
+        event.snapshot = self
+            .store
+            .snapshot_content(item.snapshot)
+            .await
+            .unwrap_or_default();
+        let template = match self.store.get_watch(item.watch).await {
+            Ok(watch) => watch.notification_template,
+            Err(StoreError::NotFound(_)) => {
+                self.forget(item.id).await;
+                return false;
+            }
+            Err(error) => {
+                tracing::error!(error = %describe(&error), "could not load a watch");
+                return false;
+            }
+        };
+        let mut delivery = self.delivery(
+            Some(item.watch),
+            Some(item.snapshot),
+            template,
+            Arc::new(event),
+        );
+        delivery.outbox = Some(item.id);
+        self.tracker.spawn(async move {
+            delivery.run(&target).await;
+        });
+        true
+    }
+
+    async fn forget(&self, id: i64) {
+        if let Err(error) = self.store.complete_notification(id).await {
+            tracing::error!(error = %describe(&error), "could not remove a saved notification");
         }
     }
 
@@ -171,6 +308,7 @@ impl Notifier {
             snapshot,
             template,
             event,
+            outbox: None,
         }
     }
 
@@ -195,85 +333,6 @@ impl Notifier {
             base_url: self.base_url.clone().unwrap_or_default(),
             diff_url,
             is_test: false,
-        }
-    }
-}
-
-/// Everything one delivery task needs, owned so that it can outlive the check.
-struct Delivery {
-    store: Store,
-    sender: Sender,
-    retry: RetryPolicy,
-    cancel: CancellationToken,
-    reports: Option<Arc<Mutex<Vec<TargetReport>>>>,
-    watch: Option<WatchId>,
-    snapshot: Option<SnapshotId>,
-    /// The watch's own template, which wins over the target's.
-    template: Option<String>,
-    event: Arc<Event>,
-}
-
-impl Delivery {
-    /// Deliver to `target`, record the result and return it.
-    async fn run(&self, target: &NotificationTarget) -> DeliveryReport {
-        let template = self
-            .template
-            .as_deref()
-            .or(target.default_template.as_deref());
-        let report = match Channel::parse(&target.url) {
-            Ok(channel) => {
-                send_event(
-                    &self.sender,
-                    &channel,
-                    &self.event,
-                    template,
-                    &self.retry,
-                    &self.cancel,
-                )
-                .await
-            }
-            // The message names what is wrong and never repeats the URL.
-            Err(error) => DeliveryReport {
-                attempts: 0,
-                result: Err(format!("the stored notification URL is not valid: {error}")),
-                note: None,
-            },
-        };
-        self.record(target, &report).await;
-        report
-    }
-
-    async fn record(&self, target: &NotificationTarget, report: &DeliveryReport) {
-        let (outcome, error) = match (&report.result, &report.note) {
-            (Ok(()), None) => (DeliveryOutcome::Sent, None),
-            (Ok(()), Some(note)) => (DeliveryOutcome::Sent, Some(note.clone())),
-            (Err(error), None) => (DeliveryOutcome::Failed, Some(error.clone())),
-            (Err(error), Some(note)) => {
-                (DeliveryOutcome::Failed, Some(format!("{error} ({note})")))
-            }
-        };
-        let record = DeliveryRecord {
-            watch: self.watch,
-            target: target.id,
-            snapshot: self.snapshot,
-            at: now_ms(),
-            attempts: report.attempts,
-            outcome,
-            error,
-        };
-        if let Err(error) = self.store.record_delivery(&record).await {
-            tracing::error!(target = %target.name, error = %describe(&error), "could not record a delivery");
-        }
-        if report.result.is_ok() {
-            tracing::info!(target = %target.name, attempts = report.attempts, "notification sent");
-        }
-        if let Some(reports) = &self.reports
-            && let Ok(mut reports) = reports.lock()
-        {
-            reports.push(TargetReport {
-                target: target.name.clone(),
-                report: report.clone(),
-            });
         }
     }
 }

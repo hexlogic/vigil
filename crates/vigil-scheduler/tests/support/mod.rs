@@ -128,3 +128,29 @@ pub async fn wait_until(what: &str, mut done: impl AsyncFnMut() -> bool) -> Test
     }
     Ok(())
 }
+
+/// Notifications still waiting in the outbox.
+pub async fn outbox_len(store: &Store) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT COUNT(*) FROM notification_outbox")
+        .fetch_one(store.pool())
+        .await
+}
+
+/// A notifier as a freshly started process would build it, on the same database.
+pub fn restarted_notifier(s: &Setup) -> Result<Notifier, Box<dyn std::error::Error>> {
+    Ok(
+        Notifier::new(s.store.clone(), Sender::new(SenderConfig::default())?)
+            .with_base_url(Some("http://vigil.test/".into()))
+            .with_retry(quick_retries(Duration::from_millis(10)))
+            .collecting_reports(),
+    )
+}
+
+/// Make the ntfy server answer every request with `status`.
+pub async fn ntfy_answers(s: &Setup, status: u16) {
+    s.ntfy.reset().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(status))
+        .mount(&s.ntfy)
+        .await;
+}
