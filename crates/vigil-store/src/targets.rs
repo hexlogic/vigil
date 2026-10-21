@@ -263,7 +263,7 @@ pub(crate) fn parse_id(text: &str) -> Result<TargetId, StoreError> {
         .map_err(|_| StoreError::Corrupt(format!("invalid notification target id {text:?}")))
 }
 
-fn target_from_row(row: &SqliteRow) -> Result<NotificationTarget, StoreError> {
+pub(crate) fn target_from_row(row: &SqliteRow) -> Result<NotificationTarget, StoreError> {
     Ok(NotificationTarget {
         id: parse_id(&row.try_get::<String, _>("id")?)?,
         name: row.try_get("name")?,
