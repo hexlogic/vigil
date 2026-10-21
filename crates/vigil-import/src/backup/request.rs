@@ -49,7 +49,7 @@ pub(super) fn request(
         }
     }
     for (name, value) in headers {
-        if crate::backup::header_is_valid(&name, &value) {
+        if FetchSettings::header_is_valid(&name, &value) {
             fetch.headers.insert(name, value);
         } else {
             // Only the name: values often hold tokens.
@@ -67,7 +67,7 @@ pub(super) fn request(
     });
     fetch.timeout_secs = globals
         .timeout
-        .filter(|t| *t != VIGIL_TIMEOUT_SECS && (1..=3600).contains(t));
+        .filter(|t| *t != VIGIL_TIMEOUT_SECS && FetchSettings::TIMEOUT_SECS.contains(t));
     if text(watch.get("proxy")).is_some() {
         notes.push(Note::skipped(
             "proxy",

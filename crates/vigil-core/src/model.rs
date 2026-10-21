@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::ops::RangeInclusive;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -63,6 +64,13 @@ pub enum Schedule {
 }
 
 impl Schedule {
+    /// The shortest interval a watch may have, so that a zero interval cannot spin.
+    pub const MIN_INTERVAL: Duration = Duration::from_secs(1);
+
+    /// The longest interval a watch may have. It keeps the time arithmetic far from overflow
+    /// and is a limit nobody checking web pages will miss.
+    pub const MAX_INTERVAL: Duration = Duration::from_secs(365 * 24 * 60 * 60);
+
     /// The time between checks.
     pub fn interval(&self) -> Duration {
         match self {
@@ -154,6 +162,17 @@ pub enum FetchSettingsError {
 impl FetchSettings {
     /// The longest request body, in bytes.
     pub const MAX_BODY_BYTES: usize = 1024 * 1024;
+
+    /// The timeouts a watch may have, in seconds.
+    pub const TIMEOUT_SECS: RangeInclusive<u64> = 1..=3600;
+
+    /// Whether a request header can be sent: a name of visible characters and a value without
+    /// control characters.
+    pub fn header_is_valid(name: &str, value: &str) -> bool {
+        !name.is_empty()
+            && name.bytes().all(|b| b.is_ascii_graphic())
+            && !value.chars().any(char::is_control)
+    }
 
     /// Check that the settings go together.
     pub fn validate(&self) -> Result<(), FetchSettingsError> {
@@ -291,6 +310,27 @@ mod tests {
             with(Method::Put, Some(&big)).validate(),
             Err(FetchSettingsError::BodyTooLarge)
         );
+    }
+
+    #[test]
+    fn a_header_needs_a_visible_name_and_a_value_without_control_characters() {
+        assert!(FetchSettings::header_is_valid("X-Token", "a b, c; d=\"e\""));
+        assert!(FetchSettings::header_is_valid("X-Empty", ""));
+        assert!(!FetchSettings::header_is_valid("", "v"));
+        assert!(!FetchSettings::header_is_valid("X Token", "v"));
+        assert!(!FetchSettings::header_is_valid("X-Token", "a\r\nB: c"));
+        assert!(!FetchSettings::header_is_valid("X-Token", "a\tb"));
+        assert!(!FetchSettings::header_is_valid("X-Tökén", "v"));
+    }
+
+    #[test]
+    fn the_limits_of_a_timeout_and_of_an_interval() {
+        assert!(!FetchSettings::TIMEOUT_SECS.contains(&0));
+        assert!(FetchSettings::TIMEOUT_SECS.contains(&1));
+        assert!(FetchSettings::TIMEOUT_SECS.contains(&3600));
+        assert!(!FetchSettings::TIMEOUT_SECS.contains(&3601));
+        assert_eq!(Schedule::MIN_INTERVAL, Duration::from_secs(1));
+        assert_eq!(Schedule::MAX_INTERVAL, Duration::from_secs(31_536_000));
     }
 
     #[test]

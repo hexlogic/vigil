@@ -2,15 +2,17 @@
 
 use std::time::Duration;
 
+use vigil_core::Schedule;
+
 /// Longest delay between checks of a failing watch.
 pub const MAX_BACKOFF: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// Shortest interval the scheduler accepts, so a zero interval cannot spin.
-pub const MIN_INTERVAL: Duration = Duration::from_secs(1);
+pub const MIN_INTERVAL: Duration = Schedule::MIN_INTERVAL;
 
 /// Longest interval a watch may have; anything above is treated as this. It keeps the time
 /// arithmetic far from overflow and is a limit nobody checking web pages will miss.
-pub const MAX_INTERVAL: Duration = Duration::from_secs(365 * 24 * 60 * 60);
+pub const MAX_INTERVAL: Duration = Schedule::MAX_INTERVAL;
 
 /// Upper bound of the default jitter.
 const MAX_DEFAULT_JITTER: Duration = Duration::from_secs(60);

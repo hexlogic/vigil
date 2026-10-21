@@ -8,17 +8,6 @@ use super::super::draft::Draft;
 use super::Problems;
 use crate::i18n::Translator;
 
-/// The timeouts a watch may have, in seconds.
-pub(crate) const TIMEOUT_SECS: std::ops::RangeInclusive<u64> = 1..=3600;
-
-/// Whether a request header can be sent: a name of visible characters and a value without
-/// control characters.
-pub(crate) fn header_is_valid(name: &str, value: &str) -> bool {
-    !name.is_empty()
-        && name.bytes().all(|b| b.is_ascii_graphic())
-        && !value.chars().any(char::is_control)
-}
-
 pub(super) fn fetch_settings(
     draft: &Draft,
     t: &Translator,
@@ -27,7 +16,7 @@ pub(super) fn fetch_settings(
     let timeout_secs = match draft.timeout.trim() {
         "" => None,
         text => match text.parse::<u64>() {
-            Ok(n) if TIMEOUT_SECS.contains(&n) => Some(n),
+            Ok(n) if FetchSettings::TIMEOUT_SECS.contains(&n) => Some(n),
             _ => {
                 problems.timeout = Some(t.t("form.err.timeout"));
                 None
@@ -42,7 +31,7 @@ pub(super) fn fetch_settings(
         }
         let parsed = line.split_once(':').map(|(n, v)| (n.trim(), v.trim()));
         match parsed {
-            Some((name, value)) if header_is_valid(name, value) => {
+            Some((name, value)) if FetchSettings::header_is_valid(name, value) => {
                 headers.insert(name.to_owned(), value.to_owned());
             }
             _ => {

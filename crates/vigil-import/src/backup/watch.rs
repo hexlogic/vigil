@@ -16,10 +16,6 @@ use crate::builder::Builder;
 use crate::report::Note;
 use crate::text::short_url;
 
-/// The shortest and longest interval a watch can have, in seconds.
-const MIN_SECS: u64 = 1;
-const MAX_SECS: u64 = 365 * 24 * 3600;
-
 /// What became of one watch.
 pub(super) enum Mapped {
     Made {
@@ -186,8 +182,12 @@ pub(super) fn map_watch(
     let mut every = own
         .or(globals.interval)
         .unwrap_or_else(|| builder.options().every.as_secs());
-    if !(MIN_SECS..=MAX_SECS).contains(&every) {
-        every = every.clamp(MIN_SECS, MAX_SECS);
+    let (min, max) = (
+        Schedule::MIN_INTERVAL.as_secs(),
+        Schedule::MAX_INTERVAL.as_secs(),
+    );
+    if !(min..=max).contains(&every) {
+        every = every.clamp(min, max);
         notes.push(Note::approximated(
             "time_between_check",
             "the interval was outside what Vigil accepts and was brought into range",

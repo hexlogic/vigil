@@ -24,8 +24,6 @@ use settings::Globals;
 use store::{Datastore, Layout};
 use watch::{Mapped, map_watch};
 
-pub(crate) use crate::urls::header_is_valid;
-
 /// Most unknown option names that are listed in the report.
 const MOST_UNKNOWN: usize = 20;
 

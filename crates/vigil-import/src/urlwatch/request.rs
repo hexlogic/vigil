@@ -7,7 +7,6 @@ use vigil_core::{FetchSettings, Method};
 
 use super::is_set;
 use crate::report::Note;
-use crate::urls::header_is_valid;
 
 /// A scalar as the text a header or form field holds.
 fn scalar(value: &Value) -> Option<String> {
@@ -110,7 +109,7 @@ pub(super) fn request(job: &Map<String, Value>, notes: &mut Vec<Note>) -> FetchS
         }
     }
     for (name, value) in headers {
-        if header_is_valid(&name, &value) {
+        if FetchSettings::header_is_valid(&name, &value) {
             fetch.headers.insert(name, value);
         } else {
             notes.push(Note::skipped(
@@ -120,7 +119,7 @@ pub(super) fn request(job: &Map<String, Value>, notes: &mut Vec<Note>) -> FetchS
         }
     }
     if let Some(timeout) = job.get("timeout").and_then(Value::as_u64)
-        && (1..=3600).contains(&timeout)
+        && FetchSettings::TIMEOUT_SECS.contains(&timeout)
     {
         fetch.timeout_secs = Some(timeout);
     }

@@ -16,7 +16,6 @@ use vigil_store::{NewWatch, Tag};
 use super::error::ApiError;
 use crate::AppState;
 use crate::fmt::rfc3339;
-use crate::form::build::fetch::{TIMEOUT_SECS, header_is_valid};
 use crate::form::preview_watch;
 
 /// Interval when the request names none and no tag has a default.
@@ -277,7 +276,7 @@ fn existing(
 
 fn check_fetch(fetch: &FetchSettings) -> Result<(), ApiError> {
     if let Some(timeout) = fetch.timeout_secs
-        && !TIMEOUT_SECS.contains(&timeout)
+        && !FetchSettings::TIMEOUT_SECS.contains(&timeout)
     {
         return Err(
             ApiError::invalid("the timeout must be from 1 to 3600 seconds")
@@ -285,7 +284,11 @@ fn check_fetch(fetch: &FetchSettings) -> Result<(), ApiError> {
         );
     }
     // The message names the header and never its value, which often holds a token.
-    if let Some((name, _)) = fetch.headers.iter().find(|(n, v)| !header_is_valid(n, v)) {
+    if let Some((name, _)) = fetch
+        .headers
+        .iter()
+        .find(|(n, v)| !FetchSettings::header_is_valid(n, v))
+    {
         return Err(
             ApiError::invalid(format!("the header {name:?} cannot be sent")).field("fetch.headers"),
         );
