@@ -1,11 +1,11 @@
 //! `vigil watch add|edit|show|list|remove`.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use anyhow::Context;
 use vigil_core::{Schedule, Watch};
 use vigil_notify::validate_template;
-use vigil_store::{NewWatch, NotificationTarget};
+use vigil_store::{NewWatch, NotificationTarget, now_ms};
 
 use super::notify::{read_text, resolve_all};
 use super::settings::apply;
@@ -227,14 +227,6 @@ fn status(watch: &Watch) -> String {
     } else {
         "pending".into()
     }
-}
-
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|d| i64::try_from(d.as_millis()).ok())
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

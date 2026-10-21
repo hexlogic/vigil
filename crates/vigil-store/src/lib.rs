@@ -105,7 +105,7 @@ impl Store {
 }
 
 /// Current time as unix milliseconds.
-pub(crate) fn now_ms() -> i64 {
+pub fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .ok()

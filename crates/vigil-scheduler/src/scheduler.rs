@@ -4,12 +4,13 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use tokio::task::{Id, JoinSet};
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use vigil_core::WatchId;
+use vigil_store::now_ms;
 
 use crate::backoff::{MAX_INTERVAL, next_delay, random_jitter};
 use crate::limits::Limits;
@@ -189,14 +190,6 @@ async fn sleep_until_opt(at: Option<Instant>) {
         Some(at) => tokio::time::sleep_until(at).await,
         None => std::future::pending().await,
     }
-}
-
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|d| i64::try_from(d.as_millis()).ok())
-        .unwrap_or(0)
 }
 
 struct Entry {
