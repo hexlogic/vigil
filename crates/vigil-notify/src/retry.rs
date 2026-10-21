@@ -103,6 +103,20 @@ pub async fn deliver(
     }
 }
 
+/// Build the message for `event` (with `template`, if any, falling back to the built-in one)
+/// and deliver it to `channel`, retrying as `policy` says.
+pub async fn send_event(
+    sender: &Sender,
+    channel: &Channel,
+    event: &Event,
+    template: Option<&str>,
+    policy: &RetryPolicy,
+    cancel: &CancellationToken,
+) -> DeliveryReport {
+    let prepared = prepare(channel.markup(), channel.limit(), event, template);
+    deliver(sender, channel, &prepared, event, policy, cancel).await
+}
+
 /// Send a test notification to `channel`, with retries, to check that the target works.
 ///
 /// `template` is the custom template to try, if the target has one, so that a broken template
@@ -116,12 +130,11 @@ pub async fn send_test(
     policy: &RetryPolicy,
 ) -> DeliveryReport {
     let event = Event::test(base_url);
-    let prepared = prepare(channel.markup(), channel.limit(), &event, template);
-    deliver(
+    send_event(
         sender,
         channel,
-        &prepared,
         &event,
+        template,
         policy,
         &CancellationToken::new(),
     )

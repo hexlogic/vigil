@@ -3,8 +3,7 @@
 use crate::escape::Markup;
 
 /// Plain text: the title is sent separately by channels that have a title.
-const PLAIN: &str = r#"{%- set title = watch_name if is_test else watch_name ~ " changed" -%}
-{{ watch_url }}
+const PLAIN: &str = r#"{{ watch_url }}
 {%- if diff_added %}
 
 Added:
@@ -24,8 +23,7 @@ Matched: {{ triggered_text | join(", ") }}
 Diff: {{ diff_url }}
 {%- endif %}"#;
 
-const TELEGRAM: &str = r#"{%- set title = watch_name if is_test else watch_name ~ " changed" -%}
-<b>{{ watch_name }}</b>{% if not is_test %} changed{% endif %}
+const TELEGRAM: &str = r#"<b>{{ watch_name }}</b>{% if not is_test %} changed{% endif %}
 {{ watch_url | link }}
 {%- if triggered_text %}
 
@@ -40,8 +38,7 @@ Matched: {{ triggered_text | join(", ") }}
 <a href="{{ diff_url }}">Full diff</a>
 {%- endif %}"#;
 
-const DISCORD: &str = r#"{%- set title = watch_name if is_test else watch_name ~ " changed" -%}
-**{{ watch_name }}**{% if not is_test %} changed{% endif %}
+const DISCORD: &str = r#"**{{ watch_name }}**{% if not is_test %} changed{% endif %}
 {{ watch_url | link }}
 {%- if triggered_text %}
 
@@ -56,8 +53,7 @@ Matched: {{ triggered_text | join(", ") }}
 {{ diff_url | link }}
 {%- endif %}"#;
 
-const SLACK: &str = r#"{%- set title = watch_name if is_test else watch_name ~ " changed" -%}
-*{{ watch_name }}*{% if not is_test %} changed{% endif %}
+const SLACK: &str = r#"*{{ watch_name }}*{% if not is_test %} changed{% endif %}
 {{ watch_url | link }}
 {%- if triggered_text %}
 

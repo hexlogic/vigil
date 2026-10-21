@@ -10,7 +10,7 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use vigil_core::{LineDiff, Verdict, Watch, WatchId};
-use vigil_notify::{Channel, DeliveryReport, Event, RetryPolicy, Sender, deliver, prepare};
+use vigil_notify::{Channel, DeliveryReport, Event, RetryPolicy, Sender, send_event};
 use vigil_store::{DeliveryOutcome, DeliveryRecord, NotificationTarget, SnapshotId, Store, now_ms};
 
 use crate::describe::describe;
@@ -222,12 +222,11 @@ impl Delivery {
             .or(target.default_template.as_deref());
         let report = match Channel::parse(&target.url) {
             Ok(channel) => {
-                let prepared = prepare(channel.markup(), channel.limit(), &self.event, template);
-                deliver(
+                send_event(
                     &self.sender,
                     &channel,
-                    &prepared,
                     &self.event,
+                    template,
                     &self.retry,
                     &self.cancel,
                 )
