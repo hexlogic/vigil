@@ -104,6 +104,13 @@ pub fn router(state: AppState) -> Router {
             "/watch/{id}/edit",
             get(pages::edit_form).post(pages::update),
         )
+        .route("/settings", get(pages::settings))
+        .route("/settings/language", post(pages::set_language))
+        .route("/settings/password", post(pages::set_password))
+        .route(
+            "/settings/sign-out-everywhere",
+            post(pages::sign_out_everywhere),
+        )
         .route("/tags", get(pages::tags))
         .route(
             "/tags/new",

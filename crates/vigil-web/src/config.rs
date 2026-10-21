@@ -22,6 +22,9 @@ pub struct WebConfig {
     pub version: &'static str,
     /// How long a wrong password is made to wait for its answer. Tests set it to zero.
     pub failed_login_delay: Duration,
+    /// The password is set by `VIGIL_ADMIN_PASSWORD`, which wins at every start, so changing it
+    /// in the UI would be undone by the next one. The settings page then does not offer it.
+    pub password_from_env: bool,
 }
 
 impl WebConfig {
@@ -34,6 +37,7 @@ impl WebConfig {
                 .filter(|url| !url.is_empty()),
             version: env!("CARGO_PKG_VERSION"),
             failed_login_delay: Duration::from_secs(1),
+            password_from_env: false,
         }
     }
 

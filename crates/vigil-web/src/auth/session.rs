@@ -56,6 +56,18 @@ pub(crate) fn clear_cookie(web: &WebConfig) -> Option<HeaderValue> {
     cookie(web, "", 0)
 }
 
+/// The `Set-Cookie` value that remembers the language a person picked, for a year.
+pub(crate) fn language_cookie(web: &WebConfig, code: &str) -> Option<HeaderValue> {
+    let path = web.base_path();
+    let path = if path.is_empty() { "/" } else { &path };
+    let secure = if web.secure_cookies() { "; Secure" } else { "" };
+    HeaderValue::from_str(&format!(
+        "{}={code}; Path={path}; Max-Age=31536000; SameSite=Lax{secure}",
+        crate::i18n::LANG_COOKIE
+    ))
+    .ok()
+}
+
 fn cookie(web: &WebConfig, value: &str, max_age: i64) -> Option<HeaderValue> {
     let path = web.base_path();
     let path = if path.is_empty() { "/" } else { &path };
