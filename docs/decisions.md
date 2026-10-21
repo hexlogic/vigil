@@ -81,6 +81,7 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `vigil-core`, `vigil-scheduler` (web) | Watches, the scheduler handle, the checker and the notifier. |
 | `vigil-fetch`, `vigil-notify` (web) | The form checks an address as the fetcher would (`check_url`), parses a target's URL to name its kind, and validates a message template. |
 | `uuid` (web) | Turns a form's draft id into a processing slot. Already in the tree. |
+| `serde_json` (dev, web) | The acceptance test reads the JSON body ntfy was sent. Already in the tree. |
 | `tokio-util`, `wiremock` (dev, web) | Tests run the same scheduler the binary does and serve watched pages from a mock server. |
 | `thiserror` (web) | `LocaleError` (CLAUDE.md). Already in the tree. |
 | `tower-http` (compression-gzip, compression-br, set-header, timeout) | Compress pages and assets; add the security headers; cut off a request that hangs. `compression-br` brings the pure-Rust `brotli` crate. |
