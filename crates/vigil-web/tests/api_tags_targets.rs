@@ -140,6 +140,90 @@ async fn a_tag_is_made_read_listed_replaced_and_deleted() -> TestResult {
 }
 
 #[tokio::test]
+async fn the_tag_list_gives_each_tag_its_own_targets_and_watch_count() -> TestResult {
+    let app = app().await?;
+    let token = app.api_token("t").await?;
+    let mut targets = Vec::new();
+    for (name, topic) in [("phone", "a"), ("desk", "b")] {
+        let (_, target) = post(
+            &app,
+            &token,
+            "/api/v1/notifications",
+            json!({"name": name, "url": format!("ntfys://ntfy.example/{topic}")}),
+        )
+        .await?;
+        targets.push(target["id"].as_str().ok_or("no id")?.to_owned());
+    }
+    let (phone, desk) = (&targets[0], &targets[1]);
+
+    let mut ids = Vec::new();
+    for (name, linked) in [
+        ("a-none", json!([])),
+        ("b-phone", json!([phone])),
+        ("c-both", json!([phone, desk])),
+    ] {
+        let (status, tag) = post(
+            &app,
+            &token,
+            "/api/v1/tags",
+            json!({"name": name, "targets": linked}),
+        )
+        .await?;
+        assert_eq!(status, StatusCode::CREATED, "{tag}");
+        ids.push(tag["id"].as_str().ok_or("no id")?.to_owned());
+    }
+    // Two watches on the last tag, one on the middle one.
+    for (url, tag) in [
+        ("https://a.example/", &ids[2]),
+        ("https://b.example/", &ids[2]),
+        ("https://c.example/", &ids[1]),
+    ] {
+        let (status, watch) = post(
+            &app,
+            &token,
+            "/api/v1/watch",
+            json!({"url": url, "tags": [tag], "paused": true}),
+        )
+        .await?;
+        assert_eq!(status, StatusCode::CREATED, "{watch}");
+    }
+
+    let (_, list) = app
+        .api(Method::GET, "/api/v1/tags", Some(&token), None)
+        .await?;
+    let tags = list["tags"].as_array().ok_or("no list")?;
+    assert_eq!(tags.len(), 3);
+    let sorted = |value: &Value| -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let mut found: Vec<String> = value
+            .as_array()
+            .ok_or("no targets")?
+            .iter()
+            .filter_map(|t| t.as_str().map(str::to_owned))
+            .collect();
+        found.sort();
+        Ok(found)
+    };
+    let mut both = vec![phone.clone(), desk.clone()];
+    both.sort();
+    assert_eq!(
+        (tags[0]["name"].clone(), tags[0]["watches"].clone()),
+        (json!("a-none"), json!(0))
+    );
+    assert_eq!(tags[0]["targets"], json!([]));
+    assert_eq!(
+        (tags[1]["name"].clone(), tags[1]["watches"].clone()),
+        (json!("b-phone"), json!(1))
+    );
+    assert_eq!(tags[1]["targets"], json!([phone]));
+    assert_eq!(
+        (tags[2]["name"].clone(), tags[2]["watches"].clone()),
+        (json!("c-both"), json!(2))
+    );
+    assert_eq!(sorted(&tags[2]["targets"])?, both);
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_tag_request_that_cannot_work_names_the_field() -> TestResult {
     let app = app().await?;
     let token = app.api_token("t").await?;

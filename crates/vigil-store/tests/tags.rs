@@ -381,3 +381,23 @@ async fn a_tag_is_replaced_with_its_targets_or_not_at_all() -> TestResult {
     ));
     Ok(())
 }
+
+#[tokio::test]
+async fn every_tags_targets_are_listed_with_one_query() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let (a, b) = (target(&store, "a").await?, target(&store, "b").await?);
+    let one = store.create_tag_with_targets(&tag("one"), &[a, b]).await?;
+    let two = store.create_tag_with_targets(&tag("two"), &[b]).await?;
+    let none = store.create_tag_with_targets(&tag("none"), &[]).await?;
+
+    let all = store.tag_target_ids().await?;
+    let mut for_one = all.get(&one.id).cloned().unwrap_or_default();
+    for_one.sort();
+    let mut expected = vec![a, b];
+    expected.sort();
+    assert_eq!(for_one, expected);
+    assert_eq!(all.get(&two.id), Some(&vec![b]));
+    // A tag with no targets is absent, as in the other listing queries.
+    assert!(!all.contains_key(&none.id));
+    Ok(())
+}

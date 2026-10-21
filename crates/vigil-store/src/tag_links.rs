@@ -1,5 +1,7 @@
 //! A tag's default notification targets, saved with the tag.
 
+use std::collections::HashMap;
+
 use sqlx::{Row, SqliteConnection};
 use uuid::Uuid;
 
@@ -98,5 +100,24 @@ impl Store {
         rows.iter()
             .map(|row| parse_id(&row.try_get::<String, _>("target_id")?))
             .collect()
+    }
+
+    /// The default notification targets of every tag that has any, for listing many tags with
+    /// one query. Each tag's targets are ordered by id.
+    pub async fn tag_target_ids(&self) -> Result<HashMap<TagId, Vec<TargetId>>, StoreError> {
+        let rows =
+            sqlx::query("SELECT tag_id, target_id FROM tag_notifications ORDER BY target_id")
+                .fetch_all(&self.pool)
+                .await?;
+        let mut map: HashMap<TagId, Vec<TargetId>> = HashMap::new();
+        for row in &rows {
+            let tag: String = row.try_get("tag_id")?;
+            let tag = Uuid::parse_str(&tag)
+                .map_err(|_| StoreError::Corrupt(format!("invalid tag id {tag:?}")))?;
+            map.entry(tag)
+                .or_default()
+                .push(parse_id(&row.try_get::<String, _>("target_id")?)?);
+        }
+        Ok(map)
     }
 }

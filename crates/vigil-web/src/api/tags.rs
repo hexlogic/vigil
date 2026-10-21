@@ -63,18 +63,26 @@ fn parse_id(text: &str) -> Result<Uuid, ApiError> {
         .map_err(|_| ApiError::not_found(format!("tag {text:?}")))
 }
 
-async fn view_of(state: &AppState, tag: &Tag) -> Result<TagView, ApiError> {
-    let counts = state.store.tag_watch_counts().await?;
-    let targets = state.store.tag_targets(tag.id).await?;
-    Ok(TagView {
+fn view(tag: &Tag, targets: Vec<Uuid>, watches: u32) -> TagView {
+    TagView {
         id: tag.id,
         name: tag.name.clone(),
         color: tag.color.clone(),
         default_interval_secs: tag.default_interval_secs,
         targets,
-        watches: counts.get(&tag.id).copied().unwrap_or(0),
+        watches,
         created_at: rfc3339(tag.created_at),
-    })
+    }
+}
+
+async fn view_of(state: &AppState, tag: &Tag) -> Result<TagView, ApiError> {
+    let counts = state.store.tag_watch_counts().await?;
+    let targets = state.store.tag_targets(tag.id).await?;
+    Ok(view(
+        tag,
+        targets,
+        counts.get(&tag.id).copied().unwrap_or(0),
+    ))
 }
 
 /// Check a request. Unlike the web form, which shows an unknown colour as gray, the API
@@ -147,10 +155,16 @@ async fn check(state: &AppState, input: TagInput) -> Result<(NewTag, Vec<Uuid>),
 pub(super) async fn list_tags(State(state): State<AppState>) -> Result<Json<TagList>, ApiError> {
     let mut found = state.store.list_tags().await?;
     found.sort_by_key(|tag| (tag.name.to_lowercase(), tag.id));
-    let mut tags = Vec::new();
-    for tag in &found {
-        tags.push(view_of(&state, tag).await?);
-    }
+    // Two queries for all the tags, not two per tag.
+    let counts = state.store.tag_watch_counts().await?;
+    let mut targets = state.store.tag_target_ids().await?;
+    let tags = found
+        .iter()
+        .map(|tag| {
+            let watches = counts.get(&tag.id).copied().unwrap_or(0);
+            view(tag, targets.remove(&tag.id).unwrap_or_default(), watches)
+        })
+        .collect();
     Ok(Json(TagList { tags }))
 }
 
