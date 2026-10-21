@@ -173,14 +173,7 @@ pub(super) async fn create_tag(
     ApiJson(input): ApiJson<TagInput>,
 ) -> Result<(StatusCode, [(header::HeaderName, String); 1], Json<TagView>), ApiError> {
     let (new, targets) = check(&state, input).await?;
-    let tag = state.store.create_tag(&new).await?;
-    if let Err(error) = state.store.set_tag_targets(tag.id, &targets).await {
-        // Not half a tag: take back what was made.
-        if let Err(undo) = state.store.delete_tag(tag.id).await {
-            tracing::warn!(error = %undo, "a tag that could not be completed was not removed");
-        }
-        return Err(error.into());
-    }
+    let tag = state.store.create_tag_with_targets(&new, &targets).await?;
     let location = format!("{}/api/v1/tags/{}", state.web.base_path(), tag.id);
     let view = view_of(&state, &tag).await?;
     Ok((
@@ -235,8 +228,7 @@ pub(super) async fn replace_tag(
     let id = parse_id(&id)?;
     state.store.get_tag(id).await?;
     let (new, targets) = check(&state, input).await?;
-    let tag = state.store.update_tag(id, &new).await?;
-    state.store.set_tag_targets(id, &targets).await?;
+    let tag = state.store.replace_tag(id, &new, &targets).await?;
     Ok(Json(view_of(&state, &tag).await?))
 }
 

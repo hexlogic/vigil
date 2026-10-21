@@ -7,7 +7,7 @@ use sqlx::{Row, SqliteConnection};
 use uuid::Uuid;
 use vigil_core::WatchId;
 
-use crate::targets::{NotificationTarget, TargetId, parse_id, target_from_row};
+use crate::targets::{NotificationTarget, target_from_row};
 use crate::{Store, StoreError, now_ms};
 
 /// Identifier of a tag (a UUID v7).
@@ -59,6 +59,28 @@ pub(crate) async fn insert_tag(
     .map(drop)
 }
 
+/// Replace a tag's name, colour and default interval on a connection. An unknown tag is
+/// [`StoreError::NotFound`] and a name that another tag has is [`StoreError::Conflict`].
+pub(crate) async fn update_tag_row(
+    conn: &mut SqliteConnection,
+    id: TagId,
+    new: &NewTag,
+) -> Result<(), StoreError> {
+    let updated =
+        sqlx::query("UPDATE tags SET name = ?, color = ?, default_interval_secs = ? WHERE id = ?")
+            .bind(&new.name)
+            .bind(&new.color)
+            .bind(new.default_interval_secs.map(interval_to_db))
+            .bind(id.to_string())
+            .execute(conn)
+            .await
+            .map_err(|e| name_clash(e, &new.name))?;
+    if updated.rows_affected() == 0 {
+        return Err(StoreError::NotFound(format!("tag {id}")));
+    }
+    Ok(())
+}
+
 impl Store {
     /// Insert a tag with a fresh UUID v7 id.
     ///
@@ -80,22 +102,10 @@ impl Store {
     ///
     /// A name that another tag has is [`StoreError::Conflict`].
     pub async fn update_tag(&self, id: TagId, new: &NewTag) -> Result<Tag, StoreError> {
-        let updated = sqlx::query(
-            "UPDATE tags SET name = ?, color = ?, default_interval_secs = ? WHERE id = ?",
-        )
-        .bind(&new.name)
-        .bind(&new.color)
-        .bind(new.default_interval_secs.map(interval_to_db))
-        .bind(id.to_string())
-        .execute(&self.pool)
-        .await;
-        match updated {
-            Ok(result) if result.rows_affected() == 0 => {
-                Err(StoreError::NotFound(format!("tag {id}")))
-            }
-            Ok(_) => self.get_tag(id).await,
-            Err(e) => Err(name_clash(e, &new.name)),
-        }
+        let mut conn = self.pool.acquire().await?;
+        update_tag_row(&mut conn, id, new).await?;
+        drop(conn);
+        self.get_tag(id).await
     }
 
     /// One tag by id.
@@ -207,51 +217,6 @@ impl Store {
         Ok(counts)
     }
 
-    /// Make `targets` the default notification targets of a tag, replacing the ones it had.
-    /// Repeats are ignored.
-    pub async fn set_tag_targets(
-        &self,
-        tag: TagId,
-        targets: &[TargetId],
-    ) -> Result<(), StoreError> {
-        let mut tx = self.pool.begin().await?;
-        sqlx::query("DELETE FROM tag_notifications WHERE tag_id = ?")
-            .bind(tag.to_string())
-            .execute(&mut *tx)
-            .await?;
-        for target in targets {
-            let linked = sqlx::query(
-                "INSERT OR IGNORE INTO tag_notifications (tag_id, target_id) VALUES (?, ?)",
-            )
-            .bind(tag.to_string())
-            .bind(target.to_string())
-            .execute(&mut *tx)
-            .await;
-            match linked {
-                Ok(_) => {}
-                Err(sqlx::Error::Database(e)) if e.is_foreign_key_violation() => {
-                    return Err(StoreError::NotFound(format!(
-                        "tag {tag} or notification target {target}"
-                    )));
-                }
-                Err(e) => return Err(e.into()),
-            }
-        }
-        tx.commit().await?;
-        Ok(())
-    }
-
-    /// The ids of a tag's default notification targets.
-    pub async fn tag_targets(&self, tag: TagId) -> Result<Vec<TargetId>, StoreError> {
-        let rows = sqlx::query("SELECT target_id FROM tag_notifications WHERE tag_id = ?")
-            .bind(tag.to_string())
-            .fetch_all(&self.pool)
-            .await?;
-        rows.iter()
-            .map(|row| parse_id(&row.try_get::<String, _>("target_id")?))
-            .collect()
-    }
-
     /// The enabled targets a change to a watch is sent to: those linked to the watch itself
     /// and those that are default targets of any of its tags, each once, ordered by name.
     pub async fn delivery_targets(
@@ -280,7 +245,7 @@ fn interval_to_db(secs: u64) -> i64 {
     i64::try_from(secs).unwrap_or(i64::MAX)
 }
 
-fn name_clash(error: sqlx::Error, name: &str) -> StoreError {
+pub(crate) fn name_clash(error: sqlx::Error, name: &str) -> StoreError {
     match error {
         sqlx::Error::Database(e) if e.is_unique_violation() => {
             StoreError::Conflict(format!("a tag named {name:?} already exists"))

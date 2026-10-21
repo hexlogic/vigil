@@ -311,3 +311,73 @@ async fn a_watchs_links_are_replaced_together_or_not_at_all() -> TestResult {
     assert_eq!(store.get_watch(id).await?.updated_at, before);
     Ok(())
 }
+
+#[tokio::test]
+async fn a_tag_is_made_with_its_targets_or_not_at_all() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let phone = target(&store, "phone").await?;
+    let made = store
+        .create_tag_with_targets(&tag("shops"), &[phone, phone])
+        .await?;
+    assert_eq!(store.tag_targets(made.id).await?, [phone]);
+
+    // An unknown target and a taken name each leave no new tag and the old one as it was.
+    assert!(matches!(
+        store
+            .create_tag_with_targets(&tag("news"), &[Uuid::now_v7()])
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert!(matches!(
+        store.create_tag_with_targets(&tag("shops"), &[]).await,
+        Err(StoreError::Conflict(_))
+    ));
+    let names: Vec<_> = store
+        .list_tags()
+        .await?
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    assert_eq!(names, ["shops"]);
+    assert_eq!(store.tag_targets(made.id).await?, [phone]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_tag_is_replaced_with_its_targets_or_not_at_all() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let (a, b) = (target(&store, "a").await?, target(&store, "b").await?);
+    let shops = store.create_tag_with_targets(&tag("shops"), &[a]).await?;
+    let news = store.create_tag_with_targets(&tag("news"), &[]).await?;
+
+    let mut green = tag("shops");
+    green.color = "green".to_owned();
+    let replaced = store.replace_tag(shops.id, &green, &[b]).await?;
+    assert_eq!(replaced.color, "green");
+    assert_eq!(store.tag_targets(shops.id).await?, [b]);
+
+    // The new settings are rolled back with the failed links.
+    let mut renamed = tag("shops 2");
+    renamed.default_interval_secs = Some(60);
+    assert!(matches!(
+        store
+            .replace_tag(shops.id, &renamed, &[Uuid::now_v7()])
+            .await,
+        Err(StoreError::NotFound(_))
+    ));
+    assert_eq!(store.get_tag(shops.id).await?, replaced);
+    assert_eq!(store.tag_targets(shops.id).await?, [b]);
+
+    // A name that another tag has changes nothing either, and neither does an unknown tag.
+    assert!(matches!(
+        store.replace_tag(news.id, &tag("shops"), &[a]).await,
+        Err(StoreError::Conflict(_))
+    ));
+    assert_eq!(store.get_tag(news.id).await?, news);
+    assert!(store.tag_targets(news.id).await?.is_empty());
+    assert!(matches!(
+        store.replace_tag(Uuid::now_v7(), &tag("x"), &[]).await,
+        Err(StoreError::NotFound(_))
+    ));
+    Ok(())
+}

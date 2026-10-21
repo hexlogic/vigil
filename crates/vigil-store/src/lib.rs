@@ -11,6 +11,7 @@ mod outbox;
 mod sessions;
 mod settings;
 mod snapshots;
+mod tag_links;
 mod tags;
 mod targets;
 mod watches;
