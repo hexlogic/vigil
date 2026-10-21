@@ -97,6 +97,36 @@ impl Store {
         target_from_row(&row)
     }
 
+    /// Replace a target's name, URL and default template. Whether it is enabled and which
+    /// watches it is linked to stay as they are.
+    ///
+    /// A name that another target has is [`StoreError::Conflict`].
+    pub async fn update_target(
+        &self,
+        id: TargetId,
+        new: &NewTarget,
+    ) -> Result<NotificationTarget, StoreError> {
+        let updated = sqlx::query(
+            "UPDATE notification_targets SET name = ?, url = ?, default_template = ? WHERE id = ?",
+        )
+        .bind(&new.name)
+        .bind(&new.url)
+        .bind(new.default_template.as_deref())
+        .bind(id.to_string())
+        .execute(&self.pool)
+        .await;
+        match updated {
+            Ok(result) if result.rows_affected() == 0 => {
+                Err(StoreError::NotFound(format!("notification target {id}")))
+            }
+            Ok(_) => self.get_target(id).await,
+            Err(sqlx::Error::Database(e)) if e.is_unique_violation() => Err(StoreError::Conflict(
+                format!("a notification target named {:?} already exists", new.name),
+            )),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     /// Delete a target; its links to watches and its delivery log go with it.
     pub async fn delete_target(&self, id: TargetId) -> Result<(), StoreError> {
         let result = sqlx::query("DELETE FROM notification_targets WHERE id = ?")
