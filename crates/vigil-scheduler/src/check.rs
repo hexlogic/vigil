@@ -283,6 +283,14 @@ impl Backend for Checker {
             .collect())
     }
 
+    async fn find(&self, id: WatchId) -> Result<Option<Job>, String> {
+        match self.store.get_watch(id).await {
+            Ok(watch) => Ok(Some(job_from(watch))),
+            Err(StoreError::NotFound(_)) => Ok(None),
+            Err(error) => Err(describe(&error)),
+        }
+    }
+
     async fn run(&self, id: WatchId) -> RunOutcome {
         match self.check(id).await {
             Ok(report) => RunOutcome::Done {

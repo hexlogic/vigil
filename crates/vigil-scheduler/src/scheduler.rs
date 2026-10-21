@@ -1,22 +1,22 @@
 //! The interval scheduler: a min-heap of due times feeding spawned, rate-limited checks.
 
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::task::{Id, JoinSet};
+use tokio::sync::{Mutex, mpsc};
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use vigil_core::WatchId;
 use vigil_store::now_ms;
 
-use crate::backoff::{MAX_INTERVAL, next_delay, random_jitter};
+use crate::handle::{Command, SchedulerHandle};
 use crate::limits::Limits;
+use crate::runs::Runs;
+use crate::state::State;
 
-/// Shortest wait between two checks of one watch, whatever its interval says.
-const MIN_DELAY: Duration = Duration::from_secs(1);
+/// Requests that can wait for the scheduler's loop to get to them.
+const COMMAND_QUEUE: usize = 256;
 
 /// What the scheduler needs to know about a watch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +53,9 @@ pub enum RunOutcome {
 pub trait Backend: Send + Sync + 'static {
     /// The watches that should currently be scheduled (paused ones left out).
     fn load(&self) -> impl Future<Output = Result<Vec<Job>, String>> + Send;
+    /// One watch, whether or not it should be scheduled; `None` if it does not exist. Used to
+    /// check a paused watch on request.
+    fn find(&self, id: WatchId) -> impl Future<Output = Result<Option<Job>, String>> + Send;
     /// Run one check of a watch.
     fn run(&self, id: WatchId) -> impl Future<Output = RunOutcome> + Send;
 }
@@ -64,7 +67,8 @@ pub struct Settings {
     pub concurrency: usize,
     /// Checks running at once against one host.
     pub per_host: usize,
-    /// How often the watch list is reloaded to notice additions, removals and pauses.
+    /// How often the watch list is reloaded to notice additions, removals and pauses. A
+    /// [`SchedulerHandle`] can ask for a reload sooner.
     pub resync: Duration,
     /// How long shutdown waits for running checks before abandoning them.
     pub shutdown_grace: Duration,
@@ -86,25 +90,40 @@ pub struct Scheduler<B: Backend> {
     backend: Arc<B>,
     limits: Arc<Limits>,
     settings: Settings,
+    commands: mpsc::Sender<Command>,
+    inbox: Mutex<mpsc::Receiver<Command>>,
 }
 
 impl<B: Backend> Scheduler<B> {
     /// Build a scheduler around `backend`.
     pub fn new(backend: B, settings: Settings) -> Self {
         let limits = Limits::new(settings.concurrency, settings.per_host);
+        let (commands, inbox) = mpsc::channel(COMMAND_QUEUE);
         Self {
             backend: Arc::new(backend),
             limits: Arc::new(limits),
             settings,
+            commands,
+            inbox: Mutex::new(inbox),
+        }
+    }
+
+    /// A way to reach this scheduler while it runs, from another task.
+    pub fn handle(&self) -> SchedulerHandle {
+        SchedulerHandle {
+            commands: self.commands.clone(),
         }
     }
 
     /// Schedule and run checks until `cancel` fires, then wait for running checks to finish
     /// (up to [`Settings::shutdown_grace`]) and return.
+    ///
+    /// A scheduler runs once: when it stops, requests that were waiting are dropped and later
+    /// ones fail with [`Stopped`](crate::Stopped).
     pub async fn run(&self, cancel: CancellationToken) {
+        let mut inbox = self.inbox.lock().await;
         let mut state = State::default();
-        let mut tasks: JoinSet<(WatchId, Option<RunOutcome>)> = JoinSet::new();
-        let mut task_watch: HashMap<Id, WatchId> = HashMap::new();
+        let mut runs = Runs::default();
         let mut resync = tokio::time::interval(self.settings.resync);
         resync.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -113,50 +132,28 @@ impl<B: Backend> Scheduler<B> {
             tokio::select! {
                 () = cancel.cancelled() => break,
                 _ = resync.tick() => self.reload(&mut state).await,
+                // This scheduler holds a sender itself, so the queue never reports "closed".
+                Some(command) = inbox.recv() => {
+                    self.command(command, &mut state, &mut runs, &cancel).await;
+                }
                 () = sleep_until_opt(next_due) => {
                     for (id, host) in state.take_due(Instant::now()) {
-                        let backend = Arc::clone(&self.backend);
-                        let limits = Arc::clone(&self.limits);
-                        let cancel = cancel.clone();
-                        let handle = tasks.spawn(async move {
-                            // A check still waiting for a slot when shutdown starts never runs.
-                            let permit = tokio::select! {
-                                () = cancel.cancelled() => None,
-                                permit = limits.acquire(&host) => Some(permit),
-                            };
-                            let Some(_permit) = permit else {
-                                return (id, None);
-                            };
-                            // Both branches can be ready at once; honour the cancellation.
-                            if cancel.is_cancelled() {
-                                return (id, None);
-                            }
-                            (id, Some(backend.run(id).await))
-                        });
-                        task_watch.insert(handle.id(), id);
+                        runs.spawn(&self.backend, &self.limits, &cancel, id, host);
                     }
                 }
-                Some(joined) = tasks.join_next_with_id(), if !tasks.is_empty() => {
-                    match joined {
-                        Ok((task, (id, outcome))) => {
-                            task_watch.remove(&task);
-                            // `None`: dropped at shutdown before it started, nothing to record.
-                            if let Some(outcome) = outcome {
-                                state.finish(id, outcome, Instant::now());
-                            }
-                        }
-                        Err(error) => {
-                            if let Some(id) = task_watch.remove(&error.id()) {
-                                tracing::error!(watch = %id, %error, "check task failed");
-                                state.finish(id, RunOutcome::Failed, Instant::now());
-                            }
-                        }
+                Some((id, outcome)) = runs.next(), if !runs.is_empty() => {
+                    // `None`: dropped at shutdown before it started, nothing to record.
+                    if let Some(outcome) = outcome {
+                        state.finish(id, outcome, Instant::now());
                     }
                 }
             }
         }
 
-        self.drain(tasks).await;
+        inbox.close();
+        // Requests still queued are dropped, which tells their senders the scheduler stopped.
+        while inbox.try_recv().is_ok() {}
+        runs.drain(self.settings.shutdown_grace).await;
     }
 
     async fn reload(&self, state: &mut State) {
@@ -166,21 +163,38 @@ impl<B: Backend> Scheduler<B> {
         }
     }
 
-    async fn drain(&self, mut tasks: JoinSet<(WatchId, Option<RunOutcome>)>) {
-        if tasks.is_empty() {
-            return;
-        }
-        tracing::info!(in_flight = tasks.len(), "waiting for running checks");
-        let wait = async { while tasks.join_next().await.is_some() {} };
-        let timed_out = tokio::time::timeout(self.settings.shutdown_grace, wait)
-            .await
-            .is_err();
-        if timed_out {
-            tracing::warn!(
-                abandoned = tasks.len(),
-                "shutdown grace period over; aborting checks"
-            );
-            tasks.abort_all();
+    async fn command(
+        &self,
+        command: Command,
+        state: &mut State,
+        runs: &mut Runs,
+        cancel: &CancellationToken,
+    ) {
+        match command {
+            Command::Reload => self.reload(state).await,
+            Command::CheckNow { id, reply } => {
+                if !state.is_running(id) {
+                    let host = match state.host_of(id) {
+                        Some(host) => host,
+                        None => match self.backend.find(id).await {
+                            Ok(Some(job)) => job.host,
+                            Ok(None) => {
+                                // The caller may have given up waiting.
+                                let _ = reply.send(RunOutcome::Gone);
+                                return;
+                            }
+                            Err(error) => {
+                                tracing::warn!(watch = %id, %error, "looking up the watch failed");
+                                let _ = reply.send(RunOutcome::Failed);
+                                return;
+                            }
+                        },
+                    };
+                    state.start_now(id);
+                    runs.spawn(&self.backend, &self.limits, cancel, id, host);
+                }
+                runs.wait_for(id, reply);
+            }
         }
     }
 }
@@ -190,156 +204,4 @@ async fn sleep_until_opt(at: Option<Instant>) {
         Some(at) => tokio::time::sleep_until(at).await,
         None => std::future::pending().await,
     }
-}
-
-struct Entry {
-    job: Job,
-    due: Instant,
-    running: bool,
-    /// What the store said about the schedule the last time the watch list was loaded.
-    /// Comparing against this, not against `job`, keeps a failed recording from looking like
-    /// an edit.
-    loaded: Loaded,
-}
-
-/// The parts of a watch that decide when it runs next.
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct Loaded {
-    interval: Duration,
-    jitter: Duration,
-    consecutive_errors: u32,
-}
-
-impl Loaded {
-    fn of(job: &Job) -> Self {
-        Self {
-            interval: job.interval,
-            jitter: job.jitter,
-            consecutive_errors: job.consecutive_errors,
-        }
-    }
-}
-
-/// Schedule bookkeeping. Heap items whose entry has since moved on are skipped when popped.
-#[derive(Default)]
-struct State {
-    entries: HashMap<WatchId, Entry>,
-    heap: BinaryHeap<Reverse<(Instant, WatchId)>>,
-}
-
-impl State {
-    fn next_due(&self) -> Option<Instant> {
-        self.heap.peek().map(|Reverse((due, _))| *due)
-    }
-
-    /// Bring the schedule in line with the current watch list.
-    fn sync(&mut self, jobs: Vec<Job>, now: Instant, now_ms: i64) {
-        let present: HashSet<WatchId> = jobs.iter().map(|job| job.id).collect();
-        self.entries.retain(|id, _| present.contains(id));
-        for job in jobs {
-            match self.entries.get_mut(&job.id) {
-                Some(entry) => {
-                    // A running check will report its own streak when it finishes.
-                    let errors = if entry.running {
-                        entry.job.consecutive_errors
-                    } else {
-                        job.consecutive_errors
-                    };
-                    // An edit that changes the interval or clears the failure streak moves the
-                    // next check; otherwise a watch changed from daily to every five minutes
-                    // would wait out the day, and a fixed watch the whole backoff.
-                    let loaded = Loaded::of(&job);
-                    let moved = loaded != entry.loaded;
-                    entry.loaded = loaded;
-                    entry.job = Job {
-                        consecutive_errors: errors,
-                        ..job
-                    };
-                    if moved && !entry.running {
-                        entry.due = initial_due(&entry.job, now, now_ms);
-                        self.heap.push(Reverse((entry.due, entry.job.id)));
-                    }
-                }
-                None => {
-                    let due = initial_due(&job, now, now_ms);
-                    self.heap.push(Reverse((due, job.id)));
-                    self.entries.insert(
-                        job.id,
-                        Entry {
-                            loaded: Loaded::of(&job),
-                            job,
-                            due,
-                            running: false,
-                        },
-                    );
-                }
-            }
-        }
-    }
-
-    /// Mark every watch that is due as running and return it with its host key.
-    fn take_due(&mut self, now: Instant) -> Vec<(WatchId, String)> {
-        let mut due = Vec::new();
-        while let Some(Reverse((at, id))) = self.heap.peek().copied() {
-            if at > now {
-                break;
-            }
-            self.heap.pop();
-            if let Some(entry) = self.entries.get_mut(&id)
-                && !entry.running
-                && entry.due == at
-            {
-                entry.running = true;
-                due.push((id, entry.job.host.clone()));
-            }
-        }
-        due
-    }
-
-    /// Reschedule a watch whose check just ended.
-    fn finish(&mut self, id: WatchId, outcome: RunOutcome, now: Instant) {
-        let Some(entry) = self.entries.get_mut(&id) else {
-            return;
-        };
-        entry.running = false;
-        match outcome {
-            RunOutcome::Gone => {
-                self.entries.remove(&id);
-                return;
-            }
-            RunOutcome::Done { consecutive_errors } => {
-                entry.job.consecutive_errors = consecutive_errors
-            }
-            RunOutcome::Failed => {
-                entry.job.consecutive_errors = entry.job.consecutive_errors.saturating_add(1);
-            }
-        }
-        let delay = next_delay(entry.job.interval, entry.job.consecutive_errors)
-            .max(MIN_DELAY)
-            .saturating_add(random_jitter(entry.job.jitter));
-        entry.due = later(now, delay);
-        self.heap.push(Reverse((entry.due, id)));
-    }
-}
-
-/// When a watch seen for the first time is due: when its last check plus interval says, or
-/// now if that has passed or it was never checked, spread out by jitter.
-fn initial_due(job: &Job, now: Instant, now_ms: i64) -> Instant {
-    let wait = job.last_checked_at.map_or(Duration::ZERO, |last| {
-        let delay = next_delay(job.interval, job.consecutive_errors);
-        let delay_ms = i64::try_from(delay.as_millis()).unwrap_or(i64::MAX);
-        // Never wait longer than one delay: a last check that lies in the future (the clock was
-        // set back since) must not park the watch until then.
-        let remaining = last
-            .saturating_add(delay_ms)
-            .saturating_sub(now_ms)
-            .min(delay_ms);
-        Duration::from_millis(u64::try_from(remaining).unwrap_or(0))
-    });
-    later(now, wait.saturating_add(random_jitter(job.jitter)))
-}
-
-/// `now + delay`, with the delay bounded by [`MAX_INTERVAL`] so it cannot overflow an `Instant`.
-fn later(now: Instant, delay: Duration) -> Instant {
-    now + delay.min(MAX_INTERVAL)
 }
