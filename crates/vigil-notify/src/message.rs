@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::builtin::builtin;
 use crate::error::TemplateError;
 use crate::escape::{Markup, diff_link, escape, link};
-use crate::event::Event;
+use crate::event::{Event, default_title};
 use crate::template::{Vars, render, render_cut};
 use crate::truncate::{Limit, cut_to, shrink};
 
@@ -34,7 +34,7 @@ pub fn prepare(markup: Markup, limit: Limit, event: &Event, template: Option<&st
     let mut note = None;
     if let Some(source) = template {
         match fit(markup, limit, source, event) {
-            Ok(prepared) => return finish(prepared, None),
+            Ok(prepared) => return finish(prepared, None, event),
             Err(error) => {
                 note = Some(format!("custom {error}; sent the built-in one"));
             }
@@ -42,12 +42,21 @@ pub fn prepare(markup: Markup, limit: Limit, event: &Event, template: Option<&st
     }
     let prepared = fit(markup, limit, builtin(markup), event)
         .unwrap_or_else(|_| minimal(markup, limit, event));
-    finish(prepared, note)
+    finish(prepared, note, event)
 }
 
-fn finish(mut prepared: Prepared, note: Option<String>) -> Prepared {
-    let title = shrink(&prepared.title, MAX_TITLE, Limit::Chars(MAX_TITLE));
-    prepared.title = title.lines().next().unwrap_or_default().to_owned();
+fn finish(mut prepared: Prepared, note: Option<String>, event: &Event) -> Prepared {
+    // One short line: the first that has anything in it, or the default if there is none.
+    let title = prepared
+        .title
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map_or_else(
+            || default_title(&event.watch_name, event.is_test),
+            |line| shrink(line, MAX_TITLE, Limit::Chars(MAX_TITLE)),
+        );
+    prepared.title = title;
     prepared.template_note = note;
     prepared
 }
@@ -198,11 +207,7 @@ fn fit(
 fn minimal(markup: Markup, limit: Limit, event: &Event) -> Prepared {
     let name = shrink(&event.watch_name, 80, Limit::Chars(80));
     let url = shrink(&event.watch_url, 200, Limit::Chars(200));
-    let headline = if event.is_test {
-        name.clone()
-    } else {
-        format!("{name} changed")
-    };
+    let headline = default_title(&name, event.is_test);
     let mut body = format!(
         "{}\n{}{}",
         escape(markup, &headline),

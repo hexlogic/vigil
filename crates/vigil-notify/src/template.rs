@@ -10,7 +10,7 @@ use minijinja::{AutoEscape, Environment, Error, State, UndefinedBehavior, escape
 
 use crate::error::TemplateError;
 use crate::escape::{Markup, code_block, escape, link};
-use crate::event::Event;
+use crate::event::{Event, default_title};
 
 /// How much work one render may do before it is stopped, so a loop in a template cannot stall
 /// the thread that renders it.
@@ -181,15 +181,6 @@ fn lenient() -> &'static Environment<'static> {
     ENV.get_or_init(|| build_environment(UndefinedBehavior::Chainable))
 }
 
-/// The title when the template sets none.
-pub(crate) fn default_title(vars: &Vars) -> String {
-    if vars.is_test {
-        vars.watch_name.clone()
-    } else {
-        format!("{} changed", vars.watch_name)
-    }
-}
-
 /// Render `source` for a channel with `markup`; a variable the template uses must exist and the
 /// message must not be empty.
 pub(crate) fn render(
@@ -231,7 +222,10 @@ fn render_in(
         .state()
         .lookup("title")
         .filter(|title| !title.is_undefined() && !title.is_none())
-        .map_or_else(|| default_title(vars), |title| text_of(&title));
+        .map_or_else(
+            || default_title(&vars.watch_name, vars.is_test),
+            |title| text_of(&title),
+        );
     Ok(Rendered {
         title,
         body: rendered.output().trim().to_owned(),

@@ -31,6 +31,15 @@ pub struct Event {
     pub is_test: bool,
 }
 
+/// The title of a message whose template sets none.
+pub(crate) fn default_title(watch_name: &str, is_test: bool) -> String {
+    if is_test {
+        watch_name.to_owned()
+    } else {
+        format!("{watch_name} changed")
+    }
+}
+
 impl Event {
     /// When the check ran, as an RFC 3339 UTC timestamp.
     pub fn checked_at_rfc3339(&self) -> String {

@@ -150,6 +150,13 @@ fn titles_are_one_short_line() {
     let event = Event::sample();
     let out = prep(PLAIN, &event, Some(r#"{% set title = "first\nsecond" %}x"#));
     assert_eq!(out.title, "first");
+    // Leading blank lines are skipped, and a title with nothing in it is the default.
+    let out = prep(PLAIN, &event, Some(r#"{% set title = "\n  abc\ndef" %}x"#));
+    assert_eq!(out.title, "abc");
+    let out = prep(PLAIN, &event, Some(r#"{% set title = " \n " %}x"#));
+    assert_eq!(out.title, "Example product page changed");
+    let out = prep(PLAIN, &event, Some(r#"{% set title = "" %}x"#));
+    assert_eq!(out.title, "Example product page changed");
     let mut long = Event::sample();
     long.watch_name = "n".repeat(1000);
     assert!(prep(PLAIN, &long, None).title.chars().count() <= 200);
