@@ -158,22 +158,28 @@ fn secret_and_secret_url_print_as_stars() {
 }
 
 #[test]
-fn credentials_over_plain_http_are_flagged_unless_local() {
+fn secrets_over_plain_http_are_flagged_unless_local() {
     for (url, flagged) in [
         ("ntfy://me:pw@ntfy.lan/t", true),
         ("ntfy://ntfy.lan/t?token=x", true),
-        ("ntfy://ntfy.lan/t", false),
+        // The topic is the secret of a public ntfy server.
+        ("ntfy://ntfy.lan/t", true),
+        ("ntfy://ntfy.sh/my-secret-topic", true),
         ("ntfys://me:pw@ntfy.sh/t", false),
         ("ntfy://me:pw@127.0.0.1:8080/t", false),
         ("ntfy://me:pw@localhost/t", false),
         ("json://me:pw@hooks.lan/x", true),
-        ("json://hooks.lan/x", false),
+        // The token of a webhook is usually in its path or query.
+        ("json://hooks.lan/x", true),
+        ("json://hooks.lan/?key=1", true),
+        ("json://hooks.lan/", false),
+        ("jsons://hooks.lan/x", false),
         ("gotify://gotify.lan/TOKEN", true),
         ("gotify://[::1]/TOKEN", false),
         ("gotifys://gotify.lan/TOKEN", false),
         ("tgram://1:a/2", false),
         ("mailto://smtp.lan?from=a@b.co&tls=none", false),
     ] {
-        assert_eq!(ok(url).sends_credentials_in_cleartext(), flagged, "{url}");
+        assert_eq!(ok(url).sends_secrets_in_cleartext(), flagged, "{url}");
     }
 }

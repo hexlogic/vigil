@@ -1,6 +1,6 @@
 //! Notification URL parsing, channels and message templating.
 //!
-//! A notification target is a URL such as `ntfy://ntfy.sh/my-topic` or
+//! A notification target is a URL such as `ntfys://ntfy.sh/my-topic` or
 //! `tgram://123456:token/-100123`. [`Channel::parse`] turns it into a [`Channel`], checking it
 //! strictly and explaining what is wrong without repeating the URL, which usually holds
 //! credentials. Every credential is a [`Secret`] whose `Debug` and `Display` print `***`, and

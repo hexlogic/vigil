@@ -7,7 +7,7 @@
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ParseError {
     /// The text has no `scheme://` in front.
-    #[error("not a notification URL: expected scheme://... (for example ntfy://ntfy.sh/my-topic)")]
+    #[error("not a notification URL: expected scheme://... (for example ntfys://ntfy.sh/my-topic)")]
     NotAUrl,
     /// The scheme is not one of the supported channels.
     #[error("{scheme}:// notifications are not supported yet; supported schemes: {supported}")]
