@@ -109,8 +109,19 @@ impl<'a> Builder<'a> {
         self.target_defs.entry(target.url.clone()).or_insert(target);
     }
 
-    /// A watch that will be made, unless its address is already watched.
+    /// A watch that will be made, unless its request settings are not acceptable, as the form,
+    /// the API and the command line judge them, or its address is already watched.
     pub(crate) fn add(&mut self, source: String, watch: ImportWatch, mut notes: Vec<Note>) {
+        // A watch that could not be saved again by an edit is not made: it would also lose
+        // what it sends, as a request without its body is a different request.
+        if let Err(error) = watch.settings.fetch.validate() {
+            notes.push(Note::skipped(
+                "body",
+                format!("the watch was not made: {error}"),
+            ));
+            self.items.push(ItemReport::skipped(source, notes));
+            return;
+        }
         if !self.options.allow_duplicates && self.existing.watch_urls.contains(&watch.settings.url)
         {
             notes.push(Note::skipped(

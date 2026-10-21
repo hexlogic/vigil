@@ -314,3 +314,27 @@ fn the_targets_of_a_tag_that_exists_are_not_made() -> TestResult {
     assert_eq!(fresh.report.totals.targets_created, 1);
     Ok(())
 }
+
+#[test]
+fn a_backup_watch_with_a_body_that_is_too_large_is_not_made() -> TestResult {
+    let big = "x".repeat(vigil_core::FetchSettings::MAX_BODY_BYTES + 1);
+    let backup = serde_json::json!({
+        "watching": {
+            ID_LOW: {"url": "https://big.example/", "title": "big", "method": "POST", "body": big},
+            ID_HIGH: {"url": "https://ok.example/", "title": "ok"},
+        },
+        "settings": {"application": {}}
+    });
+    let plan = read(backup.to_string().as_bytes())?;
+    assert_eq!(plan.batch.watches.len(), 1);
+    assert_eq!(plan.batch.watches[0].settings.url, "https://ok.example/");
+    let skipped = item(&plan, "big")?;
+    assert_eq!(skipped.status, vigil_import::report::Status::Skipped);
+    assert!(
+        skipped
+            .notes
+            .iter()
+            .any(|n| n.message.contains("longer than 1 MiB"))
+    );
+    Ok(())
+}

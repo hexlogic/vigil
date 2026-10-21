@@ -287,3 +287,36 @@ fn a_urlwatch_job_with_data_that_is_not_text_says_so() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn a_urlwatch_job_with_a_body_that_is_too_large_is_not_made_and_says_why() -> TestResult {
+    let big = "x".repeat(vigil_core::FetchSettings::MAX_BODY_BYTES + 1);
+    let yaml = format!(
+        "---\nurl: https://big.example/\nname: Big\nmethod: POST\ndata: {big}\n---\nurl: https://ok.example/\nname: Ok\n"
+    );
+    let plan = plan(
+        yaml.as_bytes(),
+        Some(Format::Urlwatch),
+        &Options::default(),
+        &Existing::default(),
+    )?;
+    // The other job is made; this one is reported, with the reason and not the body.
+    assert_eq!(plan.batch.watches.len(), 1);
+    assert_eq!(plan.batch.watches[0].settings.url, "https://ok.example/");
+    let big = plan
+        .report
+        .items
+        .iter()
+        .find(|i| i.source == "Big")
+        .ok_or("no item")?;
+    assert_eq!(big.status, vigil_import::report::Status::Skipped);
+    assert!(
+        big.notes
+            .iter()
+            .any(|n| n.message.contains("longer than 1 MiB")),
+        "{:?}",
+        big.notes
+    );
+    assert_eq!(plan.report.totals.skipped, 1);
+    Ok(())
+}
