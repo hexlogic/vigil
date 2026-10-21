@@ -4,6 +4,8 @@ mod checks;
 mod deliveries;
 mod migrate;
 mod outbox;
+mod sessions;
+mod settings;
 mod snapshots;
 mod targets;
 mod watches;
@@ -18,6 +20,7 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, S
 pub use checks::{CHECK_LOG_KEEP, CheckSuccess, Content, RecordOutcome};
 pub use deliveries::{DELIVERY_LOG_KEEP, DeliveryOutcome, DeliveryRecord};
 pub use outbox::{NewPending, PendingNotification};
+pub use sessions::Session;
 pub use snapshots::{SnapshotId, SnapshotMeta};
 pub use targets::{NewTarget, NotificationTarget, TargetId};
 pub use watches::NewWatch;
