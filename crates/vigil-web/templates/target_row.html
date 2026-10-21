@@ -1,0 +1,18 @@
+<tr id="target-{{ row.id }}"{% if !row.enabled %} class="paused"{% endif %}>
+<td class="name">
+<span class="title">{{ row.name }}</span>
+<span class="sub">{{ row.kind }} · {{ row.watches }}{% if row.own_template %} · {{ ctx.t("targets.own_template") }}{% endif %}</span>
+{% if let Some(test) = row.test %}<span class="sub {% if test.ok %}ok{% else %}error{% endif %}" role="status">{{ test.message }}</span>{% endif %}
+</td>
+<td class="hide-narrow"><span class="mono small">{{ row.address }}</span>
+{% if row.cleartext %}<span class="sub error">{{ ctx.t("targets.cleartext") }}</span>{% endif %}</td>
+<td><span class="badge {% if row.enabled %}badge-ok{% endif %}">{% if row.enabled %}{{ ctx.t("targets.enabled") }}{% else %}{{ ctx.t("targets.disabled") }}{% endif %}</span></td>
+<td class="right nowrap">
+<span class="actions">
+<button class="btn btn-small" type="button" hx-post="{{ row.test_url }}" hx-target="#target-{{ row.id }}" hx-swap="outerHTML" hx-disabled-elt="this"><span class="spinner htmx-indicator" aria-hidden="true"></span> {{ ctx.t("targets.test") }}</button>
+<button class="btn btn-small" type="button" hx-post="{{ row.toggle_url }}" hx-target="#target-{{ row.id }}" hx-swap="outerHTML">{% if row.enabled %}{{ ctx.t("targets.disable") }}{% else %}{{ ctx.t("targets.enable") }}{% endif %}</button>
+<a class="btn btn-small" href="{{ row.edit_url }}">{{ ctx.t("watches.action.edit") }}</a>
+<button class="btn btn-small btn-danger" type="button" hx-get="{{ row.delete_url }}" hx-target="#target-{{ row.id }}" hx-swap="outerHTML">{{ ctx.t("watches.action.delete") }}</button>
+</span>
+</td>
+</tr>
