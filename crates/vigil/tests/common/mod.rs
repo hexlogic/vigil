@@ -33,7 +33,7 @@ impl From<Output> for Run {
 }
 
 /// Proxy variables a developer machine or CI runner might have set.
-const PROXY_VARS: [&str; 8] = [
+pub const PROXY_VARS: [&str; 8] = [
     "HTTP_PROXY",
     "HTTPS_PROXY",
     "ALL_PROXY",

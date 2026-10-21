@@ -4,11 +4,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use vigil_core::{Schedule, Watch};
-use vigil_store::NewWatch;
+use vigil_notify::validate_template;
+use vigil_store::{NewWatch, NotificationTarget};
 
+use super::notify::{read_text, resolve_all};
 use super::settings::apply;
 use super::{open_store, resolve};
-use crate::cli::ContentArgs;
+use crate::cli::{ContentArgs, NotifyArgs};
 use crate::config::Config;
 use crate::format::{ago, render_table};
 
@@ -19,6 +21,7 @@ pub async fn add(
     every: Duration,
     name: Option<String>,
     content: &ContentArgs,
+    notify: &NotifyArgs,
 ) -> anyhow::Result<()> {
     vigil_fetch::check_url(url).with_context(|| format!("cannot watch {url}"))?;
     let mut new = NewWatch::new(url, Schedule::Interval(every.as_secs()));
@@ -27,14 +30,51 @@ pub async fn add(
     }
     apply(&mut new, content)?;
     let store = open_store(config).await?;
+    // Everything that can be refused is checked before the watch exists.
+    let targets = resolve_all(&store, &notify.notify).await?;
+    let template = template_option(notify)?;
+
     let watch = store.create_watch(new).await?;
+    for target in &targets {
+        store.link_target(watch.id, target.id).await?;
+    }
+    if let Some(Some(template)) = &template {
+        store
+            .set_notification_template(watch.id, Some(template))
+            .await?;
+    }
     println!(
         "added {} {} (every {})",
         watch.id,
         watch.url,
         humantime::format_duration(Duration::from_secs(every.as_secs()))
     );
+    if !targets.is_empty() {
+        println!("notifies {}", names(&targets));
+    }
     Ok(())
+}
+
+/// The `--notify-template` option: `None` when not given, `Some(None)` when it asks to remove
+/// the template, `Some(Some(text))` for a template that has been checked.
+fn template_option(notify: &NotifyArgs) -> anyhow::Result<Option<Option<String>>> {
+    let Some(value) = &notify.notify_template else {
+        return Ok(None);
+    };
+    if value.is_empty() {
+        return Ok(Some(None));
+    }
+    let text = read_text("notify-template", value)?;
+    validate_template(&text).context("invalid --notify-template")?;
+    Ok(Some(Some(text)))
+}
+
+fn names(targets: &[NotificationTarget]) -> String {
+    targets
+        .iter()
+        .map(|t| t.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Change a watch. Only what is given changes; the next check compares its new output with
@@ -45,10 +85,16 @@ pub async fn edit(
     every: Option<Duration>,
     name: Option<String>,
     content: &ContentArgs,
+    notify: &NotifyArgs,
+    no_notify: &[String],
 ) -> anyhow::Result<()> {
+    let settings_change = every.is_some() || name.is_some() || !content.is_empty();
+    let notify_change =
+        !notify.notify.is_empty() || notify.notify_template.is_some() || !no_notify.is_empty();
     anyhow::ensure!(
-        every.is_some() || name.is_some() || !content.is_empty(),
-        "nothing to change: pass --every, --name, --processor, --pipeline or --conditions"
+        settings_change || notify_change,
+        "nothing to change: pass --every, --name, --processor, --pipeline, --conditions, \
+         --notify, --no-notify or --notify-template"
     );
     let store = open_store(config).await?;
     let id = resolve(&store, id).await?;
@@ -61,7 +107,29 @@ pub async fn edit(
         settings.name = name;
     }
     apply(&mut settings, content)?;
-    let watch = store.update_watch(id, &settings).await?;
+    // Everything that can be refused is checked before anything is changed.
+    let add = resolve_all(&store, &notify.notify).await?;
+    let remove = resolve_all(&store, no_notify).await?;
+    let template = template_option(notify)?;
+
+    // Linking and the template are not settings of the page check: they leave the remembered
+    // validators, the failure streak and the schedule alone.
+    let watch = if settings_change {
+        store.update_watch(id, &settings).await?
+    } else {
+        watch
+    };
+    for target in &add {
+        store.link_target(id, target.id).await?;
+    }
+    for target in &remove {
+        store.unlink_target(id, target.id).await?;
+    }
+    if let Some(template) = &template {
+        store
+            .set_notification_template(id, template.as_deref())
+            .await?;
+    }
     println!("updated {} {}", watch.id, watch.url);
     Ok(())
 }
@@ -71,11 +139,15 @@ pub async fn show(config: &Config, id: &str) -> anyhow::Result<()> {
     let store = open_store(config).await?;
     let id = resolve(&store, id).await?;
     let watch = store.get_watch(id).await?;
-    println!("{}", serde_json::to_string_pretty(&settings_json(&watch))?);
+    let targets = store.targets_for_watch(id, false).await?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&settings_json(&watch, &targets))?
+    );
     Ok(())
 }
 
-fn settings_json(watch: &Watch) -> serde_json::Value {
+fn settings_json(watch: &Watch, targets: &[NotificationTarget]) -> serde_json::Value {
     serde_json::json!({
         "id": watch.id,
         "name": watch.name,
@@ -88,6 +160,8 @@ fn settings_json(watch: &Watch) -> serde_json::Value {
         "pipeline": watch.pipeline,
         "conditions": watch.conditions,
         "snapshot_retention": watch.snapshot_retention,
+        "notify": targets.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+        "notification_template": watch.notification_template,
     })
 }
 
@@ -195,7 +269,9 @@ mod tests {
     fn show_prints_the_stored_shapes() -> Result<(), serde_json::Error> {
         let mut w = watch("w", WatchState::default(), false);
         w.pipeline = vec![vigil_core::Step::Trim {}];
-        let shown = settings_json(&w);
+        let shown = settings_json(&w, &[]);
+        assert_eq!(shown["notify"], serde_json::json!([]));
+        assert_eq!(shown["notification_template"], serde_json::Value::Null);
         assert_eq!(shown["schedule"], serde_json::json!({"interval": 300}));
         assert_eq!(shown["processor"], "text");
         assert_eq!(shown["pipeline"], serde_json::json!([{"type": "trim"}]));

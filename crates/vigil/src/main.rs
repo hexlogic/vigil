@@ -33,13 +33,19 @@ async fn main() -> anyhow::Result<ExitCode> {
                     every,
                     name,
                     content,
-                } => commands::watch::add(&config, &url, every, name, &content).await?,
+                    notify,
+                } => commands::watch::add(&config, &url, every, name, &content, &notify).await?,
                 WatchCommand::Edit {
                     id,
                     every,
                     name,
                     content,
-                } => commands::watch::edit(&config, &id, every, name, &content).await?,
+                    notify,
+                    no_notify,
+                } => {
+                    commands::watch::edit(&config, &id, every, name, &content, &notify, &no_notify)
+                        .await?
+                }
                 WatchCommand::Show { id } => commands::watch::show(&config, &id).await?,
                 WatchCommand::List => commands::watch::list(&config).await?,
                 WatchCommand::Remove { id } => commands::watch::remove(&config, &id).await?,
@@ -62,7 +68,7 @@ async fn main() -> anyhow::Result<ExitCode> {
                 .map(|()| ExitCode::SUCCESS),
             NotifyCommand::Test { target } => commands::notify::test(&config, &target).await,
         },
-        Command::Check { id } => commands::check::run(&config, &id).await,
+        Command::Check { id, no_notify } => commands::check::run(&config, &id, no_notify).await,
         Command::Diff { id } => commands::diff::run(&config, &id)
             .await
             .map(|()| ExitCode::SUCCESS),
