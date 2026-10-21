@@ -39,12 +39,23 @@ impl Default for Endpoints {
 }
 
 /// The body of a request.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Debug` leaves the content out: it is the message, and for ntfy it holds the topic.
+#[derive(Clone, PartialEq, Eq)]
 pub enum HttpBody {
     /// A JSON document.
     Json(Value),
     /// `application/x-www-form-urlencoded` fields.
     Form(Vec<(String, String)>),
+}
+
+impl std::fmt::Debug for HttpBody {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Json(_) => f.write_str("Json(..)"),
+            Self::Form(fields) => write!(f, "Form({} fields)", fields.len()),
+        }
+    }
 }
 
 /// A POST request, with its secrets kept apart so that `Debug` is safe to print.
@@ -56,6 +67,8 @@ pub struct HttpRequest {
     pub auth: Option<HttpAuth>,
     /// Other headers whose value is a credential.
     pub secret_headers: Vec<(&'static str, Secret)>,
+    /// Credentials that are part of the body, such as an ntfy topic.
+    pub body_secrets: Vec<Secret>,
     /// The body.
     pub body: HttpBody,
 }
@@ -77,6 +90,7 @@ impl HttpRequest {
                 .iter()
                 .map(|(_, s)| s.expose().to_owned()),
         );
+        secrets.extend(self.body_secrets.iter().map(|s| s.expose().to_owned()));
         // "/" and the like would blank out half of any message.
         secrets.retain(|s| s.len() > 3);
         secrets
@@ -107,6 +121,7 @@ fn json_request(url: Url, auth: Option<HttpAuth>, body: Value) -> HttpRequest {
         url: SecretUrl::new(url),
         auth,
         secret_headers: Vec::new(),
+        body_secrets: Vec::new(),
         body: HttpBody::Json(body),
     }
 }
@@ -132,7 +147,9 @@ fn ntfy(c: &Ntfy, prepared: &Prepared, event: &Event) -> HttpRequest {
     if !event.diff_url.is_empty() {
         body["click"] = json!(event.diff_url);
     }
-    json_request(c.base.clone(), c.auth.clone(), body)
+    let mut request = json_request(c.base.clone(), c.auth.clone(), body);
+    request.body_secrets.push(c.topic.clone());
+    request
 }
 
 fn telegram(
@@ -266,6 +283,7 @@ fn webhook(c: &Webhook, prepared: &Prepared, event: &Event) -> HttpRequest {
         url: c.url.clone(),
         auth: c.auth.clone(),
         secret_headers: Vec::new(),
+        body_secrets: Vec::new(),
         body,
     }
 }
