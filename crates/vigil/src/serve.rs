@@ -10,7 +10,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use vigil_fetch::Fetcher;
 use vigil_scheduler::{Checker, Scheduler};
-use vigil_web::{AppState, router};
+use vigil_web::{AppState, Auth, WebConfig, router};
 
 use crate::commands::notify::notifier;
 use crate::commands::open_store;
@@ -57,12 +57,14 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         async move { scheduler.run(cancel).await }
     });
 
+    // Sign-in arrives with the login page; until then the UI is open, and says so.
+    let web = WebConfig::new(Auth::Disabled, config.base_url.as_deref());
+    let state = AppState::new(store, web).context("loading the web UI texts")?;
     let shutdown = cancel.clone();
-    let server =
-        axum::serve(listener, router(AppState { store })).with_graceful_shutdown(async move {
-            shutdown_signal().await;
-            shutdown.cancel();
-        });
+    let server = axum::serve(listener, router(state)).with_graceful_shutdown(async move {
+        shutdown_signal().await;
+        shutdown.cancel();
+    });
     let served = supervise(server.into_future(), scheduler_task, &cancel).await;
     // Notifications still being delivered get a moment after the last check has finished.
     if let Err(err) = retries.await {

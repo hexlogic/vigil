@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="{{ ctx.lang_code() }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false,"selfRequestsOnly":true,"historyCacheSize":0,"refreshOnHistoryMiss":true}'>
+<title>{% block title %}{% endblock %} · Vigil</title>
+<link rel="icon" href="{{ ctx.asset("icon.svg") }}" type="image/svg+xml">
+<link rel="stylesheet" href="{{ ctx.asset("vigil.css") }}">
+<script src="{{ ctx.asset("htmx.min.js") }}" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">{{ ctx.t("layout.skip") }}</a>
+{% if ctx.no_auth() %}<div class="banner banner-warn" role="alert">{{ ctx.t("layout.no_auth_warning") }}</div>{% endif %}
+<header class="top">
+<a class="brand" href="{{ ctx.url("/") }}">Vigil</a>
+<nav aria-label="{{ ctx.t("layout.main_menu") }}">
+{% for item in ctx.menu() %}<a href="{{ item.url }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.label }}</a>
+{% endfor %}</nav>
+</header>
+<main id="main">
+{% block content %}{% endblock %}
+</main>
+<footer>{{ ctx.t1("layout.version", "version", ctx.version()) }}</footer>
+</body>
+</html>

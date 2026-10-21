@@ -67,6 +67,12 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `sqlx` (dev, scheduler) | Tests flip a watch to paused until the API has a pause operation. |
 | `humantime` | Parse `--every 5m` and print intervals and RFC 3339 timestamps without pulling in a date library. |
 | `humantime` (scheduler) | `parse_interval`, so the command line and the web form accept the same text (`30s`, `5m`, `1h 30m`) within the same bounds. Already used by the binary. |
+| `askama` (derive, std, urlencode; default features off) | Compile-time HTML templates for the web UI (PLAN.md section 2). A template that refers to a missing field fails the build, and output is escaped by default. `config` is off: there is no `askama.toml`. |
+| `rust-embed` (debug-embed) | Embeds `assets/` in the binary (PLAN.md section 2). `debug-embed` makes debug builds embed the files too, so tests see what the release binary serves and the binary does not depend on the working directory. |
+| `toml` (web) | Reads `locales/*.toml`. Already in the tree through `figment`. |
+| `thiserror` (web) | `LocaleError` (CLAUDE.md). Already in the tree. |
+| `tower-http` (compression-gzip, compression-br, set-header, timeout) | Compress pages and assets; add the security headers; cut off a request that hangs. `compression-br` brings the pure-Rust `brotli` crate. |
+| `vigil-core` (dev, web) | Tests build watches. |
 | `thiserror` (scheduler) | The `Stopped` error of the scheduler handle (CLAUDE.md: typed errors in library crates). Already in the tree. |
 | `tokio-util` (binary) | Share one `CancellationToken` between the HTTP server and the scheduler. |
 | `wiremock`, `tempfile` (dev, binary) | End-to-end tests that run the real binary against a mock server and a throwaway data directory. |
@@ -313,3 +319,15 @@ The processing thread limit (one per key, 32 in all) is keyed by a slot that is 
 ## The test button
 
 `Notifier::test_once` sends a test notification with no retries; `test` (used by `vigil notify test`) keeps the notifier's retry policy. A person is waiting behind the button in the web UI, and the default policy can take 42 seconds to give up (2, 10 and 30 second waits), longer than a browser or a proxy waits. One attempt answers at once with the channel's own error, and the person can press the button again. Either way the result is a row in the delivery log without a watch, and a test is never kept in the outbox for later tries.
+
+## Web UI foundations
+
+Pages are server-rendered with `askama` and made interactive with htmx; there is no JavaScript build step and no script of our own. `htmx.min.js` is the unmodified `dist/htmx.min.js` of the htmx.org 2.0.11 npm package (SHA-256 `d6fdc75f204e6bdefa99b69bf1e6d4ac69b8a364f77929f45c13476b4000f717`, 0BSD licence shipped next to it as `assets/htmx.LICENSE`). It was taken from the registry tarball after checking the published integrity hash, and a test pins the hash, so an edited copy cannot slip in. To upgrade, replace the file, the hash in the test and this paragraph together. CSS and JavaScript together are kept under 100 KB (a test checks), about half of which is htmx.
+
+The page policy is `default-src 'self'` with no `unsafe-inline` and no `unsafe-eval`, `frame-ancestors 'none'`, `form-action 'self'` and `object-src 'none'`. So templates carry no `<style>`, `style=` attributes, inline scripts or event-handler attributes, and htmx is told (a `htmx-config` meta tag) not to inject its indicator styles, not to evaluate code and not to run script tags; the indicator rules are in `vigil.css`. Dialogs (`hx-confirm`) are not used: confirmation is an inline step rendered by the server. Pages are `Cache-Control: no-store`; assets carry an `ETag` (the SHA-256 that `rust-embed` computes) and are cached for a year when requested with `?v=<version>`, which every link in the layout adds, and revalidated otherwise.
+
+Everything except `/healthz` is served under the path of `base_url` (`https://example.com/vigil` serves `/vigil/...`). The reverse proxy has to pass the prefix on rather than strip it; links, assets and redirects are all built with the prefix. `/healthz` stays at the root for container health checks. axum nests `/` at the prefix without the final slash, so the slash form is registered as well.
+
+## Interface language
+
+UI text is in `locales/en.toml` and `locales/uk.toml`, embedded with `include_str!`, parsed once at start-up and flattened to dotted keys (`nav.watches`). A text with a count has one key per plural form (`watches.count.one`, `.few`, `.many`, `.other`); English uses `one` and `other`, Ukrainian the CLDR integer rules for `one`, `few` and `many`. Placeholders are `{name}`. The language is the `vigil_lang` cookie if it names one we have, else the best entry of `Accept-Language` by quality, else English; a missing text falls back to English, and one missing there shows as its key. Tests make this hold: both files have the same keys (counts compared by base name, since Ukrainian has more forms), every plural has all the forms its language needs, placeholders agree, no text is empty, every string in `src/` or `templates/` that looks like a key of one of the namespaces exists, and no template holds visible words of its own. Messages that library crates produce (a notification URL parse error, a pipeline error, a fetch error) are shown as they are, in English: translating them would mean threading a language through crates that know nothing of the UI, and they quote user input, which is not translatable anyway. Messages the web crate makes itself (form validation, flash messages) come from the locale files.
