@@ -179,3 +179,34 @@ async fn an_ipv6_server_is_reached_without_brackets() {
     assert_eq!((report.attempts, report.result), (1, Ok(())));
     assert_eq!(server.received().len(), 1);
 }
+
+#[tokio::test]
+async fn the_timeout_bounds_the_whole_attempt() {
+    // Every reply comes in well under the timeout, but there are many of them.
+    let server = support::smtp::start_slow(Duration::from_millis(250)).await;
+    let sender = match Sender::new(SenderConfig {
+        timeout: Duration::from_millis(700),
+        ..SenderConfig::default()
+    }) {
+        Ok(sender) => sender,
+        Err(error) => panic!("sender: {error}"),
+    };
+    let channel = support::channel(&plain_url(&server));
+    let event = Event::sample();
+    let started = std::time::Instant::now();
+    let report = deliver(
+        &sender,
+        &channel,
+        &support::prepared(&channel, &event),
+        &event,
+        &quick(0),
+        &CancellationToken::new(),
+    )
+    .await;
+    assert_eq!(report.result, Err("timed out".to_owned()));
+    assert!(
+        started.elapsed() < Duration::from_millis(1500),
+        "{:?}",
+        started.elapsed()
+    );
+}

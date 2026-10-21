@@ -50,20 +50,20 @@ pub(crate) async fn send_email(
             transport.credentials(Credentials::new(user.clone(), password.expose().to_owned()));
     }
 
-    transport
-        .build()
-        .send(message)
+    // lettre's timeout applies to each step of the conversation; this bounds the whole attempt,
+    // as it does for the HTTP channels, so a server that answers slowly cannot hold it open.
+    let sent = tokio::time::timeout(timeout, transport.build().send(message))
         .await
-        .map(|_| ())
-        .map_err(|error| {
-            let mut text = error.to_string();
-            if let Some((_, password)) = &email.credentials {
-                text = text.replace(password.expose(), "***");
-            }
-            if error.is_permanent() || error.is_client() || error.is_tls() {
-                SendError::permanent(text)
-            } else {
-                SendError::transient(text)
-            }
-        })
+        .map_err(|_| SendError::transient("timed out"))?;
+    sent.map(|_| ()).map_err(|error| {
+        let mut text = error.to_string();
+        if let Some((_, password)) = &email.credentials {
+            text = text.replace(password.expose(), "***");
+        }
+        if error.is_permanent() || error.is_client() || error.is_tls() {
+            SendError::permanent(text)
+        } else {
+            SendError::transient(text)
+        }
+    })
 }

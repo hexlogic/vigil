@@ -30,6 +30,8 @@ struct Shared {
     failures_left: AtomicUsize,
     received: Mutex<Vec<Received>>,
     connections: AtomicUsize,
+    /// How long the server waits before each reply.
+    delay: std::time::Duration,
 }
 
 pub struct SmtpServer {
@@ -60,6 +62,18 @@ pub async fn start(rcpt: Rcpt) -> SmtpServer {
 
 /// Start listening on `addr`, or `None` if that cannot be bound (no IPv6 on this machine).
 pub async fn start_on(addr: &str, rcpt: Rcpt) -> Option<SmtpServer> {
+    start_with(addr, rcpt, std::time::Duration::ZERO).await
+}
+
+/// A server that waits `delay` before every reply, like one on a bad link.
+pub async fn start_slow(delay: std::time::Duration) -> SmtpServer {
+    match start_with("127.0.0.1:0", Rcpt::Accept, delay).await {
+        Some(server) => server,
+        None => panic!("could not bind the test SMTP server"),
+    }
+}
+
+async fn start_with(addr: &str, rcpt: Rcpt, delay: std::time::Duration) -> Option<SmtpServer> {
     let listener = TcpListener::bind(addr).await.ok()?;
     let port = listener.local_addr().ok()?.port();
     let failures_left = AtomicUsize::new(match rcpt {
@@ -71,6 +85,7 @@ pub async fn start_on(addr: &str, rcpt: Rcpt) -> Option<SmtpServer> {
         failures_left,
         received: Mutex::new(Vec::new()),
         connections: AtomicUsize::new(0),
+        delay,
     });
     let server = Arc::clone(&shared);
     tokio::spawn(async move {
@@ -87,10 +102,12 @@ async fn serve(stream: TcpStream, shared: Arc<Shared>) {
     let mut read = BufReader::new(read);
     let mut current = Received::default();
     let mut auth = None;
+    tokio::time::sleep(shared.delay).await;
     if write.write_all(b"220 test ESMTP\r\n").await.is_err() {
         return;
     }
     while let Some(line) = next_line(&mut read).await {
+        tokio::time::sleep(shared.delay).await;
         let upper = line.to_ascii_uppercase();
         let reply: String = if upper.starts_with("EHLO") || upper.starts_with("HELO") {
             "250-test\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n".into()
