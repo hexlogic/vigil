@@ -59,7 +59,8 @@ http.server.HTTPServer(('127.0.0.1', 8001), H).serve_forever()"
 ## Other pages
 
 - [ ] *Tags*: add a tag with a colour, a default interval and `catcher` as default target; put it on a watch from the edit form; the list can be filtered by it from the tag chip.
-- [ ] *Settings*: switch to Ukrainian; every page is in Ukrainian and the choice survives a reload. Change the password (wrong current password is refused); the other browser is signed out. *Sign out everywhere* ends this session too.
+- [ ] *Settings*: switch to Ukrainian; every page is in Ukrainian and the choice survives a reload. With `VIGIL_ADMIN_PASSWORD` set, the password section says it is set by that variable and offers no form. *Sign out everywhere* ends this session too.
+- [ ] Restart without `VIGIL_ADMIN_PASSWORD` (the first start makes a password and prints it once in the log): sign in with it, then in *Settings* change the password. A wrong current password is refused; another signed-in browser is signed out; this one stays.
 - [ ] *Pause* a watch: its row is dimmed and it is not checked; *Resume*.
 - [ ] *Delete* a watch: asks first; it disappears from the list.
 

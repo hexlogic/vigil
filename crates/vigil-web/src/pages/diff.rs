@@ -125,7 +125,7 @@ async fn build(
     let gone = || Gone {
         ctx: ctx.clone().nav(Nav::Watches),
         history_url: ctx.url(&format!("/watch/{id}/history")),
-        kept: t.plural("detail.versions", listed.len()),
+        kept: t.plural("detail.versions_total", listed.len()),
     };
 
     // Which two versions: those named, else the newest and the one before it.
