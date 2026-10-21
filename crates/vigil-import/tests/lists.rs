@@ -201,3 +201,89 @@ fn a_distill_export_becomes_watches_and_a_report() -> TestResult {
     assert!(!serde_json::to_string(&plan.report)?.contains("SECRET"));
     Ok(())
 }
+
+fn urlwatch_watch(yaml: &str) -> Result<(vigil_store::ImportWatch, Vec<String>), ImportError> {
+    let plan = plan(
+        yaml.as_bytes(),
+        Some(Format::Urlwatch),
+        &Options::default(),
+        &Existing::default(),
+    )?;
+    let watch = plan.batch.watches.into_iter().next();
+    let notes = plan.report.items.into_iter().flat_map(|i| i.notes);
+    let messages = notes
+        .map(|n| format!("{}: {}", n.option, n.message))
+        .collect();
+    watch.map(|w| (w, messages)).ok_or(ImportError::Invalid {
+        format: Format::Urlwatch,
+        reason: "no watch".to_owned(),
+    })
+}
+
+#[test]
+fn a_urlwatch_job_with_data_and_no_method_is_posted() -> TestResult {
+    let (made, notes) = urlwatch_watch("url: https://a.example/\ndata:\n  q: x y\n")?;
+    let fetch = &made.settings.fetch;
+    assert_eq!(fetch.method, vigil_core::Method::Post);
+    assert_eq!(fetch.body.as_deref(), Some("q=x+y"));
+    assert_eq!(
+        fetch.headers.get("Content-Type").map(String::as_str),
+        Some("application/x-www-form-urlencoded")
+    );
+    assert!(notes.iter().any(|n| n.contains("no method")), "{notes:?}");
+    Ok(())
+}
+
+#[test]
+fn a_urlwatch_job_that_names_get_keeps_get_and_loses_its_data() -> TestResult {
+    let (made, notes) =
+        urlwatch_watch("url: https://a.example/\nmethod: GET\ndata: q=1\njson: true\n")?;
+    let fetch = &made.settings.fetch;
+    assert_eq!(fetch.method, vigil_core::Method::Get);
+    assert_eq!(fetch.body, None);
+    // A body that is not sent has no content type to go with it.
+    assert!(fetch.headers.is_empty(), "{:?}", fetch.headers);
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.starts_with("data:") && n.contains("method is GET")),
+        "{notes:?}"
+    );
+    // It is not told that the job had no method: it had one.
+    assert!(!notes.iter().any(|n| n.contains("no method")), "{notes:?}");
+    Ok(())
+}
+
+#[test]
+fn a_urlwatch_method_that_is_not_supported_falls_back_to_get_without_the_data() -> TestResult {
+    let (made, notes) = urlwatch_watch("url: https://a.example/\nmethod: OPTIONS\ndata: q=1\n")?;
+    assert_eq!(made.settings.fetch.method, vigil_core::Method::Get);
+    assert_eq!(made.settings.fetch.body, None);
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.starts_with("method:") && n.contains("GET is used")),
+        "{notes:?}"
+    );
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.starts_with("data:") && n.contains("method is GET")),
+        "{notes:?}"
+    );
+    assert!(!notes.iter().any(|n| n.contains("no method")), "{notes:?}");
+    Ok(())
+}
+
+#[test]
+fn a_urlwatch_job_with_data_that_is_not_text_says_so() -> TestResult {
+    let (made, notes) = urlwatch_watch("url: https://a.example/\nmethod: POST\ndata: [1, 2]\n")?;
+    assert_eq!(made.settings.fetch.body, None);
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.starts_with("data:") && n.contains("neither text nor a mapping")),
+        "{notes:?}"
+    );
+    Ok(())
+}

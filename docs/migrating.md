@@ -79,7 +79,7 @@ A `urls.yaml` (one or several YAML documents). Jobs with a `url` become watches;
 | `re.sub`, `re.findall` | `regex_replace` (`\1` becomes `${1}`), `regex_extract` |
 | `jq` | `jq` on a page read as JSON (the result is a JSON list here, where urlwatch printed one value per line) |
 | `format-json` | the page is read as JSON |
-| `method`, `data`, `json`, `headers`, `cookies`, `timeout` | the same (`cookies` become a `Cookie` header; a mapping `data` is sent as a form) |
+| `method`, `data`, `json`, `headers`, `cookies`, `timeout` | the same (`cookies` become a `Cookie` header; a mapping `data` is sent as a form). `data` with no `method` is sent with POST, as urlwatch does; with `method: GET`, or a method that is not supported here, the body is left out and reported |
 | `tags`, `enabled: false` | tags; a paused watch |
 | any other filter, proxies, `ssl_no_verify`, `max_tries` and the `ignore_*` options, and so on | reported, and left out |
 

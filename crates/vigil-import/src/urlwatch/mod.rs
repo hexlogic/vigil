@@ -5,20 +5,20 @@
 //! its own configuration file, so watches get the interval of `--every` and no targets.
 
 mod filters;
-
-use std::collections::BTreeMap;
+mod request;
 
 use serde_json::Value;
-use vigil_core::{Method, Schedule};
+use vigil_core::Schedule;
 use vigil_fetch::check_url;
 use vigil_store::{ImportTag, ImportWatch, NewWatch};
 
 use crate::builder::{Builder, Existing};
 use crate::report::Note;
 use crate::text::short_url;
-use crate::urls::{TAG_NAME_LEN, header_is_valid};
+use crate::urls::TAG_NAME_LEN;
 use crate::{Format, ImportError, ImportPlan, Options};
 use filters::map_filters;
+use request::request;
 
 /// Options of a job that have no equivalent here, with the words to say so.
 const NO_EQUIVALENT: &[(&str, &str)] = &[
@@ -83,16 +83,6 @@ fn invalid(reason: impl Into<String>) -> ImportError {
     ImportError::Invalid {
         format: Format::Urlwatch,
         reason: reason.into(),
-    }
-}
-
-/// A scalar as the text a header or form field holds.
-fn scalar(value: &Value) -> Option<String> {
-    match value {
-        Value::String(text) => Some(text.clone()),
-        Value::Number(n) => Some(n.to_string()),
-        Value::Bool(b) => Some(b.to_string()),
-        _ => None,
     }
 }
 
@@ -189,82 +179,7 @@ pub(crate) fn plan(
         settings.pipeline = mapped.pipeline;
 
         // The request.
-        let mut headers: BTreeMap<String, String> = job
-            .get("headers")
-            .and_then(Value::as_object)
-            .map(|h| {
-                h.iter()
-                    .filter_map(|(k, v)| Some((k.clone(), scalar(v)?)))
-                    .collect()
-            })
-            .unwrap_or_default();
-        if let Some(cookies) = job.get("cookies").and_then(Value::as_object) {
-            let joined: Vec<String> = cookies
-                .iter()
-                .filter_map(|(k, v)| Some(format!("{k}={}", scalar(v)?)))
-                .collect();
-            if !joined.is_empty() {
-                headers.insert("Cookie".to_owned(), joined.join("; "));
-            }
-        }
-        let method = job.get("method").and_then(Value::as_str).unwrap_or("GET");
-        match method.parse::<Method>() {
-            Ok(method) => settings.fetch.method = method,
-            Err(_) => notes.push(Note::skipped(
-                "method",
-                "this request method is not supported; GET is used",
-            )),
-        }
-        if let Some(data) = job.get("data").filter(|d| is_set(d)) {
-            let json = job.get("json").and_then(Value::as_bool).unwrap_or(false);
-            let body = match data {
-                Value::String(text) => Some(text.clone()),
-                Value::Object(map) if json => serde_json::to_string(map).ok(),
-                Value::Object(map) => {
-                    // urlwatch (requests) sends a mapping as a form.
-                    let mut form = url_form(map);
-                    if !headers
-                        .keys()
-                        .any(|k| k.eq_ignore_ascii_case("content-type"))
-                    {
-                        headers.insert(
-                            "Content-Type".to_owned(),
-                            "application/x-www-form-urlencoded".to_owned(),
-                        );
-                    }
-                    Some(std::mem::take(&mut form))
-                }
-                _ => None,
-            };
-            if json
-                && !headers
-                    .keys()
-                    .any(|k| k.eq_ignore_ascii_case("content-type"))
-            {
-                headers.insert("Content-Type".to_owned(), "application/json".to_owned());
-            }
-            if settings.fetch.method == Method::Get {
-                // urlwatch sends data with POST when there is no method.
-                settings.fetch.method = Method::Post;
-                notes.push(Note::info("data", "the job has data and no method, so it is requested with POST, as urlwatch does"));
-            }
-            settings.fetch.body = body;
-        }
-        for (name, value) in headers {
-            if header_is_valid(&name, &value) {
-                settings.fetch.headers.insert(name, value);
-            } else {
-                notes.push(Note::skipped(
-                    "headers",
-                    format!("the header {name:?} cannot be sent and was left out"),
-                ));
-            }
-        }
-        if let Some(timeout) = job.get("timeout").and_then(Value::as_u64)
-            && (1..=3600).contains(&timeout)
-        {
-            settings.fetch.timeout_secs = Some(timeout);
-        }
+        settings.fetch = request(job, &mut notes);
         for (key, why) in NO_EQUIVALENT {
             if job.get(*key).is_some_and(is_set) {
                 notes.push(Note::skipped(key, *why));
@@ -313,33 +228,4 @@ pub(crate) fn plan(
         );
     }
     Ok(builder.finish())
-}
-
-/// A mapping as an `application/x-www-form-urlencoded` body.
-fn url_form(map: &serde_json::Map<String, Value>) -> String {
-    let mut out = String::new();
-    for (key, value) in map {
-        let Some(value) = scalar(value) else { continue };
-        if !out.is_empty() {
-            out.push('&');
-        }
-        out.push_str(&encode(key));
-        out.push('=');
-        out.push_str(&encode(&value));
-    }
-    out
-}
-
-fn encode(text: &str) -> String {
-    let mut out = String::new();
-    for byte in text.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(char::from(byte))
-            }
-            b' ' => out.push('+'),
-            other => out.push_str(&format!("%{other:02X}")),
-        }
-    }
-    out
 }
