@@ -42,6 +42,12 @@ pub enum Command {
         #[command(subcommand)]
         command: NotifyCommand,
     },
+    /// Make, list or revoke API tokens.
+    Token {
+        /// What to do with API tokens.
+        #[command(subcommand)]
+        command: TokenCommand,
+    },
     /// Check a watch now and report what changed.
     ///
     /// A change that the watch's conditions want announced is sent to its notification
@@ -176,6 +182,26 @@ pub enum WatchCommand {
     Remove {
         /// Watch id, or the last 6 or more characters of it.
         id: String,
+    },
+}
+
+/// `vigil token` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum TokenCommand {
+    /// Make an API token and print it. It is shown only this once.
+    ///
+    /// Send it to the REST API in the x-api-key header. Capture it in a script with
+    /// `TOKEN=$(vigil token add ci)`.
+    Add {
+        /// A name for the token, such as "backup script".
+        name: String,
+    },
+    /// List API tokens (never the tokens themselves).
+    List,
+    /// Revoke a token; programs that use it stop working.
+    Remove {
+        /// Token name, or its id or the last 6 or more characters of it.
+        token: String,
     },
 }
 

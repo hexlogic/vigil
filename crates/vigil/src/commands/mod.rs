@@ -5,6 +5,7 @@ pub mod diff;
 pub mod notify;
 pub mod preview;
 pub mod settings;
+pub mod token;
 pub mod watch;
 
 use anyhow::Context;

@@ -49,6 +49,9 @@ Behind a reverse proxy, set `base_url` to the public address. A path in it (`htt
 | `vigil notify list` | Show the targets with their credentials replaced by `***`, whether they are enabled and how many watches use them. |
 | `vigil notify remove <target>` | Delete a target. A `<target>` is its name, its id or the last six or more characters of it. |
 | `vigil notify test <target>` | Send a test notification and say whether it arrived. Not retried; exits non-zero if it failed. |
+| `vigil token add <name>` | Make an API token and print it, alone on stdout, so `TOKEN=$(vigil token add ci)` works. It is shown only this once; only its hash is kept. |
+| `vigil token list` | Show the tokens by name and first characters, with when each was made and last used. |
+| `vigil token remove <token>` | Revoke a token. A `<token>` is its name, its id or the last six or more characters of it. |
 | `vigil check <id> [--no-notify]` | Check a watch now. A change the watch's conditions want announced is sent to its targets, and the command waits for that (retries included) before it exits; `--no-notify` skips it. A delivery that fails is reported on stderr and does not change the exit code. Prints `baseline stored`, `unchanged` or `changed, +N -M lines` (with `no notification: <reason>` when the watch's conditions hold the change back); exits non-zero if the page could not be checked. |
 | `vigil diff <id>` | Show the difference between the two newest snapshots as a unified diff, in color on a terminal (`NO_COLOR` turns it off). |
 
