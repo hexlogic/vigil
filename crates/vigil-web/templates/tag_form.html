@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t(title_key) }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ ctx.t(title_key) }}</h1></div>
+<form method="post" action="{{ action }}">
+<div class="field">
+<label for="name">{{ ctx.t("tags.name") }}</label>
+<input type="text" id="name" name="name" value="{{ draft.name }}" required autocomplete="off"{% if problems.name.is_some() %} aria-invalid="true"{% endif %}>
+{% if let Some(message) = problems.name %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+</div>
+<fieldset>
+<legend>{{ ctx.t("tags.color_label") }}</legend>
+<div class="swatches">
+{% for swatch in swatches %}<label class="check"><input type="radio" name="color" value="{{ swatch.value }}"{% if swatch.checked %} checked{% endif %}><span class="tag tag-{{ swatch.value }}">{{ swatch.label }}</span></label>{% endfor %}
+</div>
+</fieldset>
+<div class="field">
+<label for="every">{{ ctx.t("tags.every") }}</label>
+<input type="text" id="every" name="every" value="{{ draft.every }}" autocomplete="off" spellcheck="false" placeholder="1h"{% if problems.every.is_some() %} aria-invalid="true"{% endif %}>
+{% if let Some(message) = problems.every %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<p class="hint">{{ ctx.t("tags.every_hint") }}</p>
+</div>
+<div class="field">
+<label>{{ ctx.t("tags.targets") }}</label>
+{% if targets.is_empty() %}<p class="muted">{{ ctx.t("form.no_targets") }} <a href="{{ ctx.url("/notifications/new") }}">{{ ctx.t("form.add_target") }}</a></p>{% endif %}
+{% for target in targets %}<label class="check"><input type="checkbox" name="target" value="{{ target.id }}"{% if target.checked %} checked{% endif %}>{{ target.name }}</label>{% endfor %}
+{% if let Some(message) = problems.targets %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<p class="hint">{{ ctx.t("tags.targets_hint") }}</p>
+</div>
+<div class="row">
+<button class="btn btn-primary" type="submit">{% if editing %}{{ ctx.t("form.save") }}{% else %}{{ ctx.t("tags.add") }}{% endif %}</button>
+<a class="btn" href="{{ cancel_url }}">{{ ctx.t("form.cancel") }}</a>
+</div>
+</form>
+{% endblock %}

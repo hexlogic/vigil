@@ -104,6 +104,20 @@ pub fn router(state: AppState) -> Router {
             "/watch/{id}/edit",
             get(pages::edit_form).post(pages::update),
         )
+        .route("/tags", get(pages::tags))
+        .route(
+            "/tags/new",
+            get(pages::new_tag_form).post(pages::create_tag),
+        )
+        .route(
+            "/tags/{id}/edit",
+            get(pages::edit_tag_form).post(pages::update_tag),
+        )
+        .route("/tags/{id}/row", get(pages::tag_row))
+        .route(
+            "/tags/{id}/delete",
+            get(pages::confirm_delete_tag).post(pages::delete_tag),
+        )
         .route("/notifications", get(pages::targets))
         .route(
             "/notifications/new",

@@ -7,6 +7,8 @@ mod errors;
 mod history;
 mod login;
 mod preview;
+mod tag_form;
+mod tags;
 mod target_form;
 mod targets;
 mod watches;
@@ -18,6 +20,11 @@ pub(crate) use errors::{Refusal, forbidden, not_found, server_error};
 pub(crate) use history::{history, snapshot};
 pub(crate) use login::{login_form, login_submit, logout};
 pub(crate) use preview::preview;
+pub(crate) use tag_form::{
+    create as create_tag, edit_form as edit_tag_form, new_form as new_tag_form,
+    update as update_tag,
+};
+pub(crate) use tags::{confirm_delete_tag, delete_tag, tag_row, tags};
 pub(crate) use target_form::{
     create as create_target, edit_form as edit_target_form, new_form as new_target_form,
     update as update_target,
@@ -44,4 +51,32 @@ pub(crate) fn tag_class(color: &str) -> &'static str {
         .copied()
         .find(|known| *known == color)
         .unwrap_or("gray")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::i18n::{I18n, Lang};
+
+    #[test]
+    fn every_colour_of_the_palette_has_a_name_in_every_language() {
+        let i18n = I18n::load().expect("locales parse");
+        for lang in Lang::ALL {
+            for color in TAG_COLORS {
+                let key = format!("tags.color.{color}");
+                assert!(
+                    i18n.get(lang, &key).is_some(),
+                    "{} lacks {key}",
+                    lang.code()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_colour_outside_the_palette_is_gray() {
+        assert_eq!(tag_class("red"), "red");
+        assert_eq!(tag_class("url(javascript:x)"), "gray");
+        assert_eq!(tag_class(""), "gray");
+    }
 }
