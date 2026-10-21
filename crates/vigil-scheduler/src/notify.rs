@@ -168,10 +168,27 @@ impl Notifier {
     }
 
     /// Send a test notification to `target` and wait for the result, which is also recorded in
-    /// the delivery log.
+    /// the delivery log. A failed attempt is retried as for any notification, which can take a
+    /// minute; see [`test_once`](Self::test_once) for an answer that does not.
     pub async fn test(&self, target: &NotificationTarget) -> TargetReport {
+        self.test_with(target, self.retry.clone()).await
+    }
+
+    /// Like [`test`](Self::test), but gives up after the first attempt, for a caller that
+    /// has a person waiting for the answer, such as a button in the web UI. The result is
+    /// recorded in the delivery log all the same.
+    pub async fn test_once(&self, target: &NotificationTarget) -> TargetReport {
+        let retry = RetryPolicy {
+            delays: Vec::new(),
+            ..self.retry.clone()
+        };
+        self.test_with(target, retry).await
+    }
+
+    async fn test_with(&self, target: &NotificationTarget, retry: RetryPolicy) -> TargetReport {
         let event = Arc::new(Event::test(self.base_url.as_deref()));
-        let delivery = self.delivery(None, None, None, event);
+        let mut delivery = self.delivery(None, None, None, event);
+        delivery.retry = retry;
         let finished = delivery.run(target).await;
         TargetReport {
             target: target.name.clone(),
@@ -228,7 +245,7 @@ impl Notifier {
     }
 
     fn event(&self, watch: &Watch, change: &Change<'_>) -> Event {
-        // Phase 4 serves the diff page at this path.
+        // The web UI serves the diff page at this path.
         let diff_url = self.base_url.as_ref().map_or_else(String::new, |base| {
             format!(
                 "{base}/watch/{}/diff?from={}&to={}",
