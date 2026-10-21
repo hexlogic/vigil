@@ -392,6 +392,12 @@ A request is checked as a check would build it: the address with the fetcher's o
 
 `POST /watch` answers `201` with a `Location` and starts the first check at once, as the web form does (a paused watch is not checked). If making the links fails the watch is deleted again, so a request does not leave half a watch. `POST /watch/{id}/check` answers `202` and returns at once; with `?wait=true` it waits up to a minute and answers `200` with the outcome and the watch. A check of a page that cannot be fetched is `done`, with the error on the watch: the check ran, which is what the outcome says. There is no pause endpoint: `paused` is part of the watch, and `PUT` sets it.
 
+## History and differences in the API
+
+`/watch/{id}/history` lists the versions newest first (100 by default, at most 500, without their text), `/history/{snapshot}` gives one with its text, and `/diff?from=&to=` compares two. The defaults are the web page's: `to` is the newest version and `from` the one before `to`, so with neither given it is the newest two. A version of another watch is "not found" exactly as a made-up one is, so an id cannot be used to read another watch's text. Fewer than two versions is a `404` with the code `nothing_to_compare`, not an empty difference, since there is nothing to describe.
+
+A difference holds the added and removed lines, their counts, and a unified diff with three lines of context. An answer is bounded like the diff page is: at most 5000 added and 5000 removed lines and a million characters of unified diff, cut at a line, with `truncated: true`; the counts always cover the whole difference. A version is read whole (up to the 16 MiB a step may produce): the API is for programs, and cutting the text there would only make them ask again.
+
 ## The watch list
 
 The list is a table of rows; each row is a fragment (`GET /watch/{id}/row`) that its buttons replace in place with htmx, so the page keeps its place and scroll. Check now, pause, resume and delete are `POST`s that answer with the new row (delete answers with nothing, and first shows a confirmation row in its place: the page policy and the plan's "no browser dialogs" rule out `hx-confirm`). Without htmx they redirect to the list, so a form post still works.

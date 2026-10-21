@@ -39,6 +39,7 @@ impl Modify for TokenScheme {
     tags(
         (name = "meta", description = "About the server."),
         (name = "watches", description = "The pages that are watched."),
+        (name = "history", description = "The versions of a watch's text and how they differ."),
     )
 )]
 pub(super) struct ApiDoc;

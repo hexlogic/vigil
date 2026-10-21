@@ -6,6 +6,7 @@
 mod docs;
 mod error;
 mod guard;
+mod history;
 mod token;
 mod watch_json;
 mod watches;
@@ -84,7 +85,10 @@ pub(crate) fn router(state: &AppState, timeout: TimeoutLayer) -> axum::Router<Ap
                     watches::replace_watch,
                     watches::delete_watch
                 ))
-                .routes(routes!(watches::check_watch)),
+                .routes(routes!(watches::check_watch))
+                .routes(routes!(history::list_history))
+                .routes(routes!(history::get_snapshot))
+                .routes(routes!(history::get_diff)),
         )
         .split_for_parts();
     let base_path = state.web.base_path();
