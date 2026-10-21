@@ -75,11 +75,13 @@ Phase 0 uses runtime-checked queries so builds need no `DATABASE_URL` or offline
 | `blake3` (web) | The database stores a session token by its hash. The token is 256 random bits, so a fast hash is enough; Argon2 is for guessable passwords. Already in the tree. |
 | `url` (web) | Percent-encodes `next` in the sign-in redirect, and will parse form bodies. Already in the tree. |
 | `serde` (derive; web) | Reads sign-in and (later) other form bodies. Already in the tree. |
-| `tokio` (rt, time; web) | Hashing and checking passwords run with `spawn_blocking`, and a wrong password waits a second. |
+| `tokio` (rt, sync, time; web) | Hashing and checking passwords run with `spawn_blocking`, and a wrong password waits a second. |
 | `sqlx` (dev, web) | Tests look at the sessions table. |
 | `humantime` (web) | Shows an interval the way it is typed (`5m`, `1h 30m`) and times as RFC 3339 for the tooltip. Already used by the binary and the scheduler. |
 | `vigil-core`, `vigil-scheduler` (web) | Watches, the scheduler handle, the checker and the notifier. |
-| `vigil-fetch`, `vigil-notify`, `tokio-util`, `wiremock` (dev, web) | Tests build the same checker, notifier and scheduler the binary does, and serve watched pages from a mock server. |
+| `vigil-fetch`, `vigil-notify` (web) | The form checks an address as the fetcher would (`check_url`), parses a target's URL to name its kind, and validates a message template. |
+| `uuid` (web) | Turns a form's draft id into a processing slot. Already in the tree. |
+| `tokio-util`, `wiremock` (dev, web) | Tests run the same scheduler the binary does and serve watched pages from a mock server. |
 | `thiserror` (web) | `LocaleError` (CLAUDE.md). Already in the tree. |
 | `tower-http` (compression-gzip, compression-br, set-header, timeout) | Compress pages and assets; add the security headers; cut off a request that hangs. `compression-br` brings the pure-Rust `brotli` crate. |
 | `vigil-core` (dev, web) | Tests build watches. |
@@ -361,3 +363,13 @@ The list is a table of rows; each row is a fragment (`GET /watch/{id}/row`) that
 Check now goes through the scheduler handle, so it obeys the global and per-host limits and joins a check that is already running. The request waits up to 60 seconds for the check to end; if it takes longer, the answer is the row with a note, and the row asks for itself again after five seconds. A paused watch can be checked by hand and stays paused. Pause, resume and delete tell the scheduler to reload at once, so they take effect now and not at the next 30 second resync.
 
 Watches are listed by name, case-insensitively, with tags as chips; `?tag=<id>` narrows the list to a tag, and a value that is not a tag shows everything. `AppState` now carries the checker, the notifier and the scheduler handle that `vigil serve` runs, so what the UI starts is what the scheduler runs. Times are shown as "5 minutes ago" with the exact time in a tooltip; the intervals are shown as typed (`1h 30m`), in English units in every language, since that is what the form accepts.
+
+## The watch form
+
+Adding and editing share one form. A posted form is read into a `Draft` (every value still text, nothing checked), checked into a `Built` watch or a `Problems` set, and re-shown with what was typed if it has problems (status 422, so nothing is created). Problems are shown beside their field; a problem in a filter is shown in that filter, using the step number the pipeline reports. The web crate's own messages come from the locale files; the library's (a bad selector, a pattern that does not compile, a template error, the fetcher's complaint about an address) are shown as the library words them, in English.
+
+Filters are a list of rows named `step-N-field`. The buttons for add, remove and move post the whole form to `/watch/steps?op=...` and get the list back, renumbered from what is typed now, so that nothing typed is lost and no JavaScript of our own is needed. Nothing is saved by them. Filters are read in the order of their numbers, not of the body, and a form without the checkboxes means they were unticked.
+
+The settings are checked by building the watch's pipeline and conditions as a check would (`Checker::validate_watch`), so a form that passes is a watch that works. That runs on a processing thread under a slot of the form's own, named by a random `draft` id in a hidden field and hashed so that it can never be a watch's id (see "Previewing from the editor"). The scheduler refuses a second thread for a slot, so work on one slot takes turns: `SlotLocks` makes a Save that comes while a preview of the same form is still running wait for it, instead of failing with "an earlier processing is still running". A test with sixteen simultaneous saves of one form pins this. A thread that really never ends still holds its slot, and that refusal is kept.
+
+A new watch is saved with its tags, targets and template, the scheduler is told to reload, and its first check is asked for at once (nobody waits for it), so the list soon shows a status. Saving an edit writes the check's settings only when they changed, as `vigil watch edit` does, because writing them forgets the page's `ETag` and the failure streak and moves the schedule; tags, targets and the template are applied on their own. An empty interval takes the shortest default of the chosen tags, else one hour. The forms are available in both languages; the filter hints use the same pattern syntax (`text` or `/regex/`) as the command line.

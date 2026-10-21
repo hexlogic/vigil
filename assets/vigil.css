@@ -104,6 +104,10 @@ footer { max-width: 74rem; margin: 0 auto; padding: 0 1rem 2rem; color: var(--mu
 .actions { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 .row { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; }
 .stack > * + * { margin-top: .75rem; }
+.mt { margin-top: 1rem; }
+select.auto { width: auto; }
+details { margin-top: 1rem; }
+summary { cursor: pointer; font-weight: 600; margin-bottom: .6rem; }
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; }
 .panel + .panel { margin-top: 1rem; }
 .cols { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
