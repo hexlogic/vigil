@@ -149,26 +149,36 @@ fn link_filter(state: &State, value: Value) -> Value {
     Value::from_safe_string(link(markup_of(state), &text_of(&value)))
 }
 
-fn environment() -> &'static Environment<'static> {
+fn build_environment(undefined: UndefinedBehavior) -> Environment<'static> {
+    let mut env = Environment::new();
+    env.set_auto_escape_callback(|name| {
+        match name.rsplit('.').next().and_then(Markup::from_name) {
+            Some(Markup::Plain) | None => AutoEscape::None,
+            Some(markup) => AutoEscape::Custom(markup.name().into()),
+        }
+    });
+    env.set_undefined_behavior(undefined);
+    env.set_fuel(Some(FUEL));
+    env.set_formatter(format_value);
+    // `|safe` would let a template print page text unescaped, which is what the escaping
+    // exists to prevent.
+    env.remove_filter("safe");
+    env.add_filter("code", code_filter);
+    env.add_filter("link", link_filter);
+    env
+}
+
+/// The environment that checks templates: an unknown variable is an error.
+fn strict() -> &'static Environment<'static> {
     static ENV: OnceLock<Environment<'static>> = OnceLock::new();
-    ENV.get_or_init(|| {
-        let mut env = Environment::new();
-        env.set_auto_escape_callback(|name| {
-            match name.rsplit('.').next().and_then(Markup::from_name) {
-                Some(Markup::Plain) | None => AutoEscape::None,
-                Some(markup) => AutoEscape::Custom(markup.name().into()),
-            }
-        });
-        env.set_undefined_behavior(UndefinedBehavior::Strict);
-        env.set_fuel(Some(FUEL));
-        env.set_formatter(format_value);
-        // `|safe` would let a template print page text unescaped, which is what the escaping
-        // exists to prevent.
-        env.remove_filter("safe");
-        env.add_filter("code", code_filter);
-        env.add_filter("link", link_filter);
-        env
-    })
+    ENV.get_or_init(|| build_environment(UndefinedBehavior::Strict))
+}
+
+/// The environment for renders of an event whose long values were cut or emptied, where
+/// `triggered_text[0]` may no longer exist. The template already rendered with the whole event.
+fn lenient() -> &'static Environment<'static> {
+    static ENV: OnceLock<Environment<'static>> = OnceLock::new();
+    ENV.get_or_init(|| build_environment(UndefinedBehavior::Chainable))
 }
 
 /// The title when the template sets none.
@@ -180,15 +190,34 @@ pub(crate) fn default_title(vars: &Vars) -> String {
     }
 }
 
-/// Render `source` for a channel with `markup`.
+/// Render `source` for a channel with `markup`; a variable the template uses must exist.
 pub(crate) fn render(
+    markup: Markup,
+    source: &str,
+    vars: &Arc<Vars>,
+) -> Result<Rendered, TemplateError> {
+    render_in(strict(), markup, source, vars)
+}
+
+/// Like [`render`], for the cut-down variants of an event that are rendered to fit a size
+/// limit: a value that was emptied or shortened is not an error.
+pub(crate) fn render_cut(
+    markup: Markup,
+    source: &str,
+    vars: &Arc<Vars>,
+) -> Result<Rendered, TemplateError> {
+    render_in(lenient(), markup, source, vars)
+}
+
+fn render_in(
+    env: &Environment<'static>,
     markup: Markup,
     source: &str,
     vars: &Arc<Vars>,
 ) -> Result<Rendered, TemplateError> {
     // The name tells the auto-escape callback which markup to escape for.
     let name = format!("template.{}", markup.name());
-    let template = environment().template_from_named_str(&name, source)?;
+    let template = env.template_from_named_str(&name, source)?;
     let rendered = template.render_captured(Value::from_dyn_object(vars.clone()))?;
     let title = rendered
         .state()
