@@ -352,6 +352,18 @@ mod tests {
     }
 
     #[test]
+    fn the_import_limit_comes_from_toml_and_env() {
+        Jail::expect_with(|jail| {
+            assert_eq!(load(None)?.import.max_upload_bytes, 256 * 1024 * 1024);
+            jail.create_file("vigil.toml", "[import]\nmax_upload_bytes = 1000\n")?;
+            assert_eq!(load(None)?.import.max_upload_bytes, 1000);
+            jail.set_env("VIGIL_IMPORT__MAX_UPLOAD_BYTES", "2000");
+            assert_eq!(load(None)?.import.max_upload_bytes, 2000);
+            Ok(())
+        });
+    }
+
+    #[test]
     fn nested_sections_come_from_toml_and_env() {
         Jail::expect_with(|jail| {
             jail.create_file(

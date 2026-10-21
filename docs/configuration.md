@@ -6,7 +6,7 @@ Vigil reads configuration from, lowest to highest precedence:
 2. A TOML file: `--config <path>` or `VIGIL_CONFIG`, otherwise `./vigil.toml` if it exists.
 3. `VIGIL_*` environment variables (nested keys are separated by `__`).
 
-See [`vigil.example.toml`](../vigil.example.toml) for a complete example. The web UI is described in [web-ui.md](web-ui.md).
+See [`vigil.example.toml`](../vigil.example.toml) for a complete example. The web UI is described in [web-ui.md](web-ui.md), the REST API in [api.md](api.md).
 
 | Key | Env var | Default | Description |
 |---|---|---|---|
@@ -19,6 +19,7 @@ See [`vigil.example.toml`](../vigil.example.toml) for a complete example. The we
 | `fetch.timeout_secs` | `VIGIL_FETCH__TIMEOUT_SECS` | `30` | Request timeout for watches that do not set their own. |
 | `fetch.max_body_bytes` | `VIGIL_FETCH__MAX_BODY_BYTES` | `10485760` | Largest accepted response body, measured after decompression. Larger responses fail the check. |
 | `fetch.user_agent` | `VIGIL_FETCH__USER_AGENT` | `vigil/<version>` | `User-Agent` header sent with every request. |
+| `import.max_upload_bytes` | `VIGIL_IMPORT__MAX_UPLOAD_BYTES` | `268435456` | Largest file the web UI and the API accept for an import (256 MiB). Text formats are limited to 16 MiB in any case. See [migrating.md](migrating.md). |
 | `scheduler.concurrency` | `VIGIL_SCHEDULER__CONCURRENCY` | `8` | Checks running at once. |
 | `scheduler.per_host` | `VIGIL_SCHEDULER__PER_HOST` | `2` | Checks running at once against the same host and port. |
 
@@ -49,6 +50,7 @@ Behind a reverse proxy, set `base_url` to the public address. A path in it (`htt
 | `vigil notify list` | Show the targets with their credentials replaced by `***`, whether they are enabled and how many watches use them. |
 | `vigil notify remove <target>` | Delete a target. A `<target>` is its name, its id or the last six or more characters of it. |
 | `vigil notify test <target>` | Send a test notification and say whether it arrived. Not retried; exits non-zero if it failed. |
+| `vigil import <file\|-> [--format <F>] [--dry-run] [--every <interval>] [--allow-duplicates]` | Read a list of addresses, OPML, a backup of another change monitor, a urlwatch `urls.yaml` or a Distill export, print what it holds and what could not be carried over, and make the watches. `--dry-run` changes nothing. See [migrating.md](migrating.md). |
 | `vigil token add <name>` | Make an API token and print it, alone on stdout, so `TOKEN=$(vigil token add ci)` works. It is shown only this once; only its hash is kept. |
 | `vigil token list` | Show the tokens by name and first characters, with when each was made and last used. |
 | `vigil token remove <token>` | Revoke a token. A `<token>` is its name, its id or the last six or more characters of it. |

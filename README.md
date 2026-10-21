@@ -3,7 +3,7 @@
 A lightweight, self-hosted website change detection service written in Rust.
 One static binary, SQLite, low memory.
 
-> **Status:** early development (Phase 4: web UI). Everything works from the command line and from a web UI: extraction steps (CSS, XPath, JSONPath, jq, regex), JSON and feed processors, notification conditions, notifications to ntfy, Telegram, Discord, Slack, email, webhooks and Gotify, history and diffs. The REST API, importers and packaging come next.
+> **Status:** early development (Phase 5: API and migration). Everything works from the command line, from a web UI and from a REST API ([docs/api.md](docs/api.md)): extraction steps (CSS, XPath, JSONPath, jq, regex), JSON and feed processors, notification conditions, notifications to ntfy, Telegram, Discord, Slack, email, webhooks and Gotify, history and diffs. Watches can be imported from lists of addresses, OPML, backups of other change monitors, urlwatch and Distill ([docs/migrating.md](docs/migrating.md)). Packaging comes next.
 
 ## Quick start
 

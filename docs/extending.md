@@ -17,6 +17,15 @@ A channel is a URL scheme that parses into a struct, a way to build the message 
 
 Steps are the variants of `Step` in `crates/vigil-core/src/pipeline/step.rs`, which is also their JSON form (`{"type": "..."}`): variants are only ever added, never renamed. Each step has a module under `pipeline/` (`text.rs`, `html.rs`, `json.rs`, ...), a place in the validation in `pipeline/mod.rs`, a section in [pipeline.md](pipeline.md) and snapshot tests with a fixture in `crates/vigil-core/tests/`. `vigil-core` stays free of I/O.
 
+## Adding an import format
+
+An importer is a function from bytes to an `ImportPlan` in `crates/vigil-import/src/`, next to `urls.rs`, `opml.rs`, `urlwatch/` and `distill.rs`. It uses the `Builder` (`builder.rs`) to collect watches, their tags and targets and what to say about each, so that the batch and the report are made the same way for every format. To add one:
+
+1. Add a variant to `Format` (with its name for `--format`), a rule to `detect.rs` that recognises it from its content, and an arm in `plan_reader` in `lib.rs`.
+2. Map each option of the source to a `NewWatch` field, a pipeline step or a note. Anything that has no equivalent, or only an approximate one, is a `Note` (`skipped`, `approximated` or `info`); notes must never repeat an address, a header value or a request body. Validate the steps with `steps::validated`, so that one filter that does not build is dropped alone instead of failing the watch.
+3. Write a fixture for the format from scratch (never copy someone else's), snapshot the report and the batch with `insta`, and check by hand that every option of the fixture shows up in one or the other. `tests/lists.rs` is the pattern.
+4. Add the format to [migrating.md](migrating.md) with a table of what becomes what.
+
 ## Adding a language to the web UI
 
 All text a person reads in the web UI is in `locales/<code>.toml`, a flat set of tables of strings; `en.toml` is the reference and `uk.toml` the first translation. To add one:
