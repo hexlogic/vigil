@@ -26,6 +26,7 @@ pub struct Email {
     /// How the connection is secured.
     pub tls: SmtpTls,
     /// The SMTP server.
+    /// The host name or address of the SMTP server; an IPv6 address has no brackets.
     pub host: String,
     /// The SMTP port.
     pub port: u16,
@@ -95,7 +96,7 @@ pub(super) fn parse(wrapped: bool, input: &str) -> Result<Email, ParseError> {
     };
     Ok(Email {
         tls,
-        host: url.host,
+        host: url.host.trim_matches(['[', ']']).to_owned(),
         port,
         credentials,
         from,
@@ -131,6 +132,11 @@ impl Email {
             None => String::new(),
         };
         let to: Vec<String> = self.to.iter().map(|m| m.email.to_string()).collect();
+        let bracketed = if self.host.contains(':') {
+            format!("[{}]", self.host)
+        } else {
+            self.host.clone()
+        };
         let tls = if self.tls == SmtpTls::None {
             "&tls=none"
         } else {
@@ -138,7 +144,7 @@ impl Email {
         };
         format!(
             "{scheme}://{login}{}?to={}{tls}",
-            authority_of(&self.host, Some(self.port)),
+            authority_of(&bracketed, Some(self.port)),
             to.join(",")
         )
     }

@@ -296,3 +296,13 @@ fn a_plus_in_an_option_is_a_plus() {
     };
     assert_eq!(discord.username.as_deref(), Some("Vigil Bot++"));
 }
+
+#[test]
+fn an_ipv6_mail_server_is_stored_without_brackets_and_shown_with_them() {
+    let channel = ok("mailto://[::1]:2525?tls=none&from=a@b.co&to=d@e.co");
+    let Channel::Email(email) = &channel else {
+        panic!("not email");
+    };
+    assert_eq!((email.host.as_str(), email.port), ("::1", 2525));
+    assert_eq!(channel.redacted(), "mailto://[::1]:2525?to=d@e.co&tls=none");
+}
