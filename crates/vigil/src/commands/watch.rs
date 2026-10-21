@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::Context;
 use vigil_core::{Schedule, Watch};
 use vigil_notify::validate_template;
-use vigil_store::{NewWatch, NotificationTarget, now_ms};
+use vigil_store::{NewWatch, NotificationTarget, WatchLinks, now_ms};
 
 use super::notify::{read_text, resolve_all};
 use super::settings::apply;
@@ -34,15 +34,14 @@ pub async fn add(
     let targets = resolve_all(&store, &notify.notify).await?;
     let template = template_option(notify)?;
 
-    let watch = store.create_watch(new).await?;
-    for target in &targets {
-        store.link_target(watch.id, target.id).await?;
-    }
-    if let Some(Some(template)) = &template {
-        store
-            .set_notification_template(watch.id, Some(template))
-            .await?;
-    }
+    // The watch, its targets and its template are saved together, so a failure leaves nothing.
+    let target_ids: Vec<_> = targets.iter().map(|t| t.id).collect();
+    let links = WatchLinks {
+        tags: &[],
+        targets: &target_ids,
+        template: template.as_ref().and_then(|t| t.as_deref()),
+    };
+    let watch = store.create_watch_with_links(&new, false, &links).await?;
     println!(
         "added {} {} (every {})",
         watch.id,

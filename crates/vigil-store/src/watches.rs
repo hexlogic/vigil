@@ -81,18 +81,20 @@ impl From<&Watch> for NewWatch {
     }
 }
 
-/// Insert a watch row on a connection, so that a transaction can hold several.
+/// Insert a watch row on a connection, so that a transaction can hold several. A watch made
+/// `paused` is never seen unpaused, so a scheduler reload cannot start it.
 pub(crate) async fn insert_watch(
     conn: &mut SqliteConnection,
     id: WatchId,
     new: &NewWatch,
+    paused: bool,
     now: i64,
 ) -> Result<(), StoreError> {
     sqlx::query(
         "INSERT INTO watches \
              (id, name, url, fetch, schedule, jitter_secs, processor, pipeline, conditions, \
-              snapshot_retention, created_at, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+              snapshot_retention, paused, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?12, ?11, ?11)",
     )
     .bind(id.to_string())
     .bind(&new.name)
@@ -105,8 +107,43 @@ pub(crate) async fn insert_watch(
     .bind(serde_json::to_string(&new.conditions)?)
     .bind(i64::from(new.snapshot_retention))
     .bind(now)
+    .bind(i64::from(paused))
     .execute(conn)
     .await?;
+    Ok(())
+}
+
+/// Replace a watch's settings on a connection, with the side effects described at
+/// [`Store::update_watch`]. An unknown watch is [`StoreError::NotFound`].
+pub(crate) async fn write_settings(
+    conn: &mut SqliteConnection,
+    id: WatchId,
+    settings: &NewWatch,
+    now: i64,
+) -> Result<(), StoreError> {
+    let result = sqlx::query(
+        "UPDATE watches SET name = ?2, url = ?3, fetch = ?4, schedule = ?5, \
+         jitter_secs = ?6, processor = ?7, pipeline = ?8, conditions = ?9, \
+         snapshot_retention = ?10, updated_at = MAX(?11, updated_at + 1), etag = NULL, \
+         last_modified = NULL, \
+         consecutive_errors = 0, last_error = NULL WHERE id = ?1",
+    )
+    .bind(id.to_string())
+    .bind(&settings.name)
+    .bind(&settings.url)
+    .bind(serde_json::to_string(&settings.fetch)?)
+    .bind(serde_json::to_string(&settings.schedule)?)
+    .bind(i64::from(settings.jitter_secs))
+    .bind(settings.processor.as_str())
+    .bind(serde_json::to_string(&settings.pipeline)?)
+    .bind(serde_json::to_string(&settings.conditions)?)
+    .bind(i64::from(settings.snapshot_retention))
+    .bind(now)
+    .execute(conn)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Err(StoreError::NotFound(format!("watch {id}")));
+    }
     Ok(())
 }
 
@@ -115,7 +152,7 @@ impl Store {
     pub async fn create_watch(&self, new: NewWatch) -> Result<Watch, StoreError> {
         let id = WatchId::from_uuid(Uuid::now_v7());
         let mut conn = self.pool.acquire().await?;
-        insert_watch(&mut conn, id, &new, now_ms()).await?;
+        insert_watch(&mut conn, id, &new, false, now_ms()).await?;
         drop(conn);
         self.get_watch(id).await
     }
@@ -133,29 +170,9 @@ impl Store {
         id: WatchId,
         settings: &NewWatch,
     ) -> Result<Watch, StoreError> {
-        let result = sqlx::query(
-            "UPDATE watches SET name = ?2, url = ?3, fetch = ?4, schedule = ?5, \
-             jitter_secs = ?6, processor = ?7, pipeline = ?8, conditions = ?9, \
-             snapshot_retention = ?10, updated_at = MAX(?11, updated_at + 1), etag = NULL, \
-             last_modified = NULL, \
-             consecutive_errors = 0, last_error = NULL WHERE id = ?1",
-        )
-        .bind(id.to_string())
-        .bind(&settings.name)
-        .bind(&settings.url)
-        .bind(serde_json::to_string(&settings.fetch)?)
-        .bind(serde_json::to_string(&settings.schedule)?)
-        .bind(i64::from(settings.jitter_secs))
-        .bind(settings.processor.as_str())
-        .bind(serde_json::to_string(&settings.pipeline)?)
-        .bind(serde_json::to_string(&settings.conditions)?)
-        .bind(i64::from(settings.snapshot_retention))
-        .bind(now_ms())
-        .execute(&self.pool)
-        .await?;
-        if result.rows_affected() == 0 {
-            return Err(StoreError::NotFound(format!("watch {id}")));
-        }
+        let mut conn = self.pool.acquire().await?;
+        write_settings(&mut conn, id, settings, now_ms()).await?;
+        drop(conn);
         self.get_watch(id).await
     }
 

@@ -7,7 +7,7 @@ use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
 use vigil_core::WatchId;
 use vigil_notify::Channel;
-use vigil_store::{NewWatch, NotificationTarget, StoreError, Tag};
+use vigil_store::{NewWatch, NotificationTarget, StoreError, Tag, WatchLinks};
 
 use super::{not_found, parse_id, server_error, tag_class};
 use crate::AppState;
@@ -200,13 +200,14 @@ pub(crate) async fn create(State(state): State<AppState>, ctx: Ctx, body: String
             );
         }
     };
-    let watch = match state.store.create_watch(built.new.clone()).await {
+    let watch = match state
+        .store
+        .create_watch_with_links(&built.new, false, &links_of(&built))
+        .await
+    {
         Ok(watch) => watch,
         Err(error) => return server_error(ctx, &error),
     };
-    if let Err(error) = save_links(&state, watch.id, &built).await {
-        return server_error(ctx, &error);
-    }
     if let Err(error) = state.scheduler.reload().await {
         tracing::warn!(%error, "the scheduler could not be told about the new watch");
     }
@@ -283,13 +284,14 @@ pub(crate) async fn update(
     };
     // Like `vigil watch edit`: the settings of the check are written only when they changed,
     // because writing them forgets the page's ETag and the failure streak and moves the
-    // schedule. Tags, targets and the template are not part of that.
-    if NewWatch::from(&current) != built.new
-        && let Err(error) = state.store.update_watch(id, &built.new).await
+    // schedule. Tags, targets and the template are not part of that. All of it is saved or
+    // none.
+    let settings = (NewWatch::from(&current) != built.new).then_some(&built.new);
+    if let Err(error) = state
+        .store
+        .replace_watch(id, settings, None, &links_of(&built))
+        .await
     {
-        return server_error(ctx, &error);
-    }
-    if let Err(error) = save_links(&state, id, &built).await {
         return server_error(ctx, &error);
     }
     if let Err(error) = state.scheduler.reload().await {
@@ -314,12 +316,13 @@ async fn check(
     form::build(draft, ctx.translator(), &known, &state.checker).await
 }
 
-/// Make the watch's tags, targets and template what the form says, all or nothing.
-async fn save_links(state: &AppState, id: WatchId, built: &Built) -> Result<(), StoreError> {
-    state
-        .store
-        .set_watch_links(id, &built.tags, &built.targets, built.template.as_deref())
-        .await
+/// The tags, targets and template the form says.
+fn links_of(built: &Built) -> WatchLinks<'_> {
+    WatchLinks {
+        tags: &built.tags,
+        targets: &built.targets,
+        template: built.template.as_deref(),
+    }
 }
 
 /// What a button next to the filters asked for.

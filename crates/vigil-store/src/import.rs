@@ -221,13 +221,7 @@ impl Store {
                 continue;
             }
             let id = WatchId::from_uuid(Uuid::now_v7());
-            insert_watch(&mut tx, id, &watch.settings, now_ms()).await?;
-            if watch.paused {
-                sqlx::query("UPDATE watches SET paused = 1 WHERE id = ?")
-                    .bind(id.to_string())
-                    .execute(&mut *tx)
-                    .await?;
-            }
+            insert_watch(&mut tx, id, &watch.settings, watch.paused, now_ms()).await?;
             if let Some(template) = &watch.template {
                 sqlx::query("UPDATE watches SET notification_template_override = ? WHERE id = ?")
                     .bind(template)

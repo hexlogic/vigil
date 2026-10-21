@@ -29,6 +29,7 @@ pub use deliveries::{DELIVERY_LOG_KEEP, DeliveryOutcome, DeliveryRecord};
 pub use import::{
     ImportBatch, ImportOutcome, ImportTag, ImportTarget, ImportWatch, free_name, match_name,
 };
+pub use links::WatchLinks;
 pub use outbox::{NewPending, PendingNotification};
 pub use sessions::Session;
 pub use snapshots::{SnapshotId, SnapshotMeta};

@@ -10,7 +10,7 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 use vigil_core::WatchId;
 use vigil_scheduler::RunOutcome;
-use vigil_store::NewWatch;
+use vigil_store::{NewWatch, WatchLinks};
 
 use super::error::{ApiError, ApiJson, ErrorBody};
 use super::watch_json::{Built, WatchInput, WatchView, build};
@@ -148,24 +148,15 @@ pub(super) async fn create_watch(
         targets,
         template,
     } = build(&state, input).await?;
-    let watch = state.store.create_watch(new).await?;
-    let saved = async {
-        if paused {
-            state.store.set_paused(watch.id, true).await?;
-        }
-        state
-            .store
-            .set_watch_links(watch.id, &tags, &targets, template.as_deref())
-            .await
-    }
-    .await;
-    if let Err(error) = saved {
-        // Not half a watch: take back what was made.
-        if let Err(undo) = state.store.delete_watch(watch.id).await {
-            tracing::warn!(error = %undo, "a watch that could not be completed was not removed");
-        }
-        return Err(error.into());
-    }
+    let links = WatchLinks {
+        tags: &tags,
+        targets: &targets,
+        template: template.as_deref(),
+    };
+    let watch = state
+        .store
+        .create_watch_with_links(&new, paused, &links)
+        .await?;
     reload(&state).await;
     if !paused && let Err(error) = state.scheduler.check_now(watch.id).await {
         tracing::warn!(%error, "the first check could not be asked for");
@@ -225,16 +216,17 @@ pub(super) async fn replace_watch(
     let current = state.store.get_watch(id).await?;
     let built = build(&state, input).await?;
     // Writing the settings clears the remembered validators and the failure streak and moves
-    // the schedule, so it is only done when something changed.
-    if NewWatch::from(&current) != built.new {
-        state.store.update_watch(id, &built.new).await?;
-    }
-    if current.paused != built.paused {
-        state.store.set_paused(id, built.paused).await?;
-    }
+    // the schedule, so it is only done when something changed. All of it is saved or none.
+    let settings = (NewWatch::from(&current) != built.new).then_some(&built.new);
+    let paused = (current.paused != built.paused).then_some(built.paused);
+    let links = WatchLinks {
+        tags: &built.tags,
+        targets: &built.targets,
+        template: built.template.as_deref(),
+    };
     state
         .store
-        .set_watch_links(id, &built.tags, &built.targets, built.template.as_deref())
+        .replace_watch(id, settings, paused, &links)
         .await?;
     reload(&state).await;
     Ok(Json(view_of(&state, id).await?))
