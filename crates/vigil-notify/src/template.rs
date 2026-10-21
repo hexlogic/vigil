@@ -162,6 +162,9 @@ fn environment() -> &'static Environment<'static> {
         env.set_undefined_behavior(UndefinedBehavior::Strict);
         env.set_fuel(Some(FUEL));
         env.set_formatter(format_value);
+        // `|safe` would let a template print page text unescaped, which is what the escaping
+        // exists to prevent.
+        env.remove_filter("safe");
         env.add_filter("code", code_filter);
         env.add_filter("link", link_filter);
         env

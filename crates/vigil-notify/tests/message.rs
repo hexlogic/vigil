@@ -183,6 +183,7 @@ fn bad_templates_are_caught_when_saved() {
         "{{ wach_name }}",
         "{{ watch_name | nope }}",
         "{% if %}",
+        "{{ watch_name | safe }}",
         "{{ watch_name",
         "{% for i in range(100000) %}{% for j in range(100000) %}x{% endfor %}{% endfor %}",
     ] {
