@@ -6,7 +6,7 @@ Vigil reads configuration from, lowest to highest precedence:
 2. A TOML file: `--config <path>` or `VIGIL_CONFIG`, otherwise `./vigil.toml` if it exists.
 3. `VIGIL_*` environment variables (nested keys are separated by `__`).
 
-See [`vigil.example.toml`](../vigil.example.toml) for a complete example.
+See [`vigil.example.toml`](../vigil.example.toml) for a complete example. The web UI is described in [web-ui.md](web-ui.md).
 
 | Key | Env var | Default | Description |
 |---|---|---|---|

@@ -16,3 +16,15 @@ A channel is a URL scheme that parses into a struct, a way to build the message 
 ## Adding a pipeline step
 
 Steps are the variants of `Step` in `crates/vigil-core/src/pipeline/step.rs`, which is also their JSON form (`{"type": "..."}`): variants are only ever added, never renamed. Each step has a module under `pipeline/` (`text.rs`, `html.rs`, `json.rs`, ...), a place in the validation in `pipeline/mod.rs`, a section in [pipeline.md](pipeline.md) and snapshot tests with a fixture in `crates/vigil-core/tests/`. `vigil-core` stays free of I/O.
+
+## Adding a language to the web UI
+
+All text a person reads in the web UI is in `locales/<code>.toml`, a flat set of tables of strings; `en.toml` is the reference and `uk.toml` the first translation. To add one:
+
+1. Copy `locales/en.toml` to `locales/<code>.toml` (the code is the two-letter language code, such as `de`) and translate every value. Keep the keys and the placeholders (`{n}`, `{name}`) as they are; the words inside curly braces are filled in by the program.
+2. A text with a count has one key per plural form (`count.one`, `count.few`, ...). A language needs the forms its [CLDR plural rules](https://cldr.unicode.org/index/cldr-spec/plural-rules) use for whole numbers; English and German use `one` and `other`, Ukrainian `one`, `few`, `many` and `other`.
+3. In `crates/vigil-web/src/i18n.rs` add the language to `Lang` (its code, its name in its own language, its plural rule, the forms it needs) and to the list of files loaded at the top.
+4. Run `cargo test -p vigil-web`. `tests/locales.rs` fails if a language lacks a key another has, if a count is missing a form its language needs, if a placeholder differs, if a text is empty, or if a template or the Rust code asks for a text that does not exist.
+
+Texts a library crate produces (a selector that does not compile, a notification URL that is wrong) are shown as the library words them, in English; do not try to translate those in the locale files.
+
