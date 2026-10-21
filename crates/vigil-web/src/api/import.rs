@@ -152,6 +152,7 @@ pub(super) async fn import(
 
     let existing = Existing::new(
         &state.store.list_tags().await?,
+        &state.store.tag_target_ids().await?,
         &state.store.list_targets().await?,
         &state.store.list_watches().await?,
     );

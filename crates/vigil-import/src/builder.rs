@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 use vigil_core::Watch;
 use vigil_notify::Channel;
 use vigil_store::{
-    ImportBatch, ImportTag, ImportTarget, ImportWatch, NotificationTarget, Tag, match_name,
+    ImportBatch, ImportTag, ImportTarget, ImportWatch, NotificationTarget, Tag, TagId, TargetId,
+    match_name,
 };
 
 use crate::report::{ItemReport, Note, Report};
@@ -16,15 +17,34 @@ use crate::{Format, ImportError, ImportPlan, MAX_WATCHES, Options};
 #[derive(Debug, Clone, Default)]
 pub struct Existing {
     tags: Vec<String>,
+    /// The names of the tags that notify something: those with an enabled default target.
+    notifying_tags: HashSet<String>,
     target_urls: HashSet<String>,
     watch_urls: HashSet<String>,
 }
 
 impl Existing {
-    /// What the store holds now.
-    pub fn new(tags: &[Tag], targets: &[NotificationTarget], watches: &[Watch]) -> Self {
+    /// What the store holds now. `tag_targets` holds the default targets of each tag, as
+    /// `Store::tag_target_ids` lists them.
+    pub fn new(
+        tags: &[Tag],
+        tag_targets: &HashMap<TagId, Vec<TargetId>>,
+        targets: &[NotificationTarget],
+        watches: &[Watch],
+    ) -> Self {
+        let enabled: HashSet<TargetId> =
+            targets.iter().filter(|t| t.enabled).map(|t| t.id).collect();
         Self {
             tags: tags.iter().map(|t| t.name.clone()).collect(),
+            notifying_tags: tags
+                .iter()
+                .filter(|t| {
+                    tag_targets
+                        .get(&t.id)
+                        .is_some_and(|ids| ids.iter().any(|id| enabled.contains(id)))
+                })
+                .map(|t| t.name.clone())
+                .collect(),
             target_urls: targets.iter().map(|t| t.url.clone()).collect(),
             watch_urls: watches.iter().map(|w| w.url.clone()).collect(),
         }
@@ -113,6 +133,19 @@ impl<'a> Builder<'a> {
     /// A watch that will not be made.
     pub(crate) fn skip(&mut self, source: String, notes: Vec<Note>) {
         self.items.push(ItemReport::skipped(source, notes));
+    }
+
+    /// Whether a watch with this tag would be notified about through it: the existing tag it
+    /// would be matched with has targets, or the tag is new and its definition has some. An
+    /// existing tag keeps its own targets, whatever the source says.
+    pub(crate) fn tag_notifies(&self, name: &str) -> bool {
+        match match_name(self.existing.tags.iter().map(String::as_str), name) {
+            Some(existing) => self.existing.notifying_tags.contains(existing),
+            None => self
+                .tag_defs
+                .get(name)
+                .is_some_and(|tag| !tag.target_urls.is_empty()),
+        }
     }
 
     fn use_tag(&mut self, name: &str) {

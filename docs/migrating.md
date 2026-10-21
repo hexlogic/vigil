@@ -58,7 +58,8 @@ A ZIP with a folder per watch and per tag (`<id>/watch.json`, `<id>/tag.json`) n
 | check interval, or the default | interval; the global random delay becomes the jitter |
 | `method`, `body`, `headers` | the same; the global headers are added, and a watch's own win |
 | a notification message | rewritten for Vigil's templates (variables renamed, `diff_added_clean(...)` becomes `diff_added`, a title becomes a `{% set title %}` block) and checked; one that still does not work is left out with the reason |
-| notification addresses | notification targets, reused when the address is the same; a watch with none of its own gets the global ones; muted watches get none; an unsupported kind is reported by its scheme only |
+| notification addresses | notification targets, reused when the address is the same; a watch with none of its own gets the global ones; an unsupported kind is reported by its scheme only |
+| muted notifications | Vigil has no mute for one watch, so a muted watch is linked to no target and is left off every tag that notifies (a tag of the backup with addresses, or an existing tag with targets), and the report names each tag left off. The tag's filters stay in the watch. When all notifications are muted, tags are made without targets |
 | the number of versions kept | the same |
 
 Patterns: a `/regex/` with no flags is case-insensitive in the source, so `i` is added; flags `i m s x` are kept, `g` is dropped, others are reported. A pattern that does not build here (a look-behind, say) is dropped alone and reported; so is a filter or XPath that does not.

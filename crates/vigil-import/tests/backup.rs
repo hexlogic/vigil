@@ -137,3 +137,145 @@ fn a_watch_file_that_is_not_an_object_is_reported_and_the_rest_imported() -> Tes
     }));
     Ok(())
 }
+
+const ID_LOW: &str = "00000000-2222-4333-8444-555555555555";
+const ID_HIGH: &str = "ffffffff-2222-4333-8444-555555555555";
+const SHOPS_TARGET: &str = "ntfy://ntfy.example/shops";
+
+/// A single-file backup with a tag "Shops" that notifies, a watch "muted" that the source mutes
+/// and a watch "loud" that it does not, both with the tag. `muted_id` decides which of the two
+/// is read first.
+fn muted_and_loud(
+    muted_id: &str,
+    loud_id: &str,
+    all_muted: bool,
+) -> Result<vigil_import::ImportPlan, ImportError> {
+    let backup = serde_json::json!({
+        "watching": {
+            muted_id: {"url": "https://muted.example/", "title": "muted", "tags": ["t1"],
+                       "notification_muted": true},
+            loud_id: {"url": "https://loud.example/", "title": "loud", "tags": ["t1"]},
+        },
+        "settings": {"application": {
+            "all_muted": all_muted,
+            "tags": {"t1": {"title": "Shops", "notification_urls": [SHOPS_TARGET]}},
+        }}
+    });
+    read(backup.to_string().as_bytes())
+}
+
+fn item<'a>(
+    plan: &'a vigil_import::ImportPlan,
+    source: &str,
+) -> Result<&'a vigil_import::report::ItemReport, Box<dyn std::error::Error>> {
+    plan.report
+        .items
+        .iter()
+        .find(|i| i.source == source)
+        .ok_or_else(|| format!("no item {source}").into())
+}
+
+fn tags_of<'a>(
+    plan: &'a vigil_import::ImportPlan,
+    url: &str,
+) -> Result<&'a [String], Box<dyn std::error::Error>> {
+    plan.batch
+        .watches
+        .iter()
+        .find(|w| w.settings.url == url)
+        .map(|w| w.tags.as_slice())
+        .ok_or_else(|| format!("no watch {url}").into())
+}
+
+#[test]
+fn a_muted_watch_is_left_off_a_tag_that_notifies_whichever_watch_is_read_first() -> TestResult {
+    for (muted_id, loud_id) in [(ID_LOW, ID_HIGH), (ID_HIGH, ID_LOW)] {
+        let plan = muted_and_loud(muted_id, loud_id, false)?;
+        assert!(tags_of(&plan, "https://muted.example/")?.is_empty());
+        assert_eq!(tags_of(&plan, "https://loud.example/")?, ["Shops"]);
+        // The tag still notifies the watch that is not muted.
+        assert_eq!(plan.batch.tags.len(), 1);
+        assert_eq!(plan.batch.tags[0].target_urls, [SHOPS_TARGET]);
+        assert_eq!(plan.batch.targets.len(), 1);
+
+        let muted = item(&plan, "muted")?;
+        assert!(
+            muted
+                .notes
+                .iter()
+                .any(|n| { n.option == "notification_muted" && n.message.contains("\"Shops\"") })
+        );
+        assert!(item(&plan, "loud")?.notes.is_empty());
+    }
+    Ok(())
+}
+
+#[test]
+fn when_everything_is_muted_tags_are_made_without_targets() -> TestResult {
+    let plan = muted_and_loud(ID_LOW, ID_HIGH, true)?;
+    // Neither watch gets a tag that notifies, and nothing makes a target.
+    assert!(plan.batch.targets.is_empty());
+    assert_eq!(plan.report.totals.targets_created, 0);
+    for url in ["https://muted.example/", "https://loud.example/"] {
+        assert!(plan.batch.watches.iter().any(|w| w.settings.url == url));
+    }
+    assert!(plan.batch.tags.iter().all(|t| t.target_urls.is_empty()));
+    // Tags that do not notify stay on the watches.
+    assert_eq!(tags_of(&plan, "https://loud.example/")?, ["Shops"]);
+    assert!(
+        plan.report
+            .notes
+            .iter()
+            .any(|n| n.option == "all_muted" && n.message.contains("tags are made without any"))
+    );
+    Ok(())
+}
+
+#[test]
+fn a_muted_watch_is_left_off_an_existing_tag_that_has_targets() -> TestResult {
+    let backup = serde_json::json!({
+        "watching": {
+            ID_LOW: {"url": "https://muted.example/", "title": "muted", "tags": ["t1", "t2"],
+                     "notification_muted": true},
+        },
+        "settings": {"application": {"tags": {
+            "t1": {"title": "shops"},
+            "t2": {"title": "Quiet"},
+        }}}
+    });
+    let tag = |name: &str| vigil_store::Tag {
+        id: uuid::Uuid::now_v7(),
+        name: name.to_owned(),
+        color: "gray".to_owned(),
+        default_interval_secs: None,
+        created_at: 0,
+    };
+    let target = |enabled: bool| vigil_store::NotificationTarget {
+        id: uuid::Uuid::now_v7(),
+        name: "phone".to_owned(),
+        url: SHOPS_TARGET.to_owned(),
+        enabled,
+        default_template: None,
+        created_at: 0,
+    };
+    let (shops, quiet) = (tag("Shops"), tag("Quiet"));
+    // "Shops" notifies a target that works; "Quiet" only one that is switched off.
+    let (live, off) = (target(true), target(false));
+    let linked =
+        std::collections::HashMap::from([(shops.id, vec![live.id]), (quiet.id, vec![off.id])]);
+    let existing = Existing::new(&[shops, quiet], &linked, &[live, off], &[]);
+    let plan = plan(
+        backup.to_string().as_bytes(),
+        None,
+        &Options::default(),
+        &existing,
+    )?;
+
+    // "shops" is the existing "Shops" apart from its case, so it is left off. "Quiet" does not
+    // notify anything and stays.
+    assert_eq!(tags_of(&plan, "https://muted.example/")?, ["Quiet"]);
+    let notes = &item(&plan, "muted")?.notes;
+    assert!(notes.iter().any(|n| n.message.contains("\"shops\"")));
+    assert!(!notes.iter().any(|n| n.message.contains("\"Quiet\"")));
+    Ok(())
+}

@@ -7,6 +7,7 @@
 
 mod extract;
 mod filters;
+mod notify;
 mod request;
 mod settings;
 mod store;
@@ -73,7 +74,7 @@ fn plan_data(
         ));
     }
     if globals.all_muted {
-        builder.note(Note::approximated("all_muted", "all notifications were muted in the source, so no watch is linked to a notification target"));
+        builder.note(Note::approximated("all_muted", "all notifications were muted in the source, so no watch is linked to a notification target, tags are made without any, and a watch is left off an existing tag that notifies"));
     }
     if globals.has_notification_template {
         builder.note(Note::skipped("notification_body", "the message template that applies to every watch was not imported; watches with a message of their own keep it"));

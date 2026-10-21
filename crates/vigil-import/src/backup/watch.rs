@@ -5,16 +5,16 @@ use std::collections::{BTreeSet, HashMap};
 use serde_json::Value;
 use vigil_core::{Conditions, NotifyOn, Schedule, Scope};
 use vigil_fetch::check_url;
-use vigil_store::{ImportTag, ImportTarget, ImportWatch, NewWatch};
+use vigil_store::{ImportWatch, NewWatch};
 
 use super::filters::{Filters, map_filters, pattern};
+use super::notify::{is_muted, map_tags, map_targets};
 use super::request::request;
 use super::settings::{Globals, flag, is_known, seconds, strings, text};
 use super::template::translate;
-use crate::builder::{Builder, check_target, target_name};
+use crate::builder::Builder;
 use crate::report::Note;
 use crate::text::short_url;
-use crate::urls::TAG_NAME_LEN;
 
 /// The shortest and longest interval a watch can have, in seconds.
 const MIN_SECS: u64 = 1;
@@ -118,43 +118,9 @@ pub(super) fn map_watch(
     }
 
     // Tags, and the filters they add to their watches.
-    let mut tag_values = Vec::new();
-    let mut tag_names = Vec::new();
-    for id in strings(watch.get("tags")) {
-        let Some(tag) = tags.get(&id.to_ascii_lowercase()).or_else(|| tags.get(&id)) else {
-            continue;
-        };
-        let Some(name) = text(tag.get("title")) else {
-            continue;
-        };
-        if name.chars().count() > TAG_NAME_LEN {
-            notes.push(Note::skipped(
-                "tags",
-                format!("a tag name over {TAG_NAME_LEN} characters was left out"),
-            ));
-            continue;
-        }
-        let mut target_urls = Vec::new();
-        for url in strings(tag.get("notification_urls")) {
-            match check_target(&url) {
-                Ok(()) => {
-                    builder.define_target(ImportTarget {
-                        name: target_name(&url),
-                        url: url.clone(),
-                    });
-                    target_urls.push(url);
-                }
-                Err(note) => notes.push(note),
-            }
-        }
-        builder.define_tag(ImportTag {
-            name: name.to_owned(),
-            default_interval_secs: None,
-            target_urls,
-        });
-        tag_names.push(name.to_owned());
-        tag_values.push(tag);
-    }
+    let muted = is_muted(watch, globals);
+    let tags_of = map_tags(watch, tags, globals, muted, builder, &mut notes);
+    let (tag_names, tag_values) = (tags_of.names, tags_of.values);
 
     // The text.
     let backend = text(watch.get("fetch_backend")).unwrap_or("system");
@@ -285,34 +251,7 @@ pub(super) fn map_watch(
     }
 
     // Where notifications go.
-    let muted = flag(watch.get("notification_muted"), false) || globals.all_muted;
-    let own_urls = strings(watch.get("notification_urls"));
-    let urls = if own_urls.is_empty() {
-        &globals.notification_urls
-    } else {
-        &own_urls
-    };
-    let mut target_urls = Vec::new();
-    if muted {
-        if !urls.is_empty() {
-            notes.push(Note::approximated("notification_muted", "notifications were muted in the source, so the watch is not linked to any notification target"));
-        }
-    } else {
-        for url in urls {
-            match check_target(url) {
-                Ok(()) => {
-                    builder.define_target(ImportTarget {
-                        name: target_name(url),
-                        url: url.clone(),
-                    });
-                    if !target_urls.contains(url) {
-                        target_urls.push(url.clone());
-                    }
-                }
-                Err(note) => notes.push(note),
-            }
-        }
-    }
+    let target_urls = map_targets(watch, globals, muted, builder, &mut notes);
     let template = translate(
         text(watch.get("notification_title")),
         text(watch.get("notification_body")),

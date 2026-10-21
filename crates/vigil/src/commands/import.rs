@@ -22,6 +22,7 @@ pub async fn run(
     let store = open_store(config).await?;
     let existing = Existing::new(
         &store.list_tags().await?,
+        &store.tag_target_ids().await?,
         &store.list_targets().await?,
         &store.list_watches().await?,
     );

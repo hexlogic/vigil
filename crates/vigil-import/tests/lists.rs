@@ -66,7 +66,7 @@ fn an_address_that_is_watched_already_is_skipped_unless_duplicates_are_allowed()
         updated_at: 0,
         state: Default::default(),
     }];
-    let existing = Existing::new(&[], &[], &store_has);
+    let existing = Existing::new(&[], &Default::default(), &[], &store_has);
     let skipped = plan(LIST, None, &Options::default(), &existing)?;
     assert_eq!(skipped.report.totals.skipped, 4);
     assert!(

@@ -215,6 +215,7 @@ pub(crate) async fn import_preview(
     let existing = match async {
         Ok::<_, vigil_store::StoreError>(Existing::new(
             &state.store.list_tags().await?,
+            &state.store.tag_target_ids().await?,
             &state.store.list_targets().await?,
             &state.store.list_watches().await?,
         ))
