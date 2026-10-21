@@ -11,10 +11,13 @@
 mod backup;
 mod builder;
 mod detect;
+mod distill;
 mod opml;
 pub mod report;
+mod steps;
 mod text;
 mod urls;
+mod urlwatch;
 
 use std::fmt;
 use std::str::FromStr;
@@ -143,9 +146,6 @@ pub enum ImportError {
         /// The limit.
         limit: usize,
     },
-    /// The format is known but not readable yet.
-    #[error("importing {0} files is not supported")]
-    Unsupported(Format),
 }
 
 /// What an import would do.
@@ -183,6 +183,7 @@ pub fn plan(
         Format::UrlList => urls::plan(bytes, options, existing),
         Format::Opml => opml::plan(bytes, options, existing),
         Format::Backup => backup::plan(bytes, options, existing),
-        Format::Urlwatch | Format::Distill => Err(ImportError::Unsupported(format)),
+        Format::Urlwatch => urlwatch::plan(bytes, options, existing),
+        Format::Distill => distill::plan(bytes, options, existing),
     }
 }

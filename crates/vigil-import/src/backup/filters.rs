@@ -8,12 +8,10 @@
 
 use regex::RegexBuilder;
 use vigil_core::pattern::Pattern;
-use vigil_core::{Pipeline, Processor, SelectMode, Step};
+use vigil_core::{Processor, SelectMode, Step};
 
 use crate::report::Note;
-
-/// The most characters of a library message that go into a note.
-const REASON_CHARS: usize = 120;
+use crate::steps::{reason, validated};
 
 /// What a watch says about its text, as lists of strings and switches.
 #[derive(Default)]
@@ -149,11 +147,6 @@ fn extract_regex(entry: &str, option: &str, notes: &mut Vec<Note>) -> String {
         Some(flags) => format!("(?{}){}", flags_of(flags, notes, option), w.body),
         None => format!("(?i){}", regex::escape(w.body)),
     }
-}
-
-fn reason(message: &str) -> String {
-    let line = message.lines().next().unwrap_or_default();
-    line.chars().take(REASON_CHARS).collect()
 }
 
 /// Number of capture groups of a regular expression, or the reason it does not build.
@@ -427,27 +420,6 @@ fn lines_step(entries: &[String], notes: &mut Vec<Note>) -> Option<Step> {
         group: 0,
         required: false,
     })
-}
-
-/// Keep the steps Vigil can build, dropping each that cannot, with a note.
-fn validated(processor: Processor, steps: Vec<Step>, notes: &mut Vec<Note>) -> Vec<Step> {
-    let mut kept: Vec<Step> = Vec::new();
-    for step in steps {
-        kept.push(step);
-        if let Err(error) = Pipeline::new(processor, &kept)
-            && let Some(step) = kept.pop()
-        {
-            notes.push(Note::skipped(
-                step.name(),
-                format!(
-                    "the {} filter was left out because it does not work here: {}",
-                    step.name(),
-                    reason(&error.to_string())
-                ),
-            ));
-        }
-    }
-    kept
 }
 
 #[cfg(test)]

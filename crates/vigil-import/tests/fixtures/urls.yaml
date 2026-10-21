@@ -1,0 +1,51 @@
+# A job file written for these tests.
+name: Widget price
+url: https://shop.example/widget?ref=SECRET
+tags: [shops, "price watch"]
+filter:
+  - css:
+      selector: "#price"
+      exclude: ".old-price"
+  - html2text
+  - strip
+---
+name: News headlines
+url: https://news.example/
+filter: "element-by-id:headlines,html2text,remove-duplicate-lines"
+---
+name: Search API
+url: https://api.example/search
+method: POST
+data:
+  q: "blue widgets"
+  page: 2
+headers:
+  X-Token: SECRETTOKEN
+cookies:
+  session: SECRETCOOKIE
+timeout: 20
+filter:
+  - jq: ".items[].title"
+---
+name: Stock JSON
+url: https://api.example/stock
+data: '{"sku": 7}'
+json: true
+enabled: false
+http_proxy: http://proxy.example:3128
+ssl_no_verify: true
+max_tries: 3
+filter:
+  - grep: "in stock"
+  - re.sub:
+      pattern: "(\\d+) left"
+      repl: "\\1 remaining"
+  - shellpipe: "tr a-z A-Z"
+---
+name: Disk usage
+command: df -h
+---
+name: Dynamic page
+navigate: https://app.example/
+---
+url: ftp://files.example/readme
