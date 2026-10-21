@@ -13,7 +13,7 @@
   --accent-hover: #1b43ad;
   --accent-text: #ffffff;
   --accent-soft: #e6edfc;
-  --ok: #17803d;
+  --ok: #157336;
   --ok-bg: #e2f4e8;
   --warn: #8a5a00;
   --warn-bg: #fcefcf;
@@ -111,6 +111,8 @@ details { margin-top: 1rem; }
 summary { cursor: pointer; font-weight: 600; margin-bottom: .6rem; }
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; }
 .panel + .panel { margin-top: 1rem; }
+.panel > h2:first-child { margin-top: 0; }
+.cols > .panel + .panel { margin-top: 0; }
 .cols { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 62rem) { .cols-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 .empty { text-align: center; padding: 2.5rem 1rem; color: var(--muted); }
@@ -171,6 +173,7 @@ tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: var(--surface-2); }
 td .sub { display: block; color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
 td.name { min-width: 12rem; }
+td .sub.url { max-width: 24rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
 td.name a.title { font-weight: 600; color: var(--text); }
 tr.paused td.name a.title { color: var(--muted); }
 
@@ -244,6 +247,8 @@ pre.output { margin: 0; padding: .75rem; background: var(--surface-2); border-ra
 /* htmx */
 .htmx-indicator { opacity: 0; transition: opacity .15s; }
 .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+.btn .spinner { display: none; }
+.btn.htmx-request .spinner { display: inline-block; }
 .spinner { display: inline-block; width: .9em; height: .9em; border: 2px solid var(--border-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -.1em; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .htmx-swapping { opacity: .6; transition: opacity .1s; }
@@ -256,6 +261,8 @@ pre.output { margin: 0; padding: .75rem; background: var(--surface-2); border-ra
 /* Narrow screens */
 @media (max-width: 40rem) {
   main { padding: 1rem .75rem 2.5rem; }
+  footer { padding: 0 .75rem 1.5rem; }
+  td .sub.url { max-width: 12rem; }
   .hide-narrow { display: none; }
   th, td { padding: .45rem .5rem; }
   dl.facts { grid-template-columns: minmax(0, 1fr); gap: 0; }

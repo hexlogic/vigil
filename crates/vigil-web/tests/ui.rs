@@ -256,3 +256,27 @@ async fn the_ui_lives_under_the_path_of_the_base_url() -> TestResult {
     assert!(missing.body().contains("Page not found"));
     Ok(())
 }
+
+#[tokio::test]
+async fn asset_links_carry_a_fingerprint_of_the_file() -> TestResult {
+    let app = app().await?;
+    let body = app.get("/").await?.into_body();
+    let link = body
+        .split('"')
+        .find(|part| part.starts_with("/assets/vigil.css?v="))
+        .ok_or("no stylesheet link")?;
+    let fingerprint = link.rsplit('=').next().ok_or("no fingerprint")?;
+    assert_eq!(fingerprint.len(), 10, "{link}");
+    // It is the start of the file's own hash, which is also its ETag.
+    let etag = header_of(&app.get("/assets/vigil.css").await?, "etag")
+        .trim_matches('"')
+        .to_owned();
+    assert!(etag.starts_with(fingerprint), "{etag} vs {fingerprint}");
+    // The link is cached for a year, and the file behind it is the one it names.
+    let served = app.get(link).await?;
+    assert_eq!(
+        header_of(&served, "cache-control"),
+        "public, max-age=31536000, immutable"
+    );
+    Ok(())
+}

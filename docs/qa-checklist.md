@@ -36,7 +36,7 @@ http.server.HTTPServer(('127.0.0.1', 8001), H).serve_forever()"
 - [ ] *Add watch*. With the address empty the preview says to enter one.
 - [ ] Address `http://127.0.0.1:8000/page.html`: the preview shows the whole text (heading, price, ad) with status 200.
 - [ ] *Add filter*, kind *Keep or remove by CSS selector*, selector `.price`: the preview shows only `$10`. No page reload; typing in the selector updates the preview after a short pause.
-- [ ] Break the selector (`div[[`): the filter turns red with a message and the preview lists the problem. Fix it: the preview comes back.
+- [ ] Break the selector (`div[[`): the preview lists the problem and names the filter. Fix it: the preview comes back. (Saving with a broken filter shows the message in the filter itself.)
 - [ ] Add two more filters, move one up and one down, remove one: what was typed in the others stays.
 - [ ] Console (browser developer tools) shows no errors and no Content-Security-Policy violations.
 

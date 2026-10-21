@@ -91,9 +91,14 @@ impl Ctx {
         format!("{}{path}", self.base_path)
     }
 
-    /// The link to an asset, with the version so a new release is not served from a cache.
+    /// The link to an asset, with a fingerprint of its content so that a changed file is not
+    /// served from a cache.
     pub(crate) fn asset(&self, name: &str) -> String {
-        format!("{}/assets/{name}?v={}", self.base_path, self.version)
+        format!(
+            "{}/assets/{name}?v={}",
+            self.base_path,
+            crate::assets::fingerprint(name)
+        )
     }
 
     /// The entries of the menu.

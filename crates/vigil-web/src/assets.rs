@@ -13,8 +13,8 @@ use std::collections::HashMap;
 #[folder = "../../assets/"]
 struct Assets;
 
-/// Long-lived caching for a URL that carries the version (`?v=...`), which changes with the
-/// release; revalidation for one that does not.
+/// Long-lived caching for a URL that carries a fingerprint (`?v=...`), which changes with the
+/// file; revalidation for one that does not.
 const IMMUTABLE: &str = "public, max-age=31536000, immutable";
 const REVALIDATE: &str = "no-cache";
 
@@ -52,6 +52,15 @@ pub(crate) async fn serve(
         headers.insert(CONTENT_TYPE, HeaderValue::from_static(content_type(&name)));
     }
     response
+}
+
+/// A short fingerprint of an asset's content, for the `?v=` of its URL: a changed file gets a
+/// new address, so the year-long cache can never serve an old one. Empty for a file that does
+/// not exist.
+pub(crate) fn fingerprint(name: &str) -> String {
+    Assets::get(name).map_or_else(String::new, |file| {
+        hex(&file.metadata.sha256_hash()).chars().take(10).collect()
+    })
 }
 
 /// The media type for a file name, by extension. Only the kinds of files in `assets/`.
@@ -98,6 +107,15 @@ mod tests {
             Assets::get("htmx.LICENSE").is_some(),
             "its licence ships with it"
         );
+    }
+
+    #[test]
+    fn a_fingerprint_follows_the_content() {
+        let css = fingerprint("vigil.css");
+        assert_eq!(css.len(), 10);
+        assert_ne!(css, fingerprint("htmx.min.js"));
+        assert_eq!(css, fingerprint("vigil.css"));
+        assert_eq!(fingerprint("no-such-file"), "");
     }
 
     #[test]

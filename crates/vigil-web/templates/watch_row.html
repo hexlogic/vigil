@@ -1,7 +1,7 @@
 <tr id="watch-{{ row.id }}"{% if row.paused %} class="paused"{% endif %}{% if row.still_checking %} hx-get="{{ row.row_url }}" hx-trigger="load delay:5s" hx-swap="outerHTML"{% endif %}>
 <td class="name">
 <a class="title" href="{{ row.show_url }}">{{ row.name }}</a>
-<span class="sub">{{ row.url }}</span>
+<span class="sub url" title="{{ row.url }}">{{ row.url }}</span>
 {% if !row.tags.is_empty() %}<span class="tags">{% for tag in row.tags %}<span class="tag tag-{{ tag.class }}">{{ tag.name }}</span>{% endfor %}</span>{% endif %}
 </td>
 <td>
