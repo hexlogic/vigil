@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand};
-use vigil_core::Processor;
+use vigil_core::{Method, Processor};
 use vigil_scheduler::parse_interval;
 
 /// Self-hosted website change detection.
@@ -93,12 +93,23 @@ pub struct ContentArgs {
     /// Example: '{"trigger_text": ["in stock"]}'
     #[arg(long, value_name = "JSON|@FILE")]
     pub conditions: Option<String>,
+    /// The request method: GET (the default), POST, PUT, PATCH or DELETE.
+    #[arg(long, value_name = "METHOD")]
+    pub method: Option<Method>,
+    /// The request body, as text or @FILE; empty removes it. Needs a method other than GET.
+    /// Send a Content-Type header too if the server wants one.
+    #[arg(long, value_name = "TEXT|@FILE")]
+    pub body: Option<String>,
 }
 
 impl ContentArgs {
     /// True when none of the options was given.
     pub fn is_empty(&self) -> bool {
-        self.processor.is_none() && self.pipeline.is_none() && self.conditions.is_none()
+        self.processor.is_none()
+            && self.pipeline.is_none()
+            && self.conditions.is_none()
+            && self.method.is_none()
+            && self.body.is_none()
     }
 }
 
