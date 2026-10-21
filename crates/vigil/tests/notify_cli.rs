@@ -192,7 +192,7 @@ async fn templates_are_checked_when_saved() -> TestResult {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn plain_http_credentials_get_a_warning() -> TestResult {
+async fn plain_http_secrets_get_a_warning() -> TestResult {
     let dir = tempfile::tempdir()?;
     let risky = vigil(
         dir.path(),
@@ -204,10 +204,23 @@ async fn plain_http_credentials_get_a_warning() -> TestResult {
         "{}",
         risky.stderr
     );
+    // A topic or a webhook path is a secret too.
+    for (name, url) in [
+        ("t", "ntfy://ntfy.sh/my-secret-topic"),
+        ("w", "json://hooks.lan/in/tok"),
+    ] {
+        let run = vigil(dir.path(), &["notify", "add", name, url]).await?;
+        assert!(
+            run.ok && run.stderr.contains("warning"),
+            "{url}: {}",
+            run.stderr
+        );
+    }
     for (name, url) in [
         ("b", "ntfys://me:pw@ntfy.lan/t"),
         ("c", "ntfy://me:pw@127.0.0.1/t"),
-        ("d", "ntfy://ntfy.lan/t"),
+        ("d", "ntfys://ntfy.lan/t"),
+        ("e", "json://127.0.0.1/hooks/tok"),
     ] {
         let run = vigil(dir.path(), &["notify", "add", name, url]).await?;
         assert!(

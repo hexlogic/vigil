@@ -154,19 +154,22 @@ impl Channel {
         }
     }
 
-    /// Whether this URL sends a credential over plain HTTP to a host other than this machine.
+    /// Whether this URL sends a secret over plain HTTP to a host other than this machine.
     ///
-    /// Such a URL is accepted (plain HTTP on a trusted network is common) but worth a warning.
-    pub fn sends_credentials_in_cleartext(&self) -> bool {
-        let plain = |url: &url::Url, has_credentials: bool| {
-            url.scheme() == "http"
-                && has_credentials
-                && !url.host_str().is_some_and(parse::is_loopback)
+    /// The secret may be a password or token, an ntfy topic (on a public server it is the only
+    /// protection) or the path or query of a webhook (where its token usually is). Such a URL is
+    /// accepted, since plain HTTP on a trusted network is common, but worth a warning.
+    pub fn sends_secrets_in_cleartext(&self) -> bool {
+        let remote_http = |url: &url::Url| {
+            url.scheme() == "http" && !url.host_str().is_some_and(parse::is_loopback)
         };
         match self {
-            Self::Ntfy(c) => plain(&c.base, c.auth.is_some()),
-            Self::Webhook(c) => plain(c.url.expose(), c.auth.is_some()),
-            Self::Gotify(c) => plain(&c.base, true),
+            Self::Ntfy(c) => remote_http(&c.base),
+            Self::Gotify(c) => remote_http(&c.base),
+            Self::Webhook(c) => {
+                let url = c.url.expose();
+                remote_http(url) && (c.auth.is_some() || url.path() != "/" || url.query().is_some())
+            }
             Self::Telegram(_) | Self::Discord(_) | Self::Slack(_) | Self::Email(_) => false,
         }
     }

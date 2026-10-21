@@ -3,7 +3,7 @@
 Vigil sends a message when a watch changes and the watch's [conditions](pipeline.md#conditions) say the change is worth announcing. A **target** is a name for a notification URL; a watch can notify any number of targets.
 
 ```sh
-vigil notify add phone ntfy://ntfy.sh/my-secret-topic
+vigil notify add phone ntfys://ntfy.sh/my-secret-topic
 vigil notify test phone                      # send a test message
 vigil watch edit <id> --notify phone         # use it for this watch
 vigil check <id>                             # changed pages notify here too (--no-notify to skip)
@@ -12,7 +12,7 @@ vigil notify list                            # credentials are shown as ***
 
 ## Notification URLs
 
-Add an `s` for HTTPS where the scheme has a plain and a secure form. Plain HTTP is fine on a trusted network; Vigil warns when it would send a credential over plain HTTP to another machine.
+Add an `s` for HTTPS where the scheme has a plain and a secure form. Plain HTTP is fine on a trusted network, but a topic, a token, a password or a webhook's path is sent in the clear: Vigil warns when you add such a URL for another machine, and `ntfys://ntfy.sh/...` is the right form for a public server.
 
 | Scheme | URL | Notes |
 |---|---|---|

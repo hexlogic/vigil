@@ -71,10 +71,11 @@ pub async fn add(
         target.name,
         channel.redacted()
     );
-    if channel.sends_credentials_in_cleartext() {
+    if channel.sends_secrets_in_cleartext() {
         eprintln!(
-            "warning: this URL sends its credentials over plain HTTP; use the https form \
-             (ntfys://, jsons://, forms://, gotifys://) if the server supports it"
+            "warning: this URL sends a secret (a password, a token, a topic or a webhook path) \
+             over plain HTTP; use the https form (ntfys://, jsons://, forms://, gotifys://) \
+             if the server supports it"
         );
     }
     Ok(())

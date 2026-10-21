@@ -18,7 +18,7 @@ cargo run -- watch add https://example.com --pipeline '[{"type": "css", "selecto
 cargo run -- preview <id>
 
 # get notified
-cargo run -- notify add phone ntfy://ntfy.sh/my-secret-topic
+cargo run -- notify add phone ntfys://ntfy.sh/my-secret-topic
 cargo run -- notify test phone
 cargo run -- watch edit <id> --notify phone
 

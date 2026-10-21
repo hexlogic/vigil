@@ -168,7 +168,7 @@ pub enum WatchCommand {
 pub enum NotifyCommand {
     /// Add a place to send notifications to.
     ///
-    /// The URL says where: ntfy://ntfy.sh/TOPIC, tgram://BOT_TOKEN/CHAT_ID,
+    /// The URL says where: ntfys://ntfy.sh/TOPIC, tgram://BOT_TOKEN/CHAT_ID,
     /// discord://WEBHOOK_ID/WEBHOOK_TOKEN, slack://T000/B000/XXXX,
     /// mailto://USER:PASSWORD@smtp.example.com?to=you@example.com, json://host/path,
     /// form://host/path or gotify://host/TOKEN. Add an s for HTTPS (ntfys://, jsons://, ...);
