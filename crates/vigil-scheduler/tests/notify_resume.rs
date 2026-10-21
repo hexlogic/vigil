@@ -147,3 +147,69 @@ async fn resuming_with_nothing_saved_does_nothing() -> TestResult {
     assert!(restarted.close_and_wait().await.is_empty());
     Ok(())
 }
+
+#[tokio::test]
+async fn a_failure_that_would_outlast_a_day_is_final() -> TestResult {
+    let s = setup_with_later(
+        quick_retries(std::time::Duration::from_millis(10)),
+        vec![std::time::Duration::from_secs(2 * 3600)],
+    )
+    .await?;
+    let watch = watch_with_target(&s, |_| {}).await?;
+    let id = leave_behind(&s, &watch).await?;
+    // Saved 23 hours ago: a try two hours from now would be past the limit.
+    let long_ago = vigil_store::now_ms() - 23 * 60 * 60 * 1000;
+    sqlx::query("UPDATE notification_outbox SET created_at = ? WHERE id = ?")
+        .bind(long_ago)
+        .bind(id)
+        .execute(s.store.pool())
+        .await?;
+    ntfy_answers(&s, 503).await;
+
+    let restarted =
+        restarted_notifier_with_later(&s, vec![std::time::Duration::from_secs(2 * 3600)])?;
+    assert_eq!(restarted.resume().await, 1);
+    let reports = restarted.close_and_wait().await;
+    assert!(!reports[0].queued);
+    assert_eq!(outbox_len(&s.store).await?, 0);
+    let log = s.store.list_deliveries(watch.id, 10).await?;
+    assert_eq!(log[0].outcome, DeliveryOutcome::Failed);
+    assert!(
+        !log[0]
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("trying again"),
+        "{:?}",
+        log[0].error
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_waiting_notification_that_is_over_a_day_old_is_dropped_when_due() -> TestResult {
+    let s = setup().await?;
+    let watch = watch_with_target(&s, |_| {}).await?;
+    let id = leave_behind(&s, &watch).await?;
+    let now = vigil_store::now_ms();
+    sqlx::query("UPDATE notification_outbox SET created_at = ?, next_attempt_at = ?, rounds = 3 WHERE id = ?")
+        .bind(now - 25 * 60 * 60 * 1000)
+        .bind(now - 1000)
+        .bind(id)
+        .execute(s.store.pool())
+        .await?;
+
+    assert_eq!(s.notifier.retry_due().await, 0);
+    assert_eq!(outbox_len(&s.store).await?, 0);
+    assert!(ntfy_bodies(&s).await?.is_empty());
+    let log = s.store.list_deliveries(watch.id, 10).await?;
+    assert!(
+        log[0]
+            .error
+            .as_deref()
+            .is_some_and(|e| e.contains("too old")),
+        "{:?}",
+        log[0].error
+    );
+    Ok(())
+}

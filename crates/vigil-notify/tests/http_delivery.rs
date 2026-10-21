@@ -66,6 +66,7 @@ async fn a_refused_request_is_not_retried() {
         report.result,
         Err("HTTP 401 Unauthorized: unauthorized".to_owned())
     );
+    assert!(!report.retryable, "a refusal will not change by waiting");
 }
 
 #[tokio::test]
@@ -81,6 +82,10 @@ async fn a_server_that_stays_down_gets_four_attempts() {
     assert!(
         !report.interrupted,
         "running out of retries is not an interruption"
+    );
+    assert!(
+        report.retryable,
+        "a failure that may pass is worth a later try"
     );
     let error = report.result.expect_err("failed");
     assert!(error.starts_with("HTTP 503"), "{error}");

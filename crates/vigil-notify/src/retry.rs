@@ -45,6 +45,9 @@ pub struct DeliveryReport {
     /// Set when the delivery was stopped by its cancellation token before it was over. It is
     /// neither sent nor failed for good, and can be started again.
     pub interrupted: bool,
+    /// Set when the delivery failed on something that may pass (a network problem, a busy or
+    /// failing server) and ran out of attempts, so a later try may work. A refusal is not.
+    pub retryable: bool,
 }
 
 /// Deliver `prepared` to `channel`, retrying transient failures as `policy` says.
@@ -69,6 +72,7 @@ pub async fn deliver(
                     result: Ok(()),
                     note: prepared.template_note.clone(),
                     interrupted: false,
+                    retryable: false,
                 };
             }
             Err(error) => error,
@@ -83,6 +87,7 @@ pub async fn deliver(
                 result: Err(error.message),
                 note: prepared.template_note.clone(),
                 interrupted: false,
+                retryable: error.transient,
             };
         };
         let delay = error
@@ -103,6 +108,7 @@ pub async fn deliver(
                     result: Err(format!("{}; gave up retrying: shutting down", error.message)),
                     note: prepared.template_note.clone(),
                     interrupted: true,
+                    retryable: false,
                 };
             }
         }

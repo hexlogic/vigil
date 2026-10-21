@@ -250,12 +250,13 @@ async fn a_finished_delivery_leaves_the_outbox() -> TestResult {
     let log = s.store.list_deliveries(watch.id, 10).await?;
     assert_eq!(log[0].outcome, DeliveryOutcome::Failed);
 
-    // Out of retries.
+    // Out of quick retries on a failure that may pass: it stays for a later try
+    // (see notify_later.rs).
     let s = setup().await?;
     let watch = watch_with_target(&s, |_| {}).await?;
     ntfy_answers(&s, 503).await;
     change(&s, &watch).await?;
     s.notifier.close_and_wait().await;
-    assert_eq!(outbox_len(&s.store).await?, 0);
+    assert_eq!(outbox_len(&s.store).await?, 1);
     Ok(())
 }
