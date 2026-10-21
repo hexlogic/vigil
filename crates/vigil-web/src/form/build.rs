@@ -7,7 +7,7 @@ use vigil_core::{
     Conditions, FetchSettings, NotifyOn, Processor, Schedule, SelectMode, Step, Watch, WatchId,
     WatchState,
 };
-use vigil_notify::validate_template;
+use vigil_notify::{describe_error, validate_template};
 use vigil_scheduler::{Checker, IntervalError, parse_interval};
 use vigil_store::{NewWatch, NotificationTarget, Tag};
 
@@ -40,6 +40,8 @@ pub(crate) struct Problems {
     pub(crate) every: Option<String>,
     pub(crate) jitter: Option<String>,
     pub(crate) conditions: Option<String>,
+    /// No kind of change is ticked to be notified about.
+    pub(crate) notify_on: Option<String>,
     pub(crate) timeout: Option<String>,
     pub(crate) headers: Option<String>,
     pub(crate) retention: Option<String>,
@@ -57,6 +59,42 @@ impl Problems {
         self.steps.get(&at).map(String::as_str)
     }
 
+    /// The problems that keep a preview from being made, one line each, in the order of the form.
+    pub(crate) fn preview_messages(&self, t: &Translator) -> Vec<String> {
+        let mut out: Vec<String> = [
+            &self.url,
+            &self.timeout,
+            &self.headers,
+            &self.pipeline,
+            &self.conditions,
+        ]
+        .into_iter()
+        .flatten()
+        .cloned()
+        .collect();
+        let mut steps: Vec<_> = self.steps.iter().collect();
+        steps.sort_by_key(|(at, _)| **at);
+        out.extend(
+            steps
+                .into_iter()
+                .map(|(at, message)| t.t2("preview.step_problem", "n", at + 1, "message", message)),
+        );
+        out
+    }
+
+    /// Whether a problem keeps the page from being previewed: with the address, the request
+    /// settings, the filters or the conditions wrong, there is nothing to show.
+    pub(crate) fn blocks_preview(&self) -> bool {
+        let fields = [
+            &self.url,
+            &self.conditions,
+            &self.timeout,
+            &self.headers,
+            &self.pipeline,
+        ];
+        !self.steps.is_empty() || fields.iter().any(|field| field.is_some())
+    }
+
     /// Whether the form has no problem.
     pub(crate) fn is_empty(&self) -> bool {
         let fields = [
@@ -65,6 +103,7 @@ impl Problems {
             &self.every,
             &self.jitter,
             &self.conditions,
+            &self.notify_on,
             &self.timeout,
             &self.headers,
             &self.retention,
@@ -77,6 +116,12 @@ impl Problems {
     }
 }
 
+/// Everything a form says, whether or not it is all right.
+struct Evaluated {
+    built: Built,
+    problems: Problems,
+}
+
 /// Check a form and build the watch it describes. Library diagnostics (a bad selector, a bad
 /// pattern) are shown as they are, in English; everything the web crate says itself is
 /// translated.
@@ -86,13 +131,45 @@ pub(crate) async fn build(
     known: &Known<'_>,
     checker: &Checker,
 ) -> Result<Built, Box<Problems>> {
+    let Evaluated { built, problems } = evaluate(draft, t, known, checker).await;
+    if problems.is_empty() {
+        Ok(built)
+    } else {
+        Err(Box::new(problems))
+    }
+}
+
+/// The watch a form describes, for a preview: it only has to be right about what a check
+/// does with the page, not about the name, the interval, the tags or the template. Otherwise
+/// the problems that matter, for showing in place of the preview.
+pub(crate) async fn build_for_preview(
+    draft: &Draft,
+    t: &Translator,
+    known: &Known<'_>,
+    checker: &Checker,
+) -> Result<NewWatch, Box<Problems>> {
+    let Evaluated { built, problems } = evaluate(draft, t, known, checker).await;
+    if problems.blocks_preview() {
+        Err(Box::new(problems))
+    } else {
+        Ok(built.new)
+    }
+}
+
+/// Read everything a form says and note what is wrong with it.
+async fn evaluate(
+    draft: &Draft,
+    t: &Translator,
+    known: &Known<'_>,
+    checker: &Checker,
+) -> Evaluated {
     let mut problems = Problems::default();
 
     let url = draft.url.trim().to_owned();
     if url.is_empty() {
         problems.url = Some(t.t("form.err.url_required"));
     } else if let Err(error) = vigil_fetch::check_url(&url) {
-        problems.url = Some(vigil_notify::describe_error(&error));
+        problems.url = Some(describe_error(&error));
     }
     let name = match draft.name.trim() {
         "" => url.clone(),
@@ -151,7 +228,7 @@ pub(crate) async fn build(
     };
     if !conditions.notify_on.added && !conditions.notify_on.removed && !conditions.notify_on.changed
     {
-        problems.conditions = Some(t.t("form.err.notify_on"));
+        problems.notify_on = Some(t.t("form.err.notify_on"));
     }
 
     let template = match draft.template.trim() {
@@ -176,37 +253,40 @@ pub(crate) async fn build(
         snapshot_retention: retention,
     };
 
-    // The filters and conditions are checked together, as a check would build them, but only
-    // when each filter at least has what it needs.
+    // The conditions and the filters are checked as a check would build them, each on its own
+    // so that a problem in one does not hide a problem in the other. The filters only when
+    // each at least has what it needs.
+    if let Err(error) = new.conditions.compile() {
+        problems.conditions = Some(format!("conditions: {}", describe_error(&error)));
+    }
     if problems.steps.is_empty() {
-        let watch = watch_of(&new, super::slot_of(&draft.id));
-        if let Err(error) = checker.validate_watch(&watch, watch.id).await {
+        let slot = super::slot_of(&draft.id);
+        let mut only_filters = new.clone();
+        only_filters.conditions = Conditions::default();
+        let watch = preview_watch(&only_filters, slot);
+        if let Err(error) = checker.validate_watch(&watch, slot).await {
             match error.step {
                 Some(number) => {
                     problems.steps.insert(number - 1, error.message);
-                }
-                None if error.message.starts_with("conditions:") => {
-                    problems.conditions = Some(error.message);
                 }
                 None => problems.pipeline = Some(error.message),
             }
         }
     }
 
-    if problems.is_empty() {
-        Ok(Built {
+    Evaluated {
+        built: Built {
             new,
             template,
             tags,
             targets,
-        })
-    } else {
-        Err(Box::new(problems))
+        },
+        problems,
     }
 }
 
-/// A watch to validate: the form's settings under a slot of the form's own.
-fn watch_of(new: &NewWatch, id: WatchId) -> Watch {
+/// A watch for validating or previewing: the form's settings under an id of the caller's.
+pub(crate) fn preview_watch(new: &NewWatch, id: WatchId) -> Watch {
     Watch {
         id,
         name: new.name.clone(),

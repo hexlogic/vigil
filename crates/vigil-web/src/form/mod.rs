@@ -4,7 +4,7 @@
 mod build;
 mod draft;
 
-pub(crate) use build::{Built, Known, Problems, build};
+pub(crate) use build::{Built, Known, Problems, build, build_for_preview, preview_watch};
 pub(crate) use draft::{Draft, STEP_KINDS, StepDraft, StepOp};
 
 use std::collections::HashMap;

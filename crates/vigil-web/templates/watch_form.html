@@ -4,6 +4,7 @@
 <div class="page-head"><h1>{{ ctx.t(title_key) }}</h1></div>
 <form method="post" action="{{ action }}" id="watch-form">
 <input type="hidden" name="draft" value="{{ draft.id }}">
+<input type="hidden" name="watch" value="{{ watch_id }}">
 
 <fieldset>
 <legend>{{ ctx.t("form.page") }}</legend>
@@ -61,13 +62,14 @@
 <div class="field">
 <label for="block_text">{{ ctx.t("form.block_text") }}</label>
 <textarea id="block_text" name="block_text" rows="2" spellcheck="false">{{ draft.block_text }}</textarea>
+{% if let Some(message) = problems.conditions %}<p class="error" role="alert">{{ message }}</p>{% endif %}
 </div>
 <div class="field">
 <label>{{ ctx.t("form.notify_on") }}</label>
 <label class="check"><input type="checkbox" name="notify_added"{% if draft.notify_added %} checked{% endif %}>{{ ctx.t("form.notify_added") }}</label>
 <label class="check"><input type="checkbox" name="notify_removed"{% if draft.notify_removed %} checked{% endif %}>{{ ctx.t("form.notify_removed") }}</label>
 <label class="check"><input type="checkbox" name="notify_changed"{% if draft.notify_changed %} checked{% endif %}>{{ ctx.t("form.notify_changed") }}</label>
-{% if let Some(message) = problems.conditions %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+{% if let Some(message) = problems.notify_on %}<p class="error" role="alert">{{ message }}</p>{% endif %}
 </div>
 <div class="field">
 <label>{{ ctx.t("form.targets") }}</label>
@@ -133,4 +135,13 @@
 <a class="btn" href="{{ cancel_url }}">{{ ctx.t("form.cancel") }}</a>
 </div>
 </form>
+
+<section class="panel mt" aria-labelledby="preview-title">
+<div class="row">
+<h2 id="preview-title" class="grow">{{ ctx.t("preview.title") }}</h2>
+<span id="preview-busy" class="htmx-indicator muted small"><span class="spinner" aria-hidden="true"></span> {{ ctx.t("preview.working") }}</span>
+</div>
+<p class="hint">{{ ctx.t("preview.hint") }}</p>
+<div id="preview" aria-live="polite" hx-post="{{ ctx.url("/watch/preview") }}" hx-include="#watch-form" hx-trigger="load, input from:#watch-form delay:700ms, change from:#watch-form delay:700ms, stepschanged from:body delay:100ms" hx-sync="this:replace" hx-indicator="#preview-busy" hx-swap="innerHTML"></div>
+</section>
 {% endblock %}
