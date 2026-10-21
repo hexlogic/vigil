@@ -52,14 +52,16 @@ impl SmtpServer {
 }
 
 pub async fn start(rcpt: Rcpt) -> SmtpServer {
-    let listener = match TcpListener::bind("127.0.0.1:0").await {
-        Ok(listener) => listener,
-        Err(error) => panic!("could not bind the test SMTP server: {error}"),
-    };
-    let port = match listener.local_addr() {
-        Ok(addr) => addr.port(),
-        Err(error) => panic!("no address for the test SMTP server: {error}"),
-    };
+    match start_on("127.0.0.1:0", rcpt).await {
+        Some(server) => server,
+        None => panic!("could not bind the test SMTP server"),
+    }
+}
+
+/// Start listening on `addr`, or `None` if that cannot be bound (no IPv6 on this machine).
+pub async fn start_on(addr: &str, rcpt: Rcpt) -> Option<SmtpServer> {
+    let listener = TcpListener::bind(addr).await.ok()?;
+    let port = listener.local_addr().ok()?.port();
     let failures_left = AtomicUsize::new(match rcpt {
         Rcpt::TemporaryFailures(n) => n,
         _ => 0,
@@ -77,7 +79,7 @@ pub async fn start(rcpt: Rcpt) -> SmtpServer {
             tokio::spawn(serve(stream, Arc::clone(&server)));
         }
     });
-    SmtpServer { port, shared }
+    Some(SmtpServer { port, shared })
 }
 
 async fn serve(stream: TcpStream, shared: Arc<Shared>) {

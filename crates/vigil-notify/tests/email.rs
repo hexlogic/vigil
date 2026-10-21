@@ -164,3 +164,18 @@ async fn implicit_tls_against_a_plaintext_server_fails_without_sending() {
     assert!(report.result.is_err());
     assert!(server.received().is_empty());
 }
+
+#[tokio::test]
+async fn an_ipv6_server_is_reached_without_brackets() {
+    use support::smtp::start_on;
+    let Some(server) = start_on("[::1]:0", Rcpt::Accept).await else {
+        return; // this machine has no IPv6 loopback
+    };
+    let url = format!(
+        "mailto://[::1]:{}?tls=none&from=vigil@x.test&to=a@b.test",
+        server.port
+    );
+    let report = send(&url, &Event::sample(), 0).await;
+    assert_eq!((report.attempts, report.result), (1, Ok(())));
+    assert_eq!(server.received().len(), 1);
+}
