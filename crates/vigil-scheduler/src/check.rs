@@ -233,7 +233,9 @@ impl Checker {
     /// Fetch and process the page. `at` and `duration_ms` of the result are placeholders that
     /// the caller fills in once the work is done.
     async fn fetch_and_process(&self, watch: &Watch) -> Result<CheckSuccess, String> {
-        validate(watch, self.render_timeout).await?;
+        validate(watch.id, watch, self.render_timeout)
+            .await
+            .map_err(|e| e.message)?;
         let request = request_for(watch, true);
         match self.fetch(&request).await? {
             FetchOutcome::NotModified {
@@ -252,12 +254,14 @@ impl Checker {
             FetchOutcome::Body(body) => {
                 let raw_size = body.body.len() as u64;
                 let text = render(
+                    watch.id,
                     watch,
-                    body.body,
+                    Arc::new(body.body),
                     body.content_type.clone(),
                     self.render_timeout,
                 )
-                .await?;
+                .await
+                .map_err(|e| e.message)?;
                 Ok(CheckSuccess {
                     at: 0,
                     duration_ms: 0,

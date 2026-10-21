@@ -182,7 +182,8 @@ async fn a_preview_reports_problems_instead_of_recording_them() -> TestResult {
         .await?
         .result
         .err()
-        .ok_or("expected an error")?;
+        .ok_or("expected an error")?
+        .message;
     assert!(message.contains("500"), "{message}");
 
     // A bare 304 is the fetcher's own error. A conditional header of the watch's own makes it
@@ -194,7 +195,8 @@ async fn a_preview_reports_problems_instead_of_recording_them() -> TestResult {
         .await?
         .result
         .err()
-        .ok_or("expected an error")?;
+        .ok_or("expected an error")?
+        .message;
     assert!(message.contains("304"), "{message}");
     let mut conditional = watch.clone();
     conditional
@@ -207,7 +209,8 @@ async fn a_preview_reports_problems_instead_of_recording_them() -> TestResult {
         .await?
         .result
         .err()
-        .ok_or("expected an error")?;
+        .ok_or("expected an error")?
+        .message;
     assert!(
         message.starts_with("the server answered 304 Not Modified"),
         "{message}"
@@ -226,7 +229,8 @@ async fn a_preview_reports_problems_instead_of_recording_them() -> TestResult {
         .await?
         .result
         .err()
-        .ok_or("expected an error")?;
+        .ok_or("expected an error")?
+        .message;
     assert_eq!(message, "step 1 (css): matched nothing");
 
     let mut bad_conditions = watch.clone();
@@ -237,7 +241,8 @@ async fn a_preview_reports_problems_instead_of_recording_them() -> TestResult {
         .await?
         .result
         .err()
-        .ok_or("expected an error")?;
+        .ok_or("expected an error")?
+        .message;
     assert!(
         message.starts_with("conditions: trigger_text[0]: invalid regex"),
         "{message}"
@@ -248,5 +253,131 @@ async fn a_preview_reports_problems_instead_of_recording_them() -> TestResult {
     assert_eq!(stored.state.consecutive_errors, 0);
     assert_eq!(stored.state.last_error, None);
     assert_eq!(log_rows(&s).await?, 0);
+    Ok(())
+}
+
+/// The processing slot of a form being edited. The limit of one processing thread per slot is
+/// shared by the whole process, so tests that run side by side each use a slot of their own.
+fn draft_slot(n: u32) -> Result<vigil_core::WatchId, Box<dyn std::error::Error>> {
+    Ok(format!("00000000-0000-7000-8000-{n:012}").parse()?)
+}
+
+fn css(selector: &str) -> Step {
+    Step::Css {
+        selector: selector.into(),
+        mode: SelectMode::Include,
+        required: true,
+    }
+}
+
+#[tokio::test]
+async fn a_fetched_page_can_be_previewed_again_with_other_settings() -> TestResult {
+    let s = setup().await?;
+    let watch = add_watch(&s).await?;
+    serve(
+        &s.server,
+        page("<h1>Shop</h1><p class=\"price\">$10</p><p class=\"stock\">in stock</p>"),
+    )
+    .await;
+
+    let page = s.checker.fetch_for_preview(&watch).await?;
+    assert_eq!(page.status(), 200);
+    assert_eq!(page.content_type(), Some("text/html; charset=utf-8"));
+
+    let mut price = watch.clone();
+    price.pipeline = vec![css(".price")];
+    let first = s
+        .checker
+        .preview_page(&price, &page, draft_slot(177)?)
+        .await?;
+    assert_eq!(first.result?.text, "$10\n");
+
+    let mut stock = watch.clone();
+    stock.pipeline = vec![css(".stock")];
+    let second = s
+        .checker
+        .preview_page(&stock, &page, draft_slot(177)?)
+        .await?;
+    let second = second.result?;
+    assert_eq!(second.text, "in stock\n");
+    assert_eq!(second.raw_size, page.size());
+
+    let requests = s.server.received_requests().await.unwrap_or_default();
+    assert_eq!(requests.len(), 1, "the page was fetched once");
+    assert_eq!(snapshot_rows(&s).await?, 0);
+    assert_eq!(log_rows(&s).await?, 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_preview_names_the_step_that_failed() -> TestResult {
+    let s = setup().await?;
+    let watch = add_watch(&s).await?;
+    serve(&s.server, page("<p class=\"a\">x</p>")).await;
+
+    let page = s.checker.fetch_for_preview(&watch).await?;
+    let mut broken = watch.clone();
+    broken.pipeline = vec![css(".a"), css(".missing")];
+    let error = s
+        .checker
+        .preview_page(&broken, &page, draft_slot(178)?)
+        .await?
+        .result
+        .err()
+        .ok_or("expected an error")?;
+    assert_eq!(error.step, Some(2), "{error:?}");
+    assert_eq!(error.message, "step 2 (css): matched nothing");
+
+    // A problem that is not in a step has no step.
+    let mut bad_conditions = watch.clone();
+    bad_conditions.conditions.block_text = vec!["/(/".into()];
+    let error = s
+        .checker
+        .preview_page(&bad_conditions, &page, draft_slot(178)?)
+        .await?
+        .result
+        .err()
+        .ok_or("expected an error")?;
+    assert_eq!(error.step, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn validating_a_watch_finds_a_bad_step_without_fetching() -> TestResult {
+    let s = setup().await?;
+    let watch = add_watch(&s).await?;
+    serve(&s.server, page("<p>x</p>")).await;
+
+    s.checker.validate_watch(&watch, draft_slot(179)?).await?;
+
+    let mut broken = watch.clone();
+    broken.pipeline = vec![
+        css("p"),
+        Step::RegexExtract {
+            pattern: "(".into(),
+            group: 0,
+            required: false,
+        },
+    ];
+    let error = s
+        .checker
+        .validate_watch(&broken, draft_slot(179)?)
+        .await
+        .err()
+        .ok_or("expected an error")?;
+    assert_eq!(error.step, Some(2));
+
+    let mut bad_conditions = watch.clone();
+    bad_conditions.conditions.trigger_text = vec!["/(/".into()];
+    let error = s
+        .checker
+        .validate_watch(&bad_conditions, draft_slot(179)?)
+        .await
+        .err()
+        .ok_or("expected an error")?;
+    assert!(error.message.starts_with("conditions:"), "{error}");
+
+    let requests = s.server.received_requests().await.unwrap_or_default();
+    assert!(requests.is_empty(), "nothing was fetched");
     Ok(())
 }
