@@ -4,6 +4,7 @@ mod assets;
 mod auth;
 mod config;
 mod fmt;
+mod form;
 mod i18n;
 mod page;
 mod pages;
@@ -49,6 +50,8 @@ pub struct AppState {
     pub scheduler: SchedulerHandle,
     /// Recent wrong passwords.
     limiter: Arc<auth::LoginLimiter>,
+    /// Takes turns for the processing slot of each form.
+    slots: Arc<form::SlotLocks>,
 }
 
 impl AppState {
@@ -70,6 +73,7 @@ impl AppState {
             notifier,
             scheduler,
             limiter: Arc::default(),
+            slots: Arc::default(),
         })
     }
 }
@@ -88,6 +92,12 @@ pub fn router(state: AppState) -> Router {
     let protected = Router::new()
         .route("/", get(pages::watches))
         .route("/logout", post(pages::logout))
+        .route("/watch/new", get(pages::new_form).post(pages::create))
+        .route("/watch/steps", post(pages::steps))
+        .route(
+            "/watch/{id}/edit",
+            get(pages::edit_form).post(pages::update),
+        )
         .route("/watch/{id}/row", get(pages::watch_row))
         .route("/watch/{id}/check", post(pages::check_watch))
         .route("/watch/{id}/pause", post(pages::pause_watch))

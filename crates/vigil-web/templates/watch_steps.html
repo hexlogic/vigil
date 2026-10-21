@@ -1,0 +1,56 @@
+{% if steps.is_empty() %}
+<p class="muted">{{ ctx.t("form.no_steps") }}</p>
+{% endif %}
+{% for step in steps %}
+<div class="step{% if step.error.is_some() %} step-error{% endif %}">
+<input type="hidden" name="step-{{ step.index }}-type" value="{{ step.draft.kind }}">
+<div class="step-head">
+<span class="grow">{{ step.index + 1 }}. {{ step.label }}</span>
+{% if !step.first %}<button class="btn btn-small" type="button" hx-post="{{ ctx.url("/watch/steps") }}?op=up&amp;i={{ step.index }}" hx-target="#steps" hx-swap="innerHTML" aria-label="{{ ctx.t("form.step_up") }}">↑</button>{% endif %}
+{% if !step.last %}<button class="btn btn-small" type="button" hx-post="{{ ctx.url("/watch/steps") }}?op=down&amp;i={{ step.index }}" hx-target="#steps" hx-swap="innerHTML" aria-label="{{ ctx.t("form.step_down") }}">↓</button>{% endif %}
+<button class="btn btn-small btn-danger" type="button" hx-post="{{ ctx.url("/watch/steps") }}?op=remove&amp;i={{ step.index }}" hx-target="#steps" hx-swap="innerHTML">{{ ctx.t("form.step_remove") }}</button>
+</div>
+{% if step.draft.kind == "css" %}
+<div class="field"><label for="step-{{ step.index }}-selector">{{ ctx.t("form.step_selector") }}</label>
+<input type="text" id="step-{{ step.index }}-selector" name="step-{{ step.index }}-selector" value="{{ step.draft.selector }}" class="mono" autocomplete="off" spellcheck="false" placeholder="#price, .product-title"></div>
+{% endif %}
+{% if step.draft.kind == "xpath" || step.draft.kind == "jsonpath" %}
+<div class="field"><label for="step-{{ step.index }}-expr">{% if step.draft.kind == "xpath" %}{{ ctx.t("form.step_xpath") }}{% else %}{{ ctx.t("form.step_jsonpath") }}{% endif %}</label>
+<input type="text" id="step-{{ step.index }}-expr" name="step-{{ step.index }}-expr" value="{{ step.draft.expr }}" class="mono" autocomplete="off" spellcheck="false"></div>
+{% endif %}
+{% if step.draft.kind == "jq" %}
+<div class="field"><label for="step-{{ step.index }}-program">{{ ctx.t("form.step_program") }}</label>
+<textarea id="step-{{ step.index }}-program" name="step-{{ step.index }}-program" rows="2" spellcheck="false">{{ step.draft.program }}</textarea></div>
+{% endif %}
+{% if step.draft.kind == "regex_extract" || step.draft.kind == "regex_replace" %}
+<div class="field"><label for="step-{{ step.index }}-pattern">{{ ctx.t("form.step_pattern") }}</label>
+<input type="text" id="step-{{ step.index }}-pattern" name="step-{{ step.index }}-pattern" value="{{ step.draft.pattern }}" class="mono" autocomplete="off" spellcheck="false"></div>
+{% endif %}
+{% if step.draft.kind == "regex_extract" %}
+<div class="field"><label for="step-{{ step.index }}-group">{{ ctx.t("form.step_group") }}</label>
+<input type="number" min="0" id="step-{{ step.index }}-group" name="step-{{ step.index }}-group" value="{{ step.draft.group }}">
+<p class="hint">{{ ctx.t("form.step_group_hint") }}</p></div>
+{% endif %}
+{% if step.draft.kind == "regex_replace" %}
+<div class="field"><label for="step-{{ step.index }}-replacement">{{ ctx.t("form.step_replacement") }}</label>
+<input type="text" id="step-{{ step.index }}-replacement" name="step-{{ step.index }}-replacement" value="{{ step.draft.replacement }}" class="mono" autocomplete="off" spellcheck="false">
+<p class="hint">{{ ctx.t("form.step_replacement_hint") }}</p></div>
+{% endif %}
+{% if step.draft.kind == "ignore_lines" %}
+<div class="field"><label for="step-{{ step.index }}-patterns">{{ ctx.t("form.step_patterns") }}</label>
+<textarea id="step-{{ step.index }}-patterns" name="step-{{ step.index }}-patterns" rows="3" spellcheck="false">{{ step.draft.patterns }}</textarea>
+<p class="hint">{{ ctx.t("form.lines_hint") }}</p></div>
+{% endif %}
+{% if step.draft.kind == "css" || step.draft.kind == "xpath" %}
+<div class="field"><label for="step-{{ step.index }}-mode">{{ ctx.t("form.step_mode") }}</label>
+<select id="step-{{ step.index }}-mode" name="step-{{ step.index }}-mode">
+<option value="include"{% if step.draft.mode != "remove" %} selected{% endif %}>{{ ctx.t("form.step_mode_include") }}</option>
+<option value="remove"{% if step.draft.mode == "remove" %} selected{% endif %}>{{ ctx.t("form.step_mode_remove") }}</option>
+</select></div>
+{% endif %}
+{% if step.draft.kind == "css" || step.draft.kind == "xpath" || step.draft.kind == "jsonpath" || step.draft.kind == "regex_extract" %}
+<label class="check"><input type="checkbox" name="step-{{ step.index }}-required"{% if step.draft.required %} checked{% endif %}>{{ ctx.t("form.step_required") }}</label>
+{% endif %}
+{% if let Some(message) = step.error %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+</div>
+{% endfor %}

@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}{{ ctx.t(title_key) }}{% endblock %}
+{% block content %}
+<div class="page-head"><h1>{{ ctx.t(title_key) }}</h1></div>
+<form method="post" action="{{ action }}" id="watch-form">
+<input type="hidden" name="draft" value="{{ draft.id }}">
+
+<fieldset>
+<legend>{{ ctx.t("form.page") }}</legend>
+<div class="field">
+<label for="url">{{ ctx.t("form.url") }}</label>
+<input type="url" id="url" name="url" value="{{ draft.url }}" required autocomplete="off" placeholder="https://example.com/product"{% if problems.url.is_some() %} aria-invalid="true"{% endif %}>
+{% if let Some(message) = problems.url %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<p class="hint">{{ ctx.t("form.url_hint") }}</p>
+</div>
+<div class="grid-2">
+<div class="field">
+<label for="name">{{ ctx.t("form.name") }}</label>
+<input type="text" id="name" name="name" value="{{ draft.name }}" autocomplete="off">
+<p class="hint">{{ ctx.t("form.name_hint") }}</p>
+</div>
+<div class="field">
+<label for="every">{{ ctx.t("form.every") }}</label>
+<input type="text" id="every" name="every" value="{{ draft.every }}" autocomplete="off" spellcheck="false" placeholder="1h"{% if problems.every.is_some() %} aria-invalid="true"{% endif %}>
+{% if let Some(message) = problems.every %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<p class="hint">{{ ctx.t("form.every_hint") }}</p>
+</div>
+</div>
+</fieldset>
+
+<fieldset>
+<legend>{{ ctx.t("form.content") }}</legend>
+<div class="field">
+<label for="processor">{{ ctx.t("form.processor") }}</label>
+<select id="processor" name="processor">
+<option value="text"{% if draft.processor == "text" || draft.processor.is_empty() %} selected{% endif %}>{{ ctx.t("form.processor_text") }}</option>
+<option value="json"{% if draft.processor == "json" %} selected{% endif %}>{{ ctx.t("form.processor_json") }}</option>
+<option value="feed"{% if draft.processor == "feed" %} selected{% endif %}>{{ ctx.t("form.processor_feed") }}</option>
+</select>
+</div>
+<h3>{{ ctx.t("form.steps") }}</h3>
+<p class="hint">{{ ctx.t("form.steps_hint") }}</p>
+{% if let Some(message) = problems.pipeline %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<div id="steps">{% include "watch_steps.html" %}</div>
+<div class="row">
+<label for="new_step_type" class="sr-only">{{ ctx.t("form.step_add") }}</label>
+<select id="new_step_type" name="new_step_type" class="auto">
+{% for kind in kinds %}<option value="{{ kind.kind }}">{{ kind.label }}</option>{% endfor %}
+</select>
+<button class="btn" type="button" hx-post="{{ ctx.url("/watch/steps") }}?op=add" hx-target="#steps" hx-swap="innerHTML">{{ ctx.t("form.step_add") }}</button>
+</div>
+</fieldset>
+
+<fieldset>
+<legend>{{ ctx.t("form.notify") }}</legend>
+<div class="field">
+<label for="trigger_text">{{ ctx.t("form.trigger_text") }}</label>
+<textarea id="trigger_text" name="trigger_text" rows="2" spellcheck="false">{{ draft.trigger_text }}</textarea>
+<p class="hint">{{ ctx.t("form.trigger_hint") }} {{ ctx.t("form.lines_hint") }}</p>
+</div>
+<div class="field">
+<label for="block_text">{{ ctx.t("form.block_text") }}</label>
+<textarea id="block_text" name="block_text" rows="2" spellcheck="false">{{ draft.block_text }}</textarea>
+</div>
+<div class="field">
+<label>{{ ctx.t("form.notify_on") }}</label>
+<label class="check"><input type="checkbox" name="notify_added"{% if draft.notify_added %} checked{% endif %}>{{ ctx.t("form.notify_added") }}</label>
+<label class="check"><input type="checkbox" name="notify_removed"{% if draft.notify_removed %} checked{% endif %}>{{ ctx.t("form.notify_removed") }}</label>
+<label class="check"><input type="checkbox" name="notify_changed"{% if draft.notify_changed %} checked{% endif %}>{{ ctx.t("form.notify_changed") }}</label>
+{% if let Some(message) = problems.conditions %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+</div>
+<div class="field">
+<label>{{ ctx.t("form.targets") }}</label>
+{% if targets.is_empty() %}<p class="muted">{{ ctx.t("form.no_targets") }} <a href="{{ ctx.url("/notifications") }}">{{ ctx.t("form.add_target") }}</a></p>{% endif %}
+{% for target in targets %}<label class="check"><input type="checkbox" name="target" value="{{ target.id }}"{% if target.checked %} checked{% endif %}>{{ target.name }}{% if !target.kind.is_empty() %} <span class="muted small">{{ target.kind }}</span>{% endif %}</label>{% endfor %}
+{% if let Some(message) = problems.targets %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+</div>
+<div class="field">
+<label for="template">{{ ctx.t("form.template") }}</label>
+<textarea id="template" name="template" rows="3" spellcheck="false"{% if problems.template.is_some() %} aria-invalid="true"{% endif %}>{{ draft.template }}</textarea>
+{% if let Some(message) = problems.template %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<p class="hint">{{ ctx.t("form.template_hint") }}</p>
+</div>
+</fieldset>
+
+<fieldset>
+<legend>{{ ctx.t("form.tags") }}</legend>
+{% if tags.is_empty() %}<p class="muted">{{ ctx.t("form.no_tags") }} <a href="{{ ctx.url("/tags") }}">{{ ctx.t("form.add_tag") }}</a></p>{% endif %}
+{% for tag in tags %}<label class="check"><input type="checkbox" name="tag" value="{{ tag.id }}"{% if tag.checked %} checked{% endif %}><span class="tag tag-{{ tag.class }}">{{ tag.name }}</span></label>{% endfor %}
+{% if let Some(message) = problems.tags %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+</fieldset>
+
+<details{% if problems.timeout.is_some() || problems.headers.is_some() || problems.jitter.is_some() || problems.retention.is_some() %} open{% endif %}>
+<summary>{{ ctx.t("form.advanced") }}</summary>
+<fieldset>
+<legend>{{ ctx.t("form.request") }}</legend>
+<div class="grid-2">
+<div class="field">
+<label for="timeout">{{ ctx.t("form.timeout") }}</label>
+<input type="text" inputmode="numeric" id="timeout" name="timeout" value="{{ draft.timeout }}" autocomplete="off"{% if problems.timeout.is_some() %} aria-invalid="true"{% endif %}>
+{% if let Some(message) = problems.timeout %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<p class="hint">{{ ctx.t("form.timeout_hint") }}</p>
+</div>
+<div class="field">
+<label for="user_agent">{{ ctx.t("form.user_agent") }}</label>
+<input type="text" id="user_agent" name="user_agent" value="{{ draft.user_agent }}" autocomplete="off">
+</div>
+</div>
+<div class="field">
+<label for="headers">{{ ctx.t("form.headers") }}</label>
+<textarea id="headers" name="headers" rows="3" spellcheck="false" placeholder="Accept-Language: en"{% if problems.headers.is_some() %} aria-invalid="true"{% endif %}>{{ draft.headers }}</textarea>
+{% if let Some(message) = problems.headers %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<p class="hint">{{ ctx.t("form.headers_hint") }}</p>
+</div>
+<div class="grid-2">
+<div class="field">
+<label for="jitter">{{ ctx.t("form.jitter") }}</label>
+<input type="text" inputmode="numeric" id="jitter" name="jitter" value="{{ draft.jitter }}" autocomplete="off"{% if problems.jitter.is_some() %} aria-invalid="true"{% endif %}>
+{% if let Some(message) = problems.jitter %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+<p class="hint">{{ ctx.t("form.jitter_hint") }}</p>
+</div>
+<div class="field">
+<label for="retention">{{ ctx.t("form.retention") }}</label>
+<input type="text" inputmode="numeric" id="retention" name="retention" value="{{ draft.retention }}" autocomplete="off"{% if problems.retention.is_some() %} aria-invalid="true"{% endif %}>
+{% if let Some(message) = problems.retention %}<p class="error" role="alert">{{ message }}</p>{% endif %}
+</div>
+</div>
+</fieldset>
+</details>
+
+<div class="row mt">
+<button class="btn btn-primary" type="submit">{% if editing %}{{ ctx.t("form.save") }}{% else %}{{ ctx.t("form.add") }}{% endif %}</button>
+<a class="btn" href="{{ cancel_url }}">{{ ctx.t("form.cancel") }}</a>
+</div>
+</form>
+{% endblock %}

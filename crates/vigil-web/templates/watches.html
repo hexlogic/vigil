@@ -4,6 +4,7 @@
 <div class="page-head">
 <h1>{{ ctx.t("watches.title") }}</h1>
 <span class="muted">{{ ctx.plural("watches.count", *total) }}</span>
+<a class="btn btn-primary" href="{{ ctx.url("/watch/new") }}">{{ ctx.t("watches.add") }}</a>
 </div>
 {% if !tags.is_empty() %}
 <nav class="row small" aria-label="{{ ctx.t("watches.filter_label") }}">
