@@ -50,6 +50,20 @@ impl Store {
         rows.iter().map(meta_from_row).collect()
     }
 
+    /// One snapshot without its content. A snapshot that retention has removed is
+    /// [`StoreError::NotFound`].
+    pub async fn get_snapshot(&self, id: SnapshotId) -> Result<SnapshotMeta, StoreError> {
+        let row = sqlx::query(
+            "SELECT id, watch_id, taken_at, hash, raw_size, http_status, content_type \
+             FROM snapshots WHERE id = ?",
+        )
+        .bind(id.hyphenated().to_string())
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| StoreError::NotFound(format!("snapshot {id}")))?;
+        meta_from_row(&row)
+    }
+
     /// The processed text of a snapshot.
     pub async fn snapshot_content(&self, id: SnapshotId) -> Result<String, StoreError> {
         let row = sqlx::query("SELECT content FROM snapshots WHERE id = ?")

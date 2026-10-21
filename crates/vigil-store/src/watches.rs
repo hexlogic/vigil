@@ -168,6 +168,23 @@ impl Store {
         Ok(())
     }
 
+    /// Pause or resume a watch.
+    ///
+    /// Like [`Store::set_notification_template`] this leaves `updated_at` and the check state
+    /// alone: pausing changes whether a watch is scheduled, not what a check does. A scheduler
+    /// notices the flag the next time it loads the watch list.
+    pub async fn set_paused(&self, id: WatchId, paused: bool) -> Result<(), StoreError> {
+        let result = sqlx::query("UPDATE watches SET paused = ? WHERE id = ?")
+            .bind(i64::from(paused))
+            .bind(id.to_string())
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(StoreError::NotFound(format!("watch {id}")));
+        }
+        Ok(())
+    }
+
     /// Load one watch.
     pub async fn get_watch(&self, id: WatchId) -> Result<Watch, StoreError> {
         let row = sqlx::query(concat!(
