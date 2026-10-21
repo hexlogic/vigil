@@ -125,3 +125,46 @@ async fn an_unreadable_saved_notification_is_dropped() -> TestResult {
 fn uuid_v7() -> vigil_store::SnapshotId {
     TargetId::now_v7()
 }
+
+#[tokio::test]
+async fn a_notification_can_wait_for_a_later_try_and_be_taken_once() -> TestResult {
+    let (_dir, store) = open_temp().await?;
+    let watch = watch(&store).await?;
+    let target = store.create_target(&target("t")).await?;
+    let id = store
+        .enqueue_notification(&NewPending {
+            watch,
+            target: target.id,
+            snapshot: TargetId::now_v7(),
+            payload: "{}".into(),
+        })
+        .await?;
+
+    // Just saved: a delivery is in progress, so it is not due and nothing may claim it.
+    let saved = store.pending_notifications().await?;
+    assert_eq!((saved[0].rounds, saved[0].next_attempt_at), (0, None));
+    assert!(store.due_notifications(i64::MAX).await?.is_empty());
+    assert!(!store.claim_notification(id, i64::MAX).await?);
+
+    // Its tries ran out: it waits.
+    store.defer_notification(id, 1_000, 1).await?;
+    let waiting = store.pending_notifications().await?;
+    assert_eq!(
+        (waiting[0].rounds, waiting[0].next_attempt_at),
+        (1, Some(1_000))
+    );
+    assert!(store.due_notifications(999).await?.is_empty());
+    assert!(!store.claim_notification(id, 999).await?);
+    assert_eq!(store.due_notifications(1_000).await?.len(), 1);
+
+    // Whoever claims it first gets it; it is then in progress again, but keeps its round count.
+    assert!(store.claim_notification(id, 1_000).await?);
+    assert!(!store.claim_notification(id, 1_000).await?);
+    assert!(store.due_notifications(i64::MAX).await?.is_empty());
+    let claimed = store.pending_notifications().await?;
+    assert_eq!((claimed[0].rounds, claimed[0].next_attempt_at), (1, None));
+
+    store.complete_notification(id).await?;
+    assert!(!store.claim_notification(id, 1_000).await?);
+    Ok(())
+}
