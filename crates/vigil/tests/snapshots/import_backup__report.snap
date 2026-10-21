@@ -1,0 +1,77 @@
+---
+source: crates/vigil/tests/import_backup.rs
+expression: report
+---
+format: backup
+found 22 watch(es): 21 will be made (8 with notes), 1 skipped; 2 tag(s) and 4 notification target(s) will be made
+  info         layout: the archive also holds a copy of the older single-file datastore; only the per-watch files were read
+  info         global settings: settings that applied to every watch in the source were copied into each watch: the default interval, the random delay, the timeout, headers, the number of versions kept, text to ignore, elements to remove, notification addresses (for watches with none of their own)
+  info         default_ua: the source's default User-Agent was copied to each watch, so that sites see the same client
+  skipped      unknown options: options this importer does not know were ignored: some_future_option
+
+Plain page [will be made]
+
+Price (css) [will be made]
+
+Several selectors [will be made, with notes]
+  approximated include_filters: several selectors are joined into one, so the matches come in page order, not in the order of the filters
+
+Price without ads [will be made]
+
+Headline (xpath prefix) [will be made]
+
+Headline (leading slash) [will be made]
+
+Css and xpath together [will be made, with notes]
+  skipped      include_filters: XPath filters were left out because the watch also has CSS filters, and the two cannot be combined
+
+Listing (jsonpath) [will be made]
+
+Listing (jq) [will be made]
+
+Search (post, jqraw) [will be made]
+
+Ignored lines [will be made, with notes]
+  skipped      ignore_text: a pattern was left out because it does not work here: invalid regex "/(?<=a)b/i": look-around, including look-ahead and look-behind, is not supported
+
+Stock triggers [will be made, with notes]
+  approximated filter_text_added: the kinds of change to notify about were mapped to the nearest: a change that both adds and removes lines notifies if any wanted kind is on
+
+Extract price [will be made]
+
+Extract two kinds [will be made]
+
+Tidy text [will be made]
+
+Telegram message [will be made]
+  info         notification_body: the custom message was rewritten for Vigil's templates; check it with a test notification
+
+Unusable message and address [will be made, with notes]
+  skipped      notification_urls: a carrier-pigeon:// notification address is not supported or not valid, and was left out
+  skipped      notification_body: the custom message uses something Vigil's templates do not have and was left out (template: undefined value (in template.plain:1))
+
+Tagged watch [will be made]
+
+Muted and paused [will be made, with notes]
+  approximated notification_muted: notifications were muted in the source, so the watch is not linked to any notification target
+
+Options with no equivalent [will be made, with notes]
+  skipped      conditions: rules on the page's contents have no equivalent
+  skipped      time_schedule_limit: checking only on some days or hours has no equivalent
+  skipped      proxy: a proxy for this watch has no equivalent yet
+  approximated fetch_backend: the watch used a browser; it is fetched over plain HTTP, so pages that need scripts will look different
+  skipped      webdriver_js_execute_code: running scripts in the page has no equivalent
+  skipped      ignore_status_codes: pages that answer with an error status are still reported as errors
+  skipped      browser_steps: steps in a browser (clicking, typing) have no equivalent; the watch was made paused
+  skipped      check_unique_lines: reporting only lines never seen before has no equivalent
+  skipped      link_to_open: a different address to open from the list has no equivalent
+  skipped      llm_intent: AI summaries and checks have no equivalent
+  skipped      notification_screenshot: screenshots in notifications have no equivalent
+
+Price and stock tracker [will be made, with notes]
+  approximated processor: price and stock tracking has no equivalent; the page is watched as text, and the watch was made paused
+
+Image comparison [skipped]
+  skipped      processor: watching a page as an image has no equivalent
+
+dry run: nothing was changed

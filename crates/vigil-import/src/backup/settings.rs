@@ -82,6 +82,29 @@ pub(super) struct Globals {
 }
 
 impl Globals {
+    /// The settings that are copied into every watch, by name, for one note about them.
+    pub(super) fn copied_settings(&self) -> Vec<&'static str> {
+        let mut copied = Vec::new();
+        for (set, name) in [
+            (self.interval.is_some(), "the default interval"),
+            (self.jitter > 0, "the random delay"),
+            (self.timeout.is_some_and(|t| t != 30), "the timeout"),
+            (!self.headers.is_empty(), "headers"),
+            (self.retention.is_some(), "the number of versions kept"),
+            (!self.ignore_text.is_empty(), "text to ignore"),
+            (!self.subtractive.is_empty(), "elements to remove"),
+            (
+                !self.notification_urls.is_empty(),
+                "notification addresses (for watches with none of their own)",
+            ),
+        ] {
+            if set {
+                copied.push(name);
+            }
+        }
+        copied
+    }
+
     pub(super) fn read(settings: &Value) -> Self {
         let app = settings.get("application");
         let requests = settings.get("requests");

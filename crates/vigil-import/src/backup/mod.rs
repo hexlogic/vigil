@@ -76,6 +76,16 @@ fn plan_data(
     if globals.has_notification_template {
         builder.note(Note::skipped("notification_body", "the message template that applies to every watch was not imported; watches with a message of their own keep it"));
     }
+    let copied = globals.copied_settings();
+    if !copied.is_empty() {
+        builder.note(Note::info(
+            "global settings",
+            format!(
+                "settings that applied to every watch in the source were copied into each watch: {}",
+                copied.join(", ")
+            ),
+        ));
+    }
     if globals.user_agent.is_some() {
         builder.note(Note::info("default_ua", "the source's default User-Agent was copied to each watch, so that sites see the same client"));
     }

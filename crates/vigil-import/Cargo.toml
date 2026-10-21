@@ -33,3 +33,4 @@ zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2
 [dev-dependencies]
 insta = { version = "1.49.0", features = ["json"] }
 uuid = "1.28.0"
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }

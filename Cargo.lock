@@ -3961,6 +3961,7 @@ dependencies = [
  "clap",
  "figment",
  "humantime",
+ "insta",
  "serde",
  "serde_json",
  "tempfile",
@@ -3976,6 +3977,7 @@ dependencies = [
  "vigil-store",
  "vigil-web",
  "wiremock",
+ "zip",
 ]
 
 [[package]]

@@ -1,0 +1,1022 @@
+---
+source: crates/vigil/tests/import_backup.rs
+expression: watches
+---
+[
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Css and xpath together",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "mode": "include",
+        "selector": ".price",
+        "type": "css"
+      },
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-07.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Extract price",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      },
+      {
+        "group": 1,
+        "pattern": "(?i)Price: (\\d+)",
+        "type": "regex_extract"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "{{SERVER}}/shop"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Extract two kinds",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      },
+      {
+        "group": 0,
+        "pattern": "(?:(?i)alpha\\.beta)|(?:(?i)gam+a)",
+        "type": "regex_extract"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-14.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Headline (leading slash)",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "expr": "/html/body//h2",
+        "mode": "include",
+        "type": "xpath"
+      },
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-06.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Headline (xpath prefix)",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "expr": "//h1",
+        "mode": "include",
+        "type": "xpath"
+      },
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-05.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Ignored lines",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Last updated",
+          "/\\d{2}:\\d{2}/i",
+          "/x/",
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-11.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Listing (jq)",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "program": ".items | map(.name)",
+        "type": "jq"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "json",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "{{SERVER}}/api"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Listing (jsonpath)",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "expr": "$.items[*].name",
+        "type": "jsonpath"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "json",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-08.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Muted and paused",
+    "notification_template": null,
+    "notify": [],
+    "paused": true,
+    "pipeline": [
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-19.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk",
+        "User-Agent": "fixture-agent/1.0"
+      },
+      "timeout_secs": 45,
+      "user_agent": null
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Options with no equivalent",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": true,
+    "pipeline": [
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-20.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Plain page",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-01.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Price (css)",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "mode": "include",
+        "selector": "#price",
+        "type": "css"
+      },
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 300
+    },
+    "snapshot_retention": 25,
+    "url": "{{SERVER}}/shop"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Price and stock tracker",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": true,
+    "pipeline": [
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://store.example/item"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Price without ads",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "mode": "include",
+        "selector": "#box",
+        "type": "css"
+      },
+      {
+        "mode": "remove",
+        "selector": ".ad, .cookie-banner",
+        "type": "css"
+      },
+      {
+        "expr": "//footer",
+        "mode": "remove",
+        "type": "xpath"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "{{SERVER}}/shop"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "body": "{\"q\": \"widgets\"}",
+      "headers": {
+        "Accept-Language": "uk",
+        "Content-Type": "application/json",
+        "X-Token": "FIXTURE-TOKEN"
+      },
+      "method": "POST",
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Search (post, jqraw)",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "program": ".hits[] | \"\\(.title) | \\(.price)\"",
+        "raw": true,
+        "type": "jq"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "json",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "{{SERVER}}/search"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Several selectors",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "mode": "include",
+        "selector": ".price, h1.title, .stock",
+        "type": "css"
+      },
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-03.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [
+        "sold out"
+      ],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": false
+      },
+      "scope": "text",
+      "trigger_text": [
+        "in stock",
+        "/sale \\d+%/i"
+      ]
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Stock triggers",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-12.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Tagged watch",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "cookie notice",
+          "advertisement",
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-18.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Telegram message",
+    "notification_template": "{% set title %}🆕 {{watch_name}}{% endset %}{% set d = diff_added|trim %}{% if d %}{{ d }}{% else %}no new lines in {{watch_url}}{% endif %}",
+    "notify": [
+      "telegram"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-16.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Tidy text",
+    "notification_template": null,
+    "notify": [
+      "webhook hooks.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      },
+      {
+        "group": 0,
+        "pattern": "(?m)^.*(?:(?:(?i)error)|(?:(?i)warn(ing)?)).*$",
+        "type": "regex_extract"
+      },
+      {
+        "type": "trim"
+      },
+      {
+        "type": "unique"
+      },
+      {
+        "type": "sort"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-15.example/"
+  },
+  {
+    "conditions": {
+      "block_text": [],
+      "notify_on": {
+        "added": true,
+        "changed": true,
+        "removed": true
+      },
+      "trigger_text": []
+    },
+    "fetch": {
+      "headers": {
+        "Accept-Language": "uk"
+      },
+      "timeout_secs": 45,
+      "user_agent": "FixtureBrowser/1.0"
+    },
+    "id": "[id]",
+    "jitter_secs": 7,
+    "name": "Unusable message and address",
+    "notification_template": null,
+    "notify": [
+      "ntfy ntfy.example"
+    ],
+    "paused": false,
+    "pipeline": [
+      {
+        "mode": "remove",
+        "selector": ".cookie-banner",
+        "type": "css"
+      },
+      {
+        "patterns": [
+          "Copyright"
+        ],
+        "type": "ignore_lines"
+      }
+    ],
+    "processor": "text",
+    "schedule": {
+      "interval": 10800
+    },
+    "snapshot_retention": 25,
+    "url": "https://site-17.example/"
+  }
+]

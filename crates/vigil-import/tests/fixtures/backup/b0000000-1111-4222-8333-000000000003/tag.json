@@ -1,0 +1,17 @@
+{
+ "uuid": "b0000000-1111-4222-8333-000000000003",
+ "title": "Unused tag",
+ "date_created": 1700000000,
+ "processor": "text_json_diff",
+ "overrides_watch": false,
+ "time_between_check": {
+  "weeks": null,
+  "days": null,
+  "hours": null,
+  "minutes": null,
+  "seconds": null
+ },
+ "notification_urls": [],
+ "include_filters": [],
+ "ignore_text": []
+}
