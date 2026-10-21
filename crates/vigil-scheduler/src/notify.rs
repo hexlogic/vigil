@@ -11,15 +11,23 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use vigil_core::{LineDiff, Verdict, Watch, WatchId};
 use vigil_notify::{DeliveryReport, Event, RetryPolicy, Sender};
-use vigil_store::{
-    NewPending, NotificationTarget, PendingNotification, SnapshotId, Store, StoreError, now_ms,
-};
+use vigil_store::{NotificationTarget, SnapshotId, Store, now_ms};
 
-use crate::delivery::Delivery;
+use crate::delivery::{Delivery, Outbox};
 use crate::describe::describe;
 
-/// How long a saved notification is still worth sending after a restart: a day.
-const MAX_PENDING_AGE_MS: i64 = 24 * 60 * 60 * 1000;
+mod outbox;
+
+/// How long to wait before each later try of a notification whose quick retries ran out; the
+/// last wait is repeated until the notification is a day old.
+const LATER_TRIES: [Duration; 6] = [
+    Duration::from_secs(5 * 60),
+    Duration::from_secs(15 * 60),
+    Duration::from_secs(30 * 60),
+    Duration::from_secs(60 * 60),
+    Duration::from_secs(2 * 60 * 60),
+    Duration::from_secs(4 * 60 * 60),
+];
 
 /// A change that was just recorded, as the notifier needs to know it.
 pub(crate) struct Change<'a> {
@@ -44,6 +52,9 @@ pub struct TargetReport {
     pub target: String,
     /// How it went.
     pub report: DeliveryReport,
+    /// The tries ran out on something that may pass, and the notification is kept to be tried
+    /// again later by a running `vigil serve`.
+    pub queued: bool,
 }
 
 /// Delivers the notifications a change calls for.
@@ -52,6 +63,7 @@ pub struct Notifier {
     store: Store,
     sender: Sender,
     retry: RetryPolicy,
+    later: Vec<Duration>,
     base_url: Option<String>,
     tracker: TaskTracker,
     cancel: CancellationToken,
@@ -65,6 +77,7 @@ impl Notifier {
             store,
             sender,
             retry: RetryPolicy::default(),
+            later: LATER_TRIES.to_vec(),
             base_url: None,
             tracker: TaskTracker::new(),
             cancel: CancellationToken::new(),
@@ -85,6 +98,15 @@ impl Notifier {
     #[must_use]
     pub fn with_retry(mut self, retry: RetryPolicy) -> Self {
         self.retry = retry;
+        self
+    }
+
+    /// How long to wait before each later try of a notification whose quick retries ran out
+    /// (see [`retry_due`](Self::retry_due)). The last wait is repeated. Empty means no later
+    /// tries.
+    #[must_use]
+    pub fn with_later_tries(mut self, later: Vec<Duration>) -> Self {
+        self.later = later;
         self
     }
 
@@ -133,125 +155,14 @@ impl Notifier {
                 watch.notification_template.clone(),
                 Arc::clone(&event),
             );
-            delivery.outbox = outbox;
+            delivery.outbox = outbox.map(|id| Outbox {
+                id,
+                created_at: now_ms(),
+                rounds: 0,
+            });
             self.tracker.spawn(async move {
                 delivery.run(&target).await;
             });
-        }
-    }
-
-    async fn save(
-        &self,
-        watch: WatchId,
-        target: &NotificationTarget,
-        snapshot: SnapshotId,
-        payload: String,
-    ) -> Option<i64> {
-        let pending = NewPending {
-            watch,
-            target: target.id,
-            snapshot,
-            payload,
-        };
-        match self.store.enqueue_notification(&pending).await {
-            Ok(id) => Some(id),
-            // Deliver anyway: a notification that cannot survive a restart beats none.
-            Err(error) => {
-                tracing::error!(%watch, error = %describe(&error), "could not save the notification");
-                None
-            }
-        }
-    }
-
-    /// Deliver the notifications that were saved but not finished when the process last stopped:
-    /// the ones a shutdown cut short, or that a crash left behind. Call it once at start-up,
-    /// from the process that serves; returns how many were started.
-    ///
-    /// One whose target has since been removed or disabled is dropped, and one older than a day
-    /// is recorded as failed instead of being sent: a notice that late is noise.
-    pub async fn resume(&self) -> usize {
-        let pending = match self.store.pending_notifications().await {
-            Ok(pending) => pending,
-            Err(error) => {
-                tracing::error!(error = %describe(&error), "could not read the saved notifications");
-                return 0;
-            }
-        };
-        let mut started = 0;
-        for item in pending {
-            if self.resume_one(&item).await {
-                started += 1;
-            }
-        }
-        started
-    }
-
-    async fn resume_one(&self, item: &PendingNotification) -> bool {
-        let target = match self.store.get_target(item.target).await {
-            Ok(target) if target.enabled => target,
-            Ok(_) | Err(StoreError::NotFound(_)) => {
-                self.forget(item.id).await;
-                return false;
-            }
-            Err(error) => {
-                tracing::error!(error = %describe(&error), "could not load a notification target");
-                return false;
-            }
-        };
-        let delivery = self.delivery(Some(item.watch), Some(item.snapshot), None, Arc::default());
-        if now_ms().saturating_sub(item.created_at) > MAX_PENDING_AGE_MS {
-            let report = DeliveryReport {
-                attempts: 0,
-                result: Err(
-                    "not sent: the notification was too old by the time Vigil started again".into(),
-                ),
-                note: None,
-                interrupted: false,
-            };
-            delivery.record(&target, &report).await;
-            self.forget(item.id).await;
-            return false;
-        }
-        let mut event = match Event::from_json(&item.payload) {
-            Ok(event) => event,
-            Err(error) => {
-                tracing::warn!(id = item.id, %error, "dropping an unreadable saved notification");
-                self.forget(item.id).await;
-                return false;
-            }
-        };
-        event.snapshot = self
-            .store
-            .snapshot_content(item.snapshot)
-            .await
-            .unwrap_or_default();
-        let template = match self.store.get_watch(item.watch).await {
-            Ok(watch) => watch.notification_template,
-            Err(StoreError::NotFound(_)) => {
-                self.forget(item.id).await;
-                return false;
-            }
-            Err(error) => {
-                tracing::error!(error = %describe(&error), "could not load a watch");
-                return false;
-            }
-        };
-        let mut delivery = self.delivery(
-            Some(item.watch),
-            Some(item.snapshot),
-            template,
-            Arc::new(event),
-        );
-        delivery.outbox = Some(item.id);
-        self.tracker.spawn(async move {
-            delivery.run(&target).await;
-        });
-        true
-    }
-
-    async fn forget(&self, id: i64) {
-        if let Err(error) = self.store.complete_notification(id).await {
-            tracing::error!(error = %describe(&error), "could not remove a saved notification");
         }
     }
 
@@ -260,10 +171,11 @@ impl Notifier {
     pub async fn test(&self, target: &NotificationTarget) -> TargetReport {
         let event = Arc::new(Event::test(self.base_url.as_deref()));
         let delivery = self.delivery(None, None, None, event);
-        let report = delivery.run(target).await;
+        let finished = delivery.run(target).await;
         TargetReport {
             target: target.name.clone(),
-            report,
+            report: finished.report,
+            queued: finished.queued,
         }
     }
 
@@ -303,6 +215,7 @@ impl Notifier {
             store: self.store.clone(),
             sender: self.sender.clone(),
             retry: self.retry.clone(),
+            later: self.later.clone(),
             cancel: self.cancel.clone(),
             reports: self.reports.clone(),
             watch,

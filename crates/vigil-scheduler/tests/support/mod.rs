@@ -37,12 +37,21 @@ pub fn quick_retries(delay: Duration) -> RetryPolicy {
 }
 
 pub async fn setup_with(retry: RetryPolicy) -> Result<Setup, Box<dyn std::error::Error>> {
+    setup_with_later(retry, vec![Duration::from_millis(50)]).await
+}
+
+/// Like [`setup_with`], with `later` as the waits between rounds of tries.
+pub async fn setup_with_later(
+    retry: RetryPolicy,
+    later: Vec<Duration>,
+) -> Result<Setup, Box<dyn std::error::Error>> {
     let dir = tempfile::tempdir()?;
     let store = Store::open(&dir.path().join("vigil.db")).await?;
     let notifier = Arc::new(
         Notifier::new(store.clone(), Sender::new(SenderConfig::default())?)
             .with_base_url(Some("http://vigil.test/".into()))
             .with_retry(retry)
+            .with_later_tries(later)
             .collecting_reports(),
     );
     let checker = Checker::new(store.clone(), Fetcher::new(FetchConfig::default())?)
@@ -142,8 +151,17 @@ pub fn restarted_notifier(s: &Setup) -> Result<Notifier, Box<dyn std::error::Err
         Notifier::new(s.store.clone(), Sender::new(SenderConfig::default())?)
             .with_base_url(Some("http://vigil.test/".into()))
             .with_retry(quick_retries(Duration::from_millis(10)))
+            .with_later_tries(vec![Duration::from_millis(50)])
             .collecting_reports(),
     )
+}
+
+/// Like [`restarted_notifier`], with `later` as the waits between rounds of tries.
+pub fn restarted_notifier_with_later(
+    s: &Setup,
+    later: Vec<Duration>,
+) -> Result<Notifier, Box<dyn std::error::Error>> {
+    Ok(restarted_notifier(s)?.with_later_tries(later))
 }
 
 /// Make the ntfy server answer every request with `status`.
