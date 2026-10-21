@@ -382,6 +382,16 @@ Errors are always `{"error": {"code", "message", "field"?}}`, including the ones
 
 `GET /api/v1/version` reports the version and whether a token is needed (`token` or `open`); it is also how a client checks its token.
 
+## Watches in the API
+
+A watch is sent in the shape `vigil watch show` prints (`schedule` as `{"interval": 300}`, `fetch`, `processor`, `pipeline`, `conditions`, `snapshot_retention`, `jitter_secs`, `notification_template`), with the ids of its `tags` and `targets` instead of names, `paused`, and a read-only `state` (last check and change as RFC 3339 UTC, the last error, the failure streak). Pipeline steps, conditions and fetch settings are the core types themselves, so the API, the command line and the importers share one contract and a new step or option reaches all of them at once. The interval is a number of seconds, not text like `5m`: a program has no use for two spellings.
+
+`PUT` replaces the whole watch: a field that is left out gets its default, and that includes `paused`, the links and the template. That is the plain meaning of `PUT`, and the only way a client can remove a filter without a second verb. As in the web form, the settings are written only when they differ from what is stored, because writing them forgets the remembered `ETag`, clears the failure streak and moves the schedule. The links and the template go through `Store::set_watch_links`, in one transaction.
+
+A request is checked as a check would build it: the address with the fetcher's own check, the steps and conditions on a processing thread under a slot of their own (`validate_watch`, as the web form does), the template by rendering it. A problem is a `422` with the `field` it is about (`url`, `pipeline`, `conditions`, `fetch.body`, ...); a problem in a step says which one (`step 2 (css): ...`). Unknown fields are refused rather than ignored, so a misspelt option cannot silently do nothing. A header problem names the header and never its value. Tags and targets that do not exist are refused instead of dropped. Watch ids in paths are full UUIDs; anything else is a `404`, since there is no such resource.
+
+`POST /watch` answers `201` with a `Location` and starts the first check at once, as the web form does (a paused watch is not checked). If making the links fails the watch is deleted again, so a request does not leave half a watch. `POST /watch/{id}/check` answers `202` and returns at once; with `?wait=true` it waits up to a minute and answers `200` with the outcome and the watch. A check of a page that cannot be fetched is `done`, with the error on the watch: the check ran, which is what the outcome says. There is no pause endpoint: `paused` is part of the watch, and `PUT` sets it.
+
 ## The watch list
 
 The list is a table of rows; each row is a fragment (`GET /watch/{id}/row`) that its buttons replace in place with htmx, so the page keeps its place and scroll. Check now, pause, resume and delete are `POST`s that answer with the new row (delete answers with nothing, and first shows a confirmation row in its place: the page policy and the plan's "no browser dialogs" rule out `hx-confirm`). Without htmx they redirect to the list, so a form post still works.

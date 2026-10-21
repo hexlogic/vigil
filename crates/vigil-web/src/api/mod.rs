@@ -7,6 +7,8 @@ mod docs;
 mod error;
 mod guard;
 mod token;
+mod watch_json;
+mod watches;
 
 use std::sync::Arc;
 
@@ -72,7 +74,18 @@ async fn version(axum::extract::State(state): axum::extract::State<AppState>) ->
 /// is answered with a JSON error, so a client never gets the HTML 404 page.
 pub(crate) fn router(state: &AppState, timeout: TimeoutLayer) -> axum::Router<AppState> {
     let (routes, mut spec) = OpenApiRouter::with_openapi(docs::ApiDoc::openapi())
-        .nest("/api/v1", OpenApiRouter::new().routes(routes!(version)))
+        .nest(
+            "/api/v1",
+            OpenApiRouter::new()
+                .routes(routes!(version))
+                .routes(routes!(watches::list_watches, watches::create_watch))
+                .routes(routes!(
+                    watches::get_watch,
+                    watches::replace_watch,
+                    watches::delete_watch
+                ))
+                .routes(routes!(watches::check_watch)),
+        )
         .split_for_parts();
     let base_path = state.web.base_path();
     if !base_path.is_empty() {

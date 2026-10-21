@@ -1,6 +1,6 @@
 //! Checking what was typed, and turning it into a watch.
 
-mod fetch;
+pub(crate) mod fetch;
 mod fields;
 mod steps;
 

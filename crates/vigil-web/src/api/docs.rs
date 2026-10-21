@@ -36,7 +36,10 @@ impl Modify for TokenScheme {
         license(name = "MIT OR Apache-2.0"),
     ),
     modifiers(&TokenScheme),
-    tags((name = "meta", description = "About the server."))
+    tags(
+        (name = "meta", description = "About the server."),
+        (name = "watches", description = "The pages that are watched."),
+    )
 )]
 pub(super) struct ApiDoc;
 

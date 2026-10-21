@@ -1,5 +1,9 @@
 //! A watch's tags, notification targets and message template, saved together.
 
+use std::collections::HashMap;
+
+use sqlx::Row;
+use uuid::Uuid;
 use vigil_core::WatchId;
 
 use crate::{Store, StoreError, TagId, TargetId};
@@ -61,5 +65,27 @@ impl Store {
         }
         tx.commit().await?;
         Ok(())
+    }
+
+    /// The ids of the targets each watch is linked to, for every watch that has any. Disabled
+    /// targets are included.
+    pub async fn watch_target_ids(&self) -> Result<HashMap<WatchId, Vec<TargetId>>, StoreError> {
+        let rows =
+            sqlx::query("SELECT watch_id, target_id FROM watch_notifications ORDER BY target_id")
+                .fetch_all(&self.pool)
+                .await?;
+        let mut map: HashMap<WatchId, Vec<TargetId>> = HashMap::new();
+        for row in &rows {
+            let watch: String = row.try_get("watch_id")?;
+            let target: String = row.try_get("target_id")?;
+            let (Ok(watch), Ok(target)) = (watch.parse::<WatchId>(), Uuid::parse_str(&target))
+            else {
+                return Err(StoreError::Corrupt(
+                    "a notification link holds a bad id".to_owned(),
+                ));
+            };
+            map.entry(watch).or_default().push(target);
+        }
+        Ok(map)
     }
 }

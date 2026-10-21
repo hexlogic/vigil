@@ -1,8 +1,11 @@
 //! The JSON error every API endpoint answers with, and the body extractor that uses it.
 
+use axum::extract::rejection::JsonRejection;
+use axum::extract::{FromRequest, Request};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use utoipa::ToSchema;
 use vigil_store::StoreError;
 
@@ -50,6 +53,17 @@ impl ApiError {
         self
     }
 
+    /// Say which field of the request the problem is about.
+    pub(crate) fn field(mut self, field: impl Into<String>) -> Self {
+        self.detail.field = Some(field.into());
+        self
+    }
+
+    /// `422`: the request is well formed but its content is not acceptable.
+    pub(crate) fn invalid(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, message)
+    }
+
     /// `404`: no such thing.
     pub(crate) fn not_found(what: impl std::fmt::Display) -> Self {
         Self::new(StatusCode::NOT_FOUND, format!("{what} was not found"))
@@ -72,6 +86,14 @@ impl ApiError {
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "something went wrong on the server",
+        )
+    }
+
+    /// `503`: the scheduler is not running.
+    pub(crate) fn unavailable() -> Self {
+        Self::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "the server is shutting down",
         )
     }
 }
@@ -112,6 +134,38 @@ impl From<StoreError> for ApiError {
             _ => Self::internal(&error),
         }
     }
+}
+
+/// A JSON request body. Unlike `axum::Json`, a body that cannot be read is answered with the
+/// error above and not with plain text.
+pub(crate) struct ApiJson<T>(pub(crate) T);
+
+impl<S, T> FromRequest<S> for ApiJson<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned,
+{
+    type Rejection = ApiError;
+
+    async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
+        match axum::Json::<T>::from_request(request, state).await {
+            Ok(axum::Json(value)) => Ok(Self(value)),
+            Err(rejection) => Err(from_rejection(&rejection)),
+        }
+    }
+}
+
+fn from_rejection(rejection: &JsonRejection) -> ApiError {
+    let message = match rejection {
+        JsonRejection::MissingJsonContentType(_) => {
+            "send the body as JSON with the header Content-Type: application/json".to_owned()
+        }
+        JsonRejection::BytesRejection(_) if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
+            "the request body is too large".to_owned()
+        }
+        _ => rejection.body_text(),
+    };
+    ApiError::new(rejection.status(), message)
 }
 
 /// Turn an error answer that is not JSON (a timeout, a wrong method, a bad query string) into
