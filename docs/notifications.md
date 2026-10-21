@@ -98,7 +98,9 @@ Messages are shortened to what each service accepts: Telegram 4096 characters, D
 
 ## Delivery
 
-A change is delivered to each target on its own, after the check has been recorded, so a slow or failing service never delays a check and never makes it fail. A failed delivery is tried again after 2, 10 and 30 seconds (a connection problem, a timeout, a server error, `408`, `429`, honouring `Retry-After` up to a minute); a refusal such as a wrong token fails at once. Redirects are not followed and proxy variables are ignored. Every delivery is written to the delivery log (`sent`, or `failed` with the reason) with the number of attempts. `vigil serve` gives deliveries 30 seconds to finish when it stops; a delivery still waiting to retry gives up and says so.
+A change is delivered to each target on its own, after the check has been recorded, so a slow or failing service never delays a check and never makes it fail. A failed delivery is tried again after 2, 10 and 30 seconds (a connection problem, a timeout, a server error, `408`, `429`, honouring `Retry-After` up to a minute); a refusal such as a wrong token fails at once. Redirects are not followed and proxy variables are ignored. Every delivery is written to the delivery log (`sent`, or `failed` with the reason) with the number of attempts. `vigil serve` gives deliveries 30 seconds to finish when it stops.
+
+A notification is saved before it is delivered and removed once it is over, whether it was sent, refused for good, or ran out of retries. One that a shutdown or a crash interrupts stays saved, and `vigil serve` sends it when it starts again, with the same message and link (unless its target has been removed or disabled meanwhile, or it is more than a day old, which is recorded as failed). `vigil check` does not send other runs' leftovers; `vigil serve` does.
 
 ## Security
 

@@ -279,7 +279,8 @@ impl Notifier {
     }
 
     /// Shut down: stop waiting between retries, and give attempts already on the wire `grace`
-    /// to finish. A delivery that is still waiting to retry gives up and says so in the log.
+    /// to finish. A delivery that is still waiting to retry stays in the outbox, to be sent by
+    /// [`resume`](Self::resume) at the next start.
     pub async fn shutdown(&self, grace: Duration) {
         self.tracker.close();
         self.cancel.cancel();
